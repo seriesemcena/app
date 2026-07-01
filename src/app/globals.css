@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Area font family (paragraphs, H3, H4) ── */
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-SemiBold.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-Bold.woff') format('woff');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-extrabold.woff') format('woff');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-Black.woff') format('woff');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-SemiBoldItalic.woff') format('woff');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-BoldItalic.woff') format('woff');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Area';
+  src: url('/fonts/Area-extraboldItalic.woff') format('woff');
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ── Greed font family (H1, H2 — large headings) ── */
+@font-face {
+  font-family: 'Greed';
+  src: url('/fonts/Greed-SemiBold.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-stretch: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Greed';
+  src: url('/fonts/Greed-CondensedSemiBold.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-stretch: condensed;
+  font-display: swap;
+}
+
+/* ── CSS custom properties — light theme (default) ── */
+:root {
+  --c-bg:        #F2F2F7;
+  --c-card:      #FFFFFF;
+  --c-surface:   #FFFFFF;
+  --c-surface2:  #E5E5EA;
+  --c-t1:        rgba(0,0,0,0.88);
+  --c-t2:        rgba(0,0,0,0.55);
+  --c-t3:        rgba(0,0,0,0.38);
+  --c-t4:        rgba(0,0,0,0.10);
+  --c-border:    rgba(0,0,0,0.09);
+  --c-dim:       rgba(0,0,0,0.14);
+  --c-input-bg:  rgba(0,0,0,0.05);
+  --c-glass-bg:  rgba(0,0,0,0.06);
+  --c-outer:     #C7C7CC;
+  --c-body-text: #1A1A1A;
+  /* Light: orange blob → purple → transparent → white bg */
+  --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #F040D0 0%, #A040F0 25%, #FF6B2B 52%, #FF8C42 68%, transparent 80%);
+}
+
+/* ── Dark theme ── */
+[data-theme="dark"] {
+  --c-bg:        #1A1A1A;
+  --c-card:      #252525;
+  --c-surface:   #2E2E2E;
+  --c-surface2:  #383838;
+  --c-t1:        rgba(255,255,255,0.95);
+  --c-t2:        rgba(255,255,255,0.60);
+  --c-t3:        rgba(255,255,255,0.38);
+  --c-t4:        rgba(255,255,255,0.12);
+  --c-border:    rgba(255,255,255,0.08);
+  --c-dim:       rgba(255,255,255,0.16);
+  --c-input-bg:  rgba(255,255,255,0.06);
+  --c-glass-bg:  rgba(255,255,255,0.10);
+  --c-outer:     #111111;
+  --c-body-text: #fff;
+  /* Dark: bright pink → deep purple → transparent → dark bg */
+  --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #F040D0 0%, #6B10A0 44%, transparent 72%);
+}
+
+/* ── Base reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%;
+  min-height: 100dvh;
+  background: var(--c-outer);
+  font-family: 'Area', 'Inter', sans-serif;
+  color: var(--c-body-text);
+  transition: background 0.25s ease, color 0.25s ease;
+}
+::-webkit-scrollbar { display: none; }
+* { -webkit-tap-highlight-color: transparent; }
+input, button, textarea { -webkit-appearance: none; }
+button:focus, input:focus, textarea:focus { outline: none; }
+
+/* ── MobileFrame: full-screen on real devices, mockup on desktop ── */
+
+/* Mobile / real device: fills entire screen */
+.mf-outer {
+  width: 100%;
+  min-height: 100dvh;
+  background: var(--c-bg);
+  display: flex;
+  flex-direction: column;
+  transition: background 0.25s ease;
+}
+.mf-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  /* Safe area for notch / home indicator */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Desktop (≥ 520px): show phone mockup */
+@media (min-width: 520px) {
+  .mf-outer {
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--c-outer);
+  }
+  .mf-inner {
+    width: 390px;
+    height: 844px;
+    max-height: calc(100dvh - 48px);
+    flex: 0 0 auto;
+    border-radius: 40px;
+    border: 8px solid #0a0a0a;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* ── Semantic heading defaults ── */
+h1, h2 {
+  font-family: 'Greed', 'Area', sans-serif;
+  font-weight: 600;
+}
+h3, h4, h5, h6, p {
+  font-family: 'Area', 'Inter', sans-serif;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.screen-anim { animation: slideIn 0.26s cubic-bezier(0.32,0.72,0,1) both; }
