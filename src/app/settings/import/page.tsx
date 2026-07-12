@@ -186,14 +186,35 @@ async function parseTVTimeZip(file: File): Promise<{ titles: ParsedTitle[]; revi
 
 /* ─────────────────────────────────────────────────────────────
    TMDB search + match
+   Strategy:
+     1. Strip "(YYYY)" from name, use year as a separate param
+     2. If no hit, retry without year constraint
 ───────────────────────────────────────────────────────────── */
 async function searchTMDB(title: ParsedTitle): Promise<ImportResult> {
+  // Extract year from names like "Paradise (2025)"
+  const yearMatch = title.name.match(/\((\d{4})\)\s*$/);
+  const year      = yearMatch ? yearMatch[1] : null;
+  const cleanName = title.name.replace(/\s*\(\d{4}\)\s*$/, '').trim();
+
+  const type    = title.mediaType === 'movie' ? 'movie' : 'tv';
+  const yearKey = type === 'tv' ? 'first_air_date_year' : 'year';
+
+  const trySearch = async (name: string, withYear: boolean): Promise<{ id: number; title?: string; name?: string; poster_path?: string } | null> => {
+    const q      = encodeURIComponent(name);
+    const yrPart = withYear && year ? `&${yearKey}=${year}` : '';
+    const res    = await fetch(`/api/tmdb?endpoint=/search/${type}&query=${q}${yrPart}`);
+    const data   = await res.json();
+    return data?.results?.[0] ?? null;
+  };
+
   try {
-    const q    = encodeURIComponent(title.name);
-    const type = title.mediaType === 'movie' ? 'movie' : 'tv';
-    const res  = await fetch(`/api/tmdb?endpoint=/search/${type}&query=${q}`);
-    const data = await res.json();
-    const hit  = data?.results?.[0];
+    // Attempt 1: clean name + year
+    let hit = await trySearch(cleanName, true);
+    // Attempt 2: clean name without year constraint
+    if (!hit) hit = await trySearch(cleanName, false);
+    // Attempt 3: original name (fallback for names without year suffix)
+    if (!hit && cleanName !== title.name) hit = await trySearch(title.name, false);
+
     if (!hit) throw new Error('not found');
     return {
       name: title.name, status: title.status, mediaType: title.mediaType,
