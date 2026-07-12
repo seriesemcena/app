@@ -18,6 +18,8 @@ export function Frame({ children }: { children: ReactNode }) {
         <div className="screen-anim" key={pathname} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {children}
         </div>
+        {/* Portal root — modais renderizam aqui, acima do TabBar */}
+        <div id="modal-root" style={{ position: 'absolute', inset: 0, zIndex: 60, pointerEvents: 'none' }} />
         {showTabs && (
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 30, pointerEvents: 'none' }}>
             <div style={{ pointerEvents: 'auto' }}>

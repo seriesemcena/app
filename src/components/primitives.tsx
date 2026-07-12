@@ -1,5 +1,6 @@
 'use client';
 import { CSSProperties, ReactNode, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 
@@ -158,20 +159,31 @@ export const Toast = ({ msg, visible, icon = 'check' }: { msg?: string | false |
   </div>
 );
 
-export const BottomSheet = ({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children?: ReactNode }) => (
-  <>
-    {visible && <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50 }} />}
-    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
-        <div style={{ width: 40 }} />
-        <div style={{ width: 40, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
-        <Txt size={15} weight={700}>{title}</Txt>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><Icon name="close" size={18} color={T.t3} /></button>
+export const BottomSheet = ({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children?: ReactNode }) => {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const sheet = (
+    <>
+      {visible && (
+        <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, pointerEvents: 'auto' }} />
+      )}
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
+        <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
+          <div style={{ width: 40 }} />
+          <div style={{ width: 40, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
+          <Txt size={15} weight={700}>{title}</Txt>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><Icon name="close" size={18} color={T.t3} /></button>
+        </div>
+        <div style={{ overflowY: 'auto', padding: 16 }}>{children}</div>
       </div>
-      <div style={{ overflowY: 'auto', padding: 16 }}>{children}</div>
-    </div>
-  </>
-);
+    </>
+  );
+
+  if (!mounted) return null;
+  const root = document.getElementById('modal-root');
+  return root ? createPortal(sheet, root) : sheet;
+};
 
 export const StreamBadge = ({ name }: { name: string }) => {
   const colors: Record<string, string> = { Netflix: '#E50914', Prime: '#00A8E0', 'Disney+': '#113CCF', HBO: '#5800A0', Apple: '#555', Globo: '#D62929', Paramount: '#0064FF' };
