@@ -6,9 +6,9 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { listStore } from '@/lib/store';
+import { listStore, revStore, profileStore, type Review } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbListStore } from '@/lib/db';
+import { dbListStore, dbRevStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 
 /* ─────────────────────────────────────────────────────────────
@@ -33,6 +33,14 @@ interface ImportResult {
 }
 
 type Step = 'upload' | 'preview' | 'importing' | 'done';
+
+interface ParsedReview {
+  showName: string;
+  mediaType: 'tv' | 'movie';
+  text: string;
+  rating: number;
+  date: string;
+}
 
 /* ─────────────────────────────────────────────────────────────
    CSV parser — handles quoted fields and CRLF
@@ -74,54 +82,106 @@ function parseCSV(text: string): Record<string, string>[] {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   TV Time ZIP → ParsedTitle[]
+   TV Time ZIP → { titles, reviews }
 ───────────────────────────────────────────────────────────── */
-async function parseTVTimeZip(file: File): Promise<ParsedTitle[]> {
-  const zip = await JSZip.loadAsync(await file.arrayBuffer());
-  const results: ParsedTitle[] = [];
+async function parseTVTimeZip(file: File): Promise<{ titles: ParsedTitle[]; reviews: ParsedReview[] }> {
+  const zip   = await JSZip.loadAsync(await file.arrayBuffer());
+  const files = Object.values(zip.files);
+  const titles:  ParsedTitle[]  = [];
+  const reviews: ParsedReview[] = [];
 
   // ── TV shows from user_tv_show_data.csv ──────────────────
-  // headers: is_favorited,nb_episodes_seen,tv_show_name,user_id,tv_show_id,is_followed
-  const showFile = Object.values(zip.files).find((f) =>
-    f.name.toLowerCase().includes('user_tv_show_data') && !f.dir
-  );
+  const showFile = files.find((f) => f.name.toLowerCase().includes('user_tv_show_data') && !f.dir);
   if (showFile) {
-    const text = await showFile.async('string');
-    const rows = parseCSV(text);
+    const rows = parseCSV(await showFile.async('string'));
     for (const row of rows) {
       const name = (row['tv_show_name'] || '').trim();
       if (!name) continue;
       const followed = row['is_followed'] === '1';
       const seen     = parseInt(row['nb_episodes_seen'] || '0', 10);
       let status: Status;
-      if (followed && seen > 0)   status = 'watching';
-      else if (followed)          status = 'want';
-      else if (!followed && seen > 0) status = 'watched';
-      else continue; // never followed, never seen — skip
-      results.push({ name, status, mediaType: 'tv' });
+      if (followed && seen > 0)        status = 'watching';
+      else if (followed)               status = 'want';
+      else if (!followed && seen > 0)  status = 'watched';
+      else continue;
+      titles.push({ name, status, mediaType: 'tv' });
     }
   }
 
-  // ── Movies from tracking-prod-records.csv ────────────────
-  // key columns: movie_name, watch_count, entity_type
-  const trackFile = Object.values(zip.files).find((f) =>
-    f.name.toLowerCase().includes('tracking-prod-records') && !f.dir
-  );
+  // ── Movies from tracking-prod-records.csv (not v2) ───────
+  // The summary row (count-watch-movie) lists watched UUIDs in `watches`.
+  // Individual movie rows have `movie_name` and `uuid` but empty `watch_count`.
+  const trackFile = files.find((f) => {
+    const n = f.name.toLowerCase();
+    return n.endsWith('tracking-prod-records.csv') && !f.dir;
+  });
   if (trackFile) {
-    const text = await trackFile.async('string');
-    const rows = parseCSV(text);
+    const rows = parseCSV(await trackFile.async('string'));
+
+    // Collect watched movie UUIDs from the summary row
+    const watchedUUIDs = new Set<string>();
+    const summaryRow = rows.find((r) => (r['type-uuid-n'] || '').startsWith('count-watch-movie'));
+    if (summaryRow) {
+      const raw = (summaryRow['watches'] || '').replace(/^\[/, '').replace(/\]$/, '');
+      raw.split(',').forEach((u) => { const t = u.trim(); if (t) watchedUUIDs.add(t); });
+    }
+
     const seen = new Set<string>();
     for (const row of rows) {
       const name = (row['movie_name'] || '').trim();
       if (!name || seen.has(name)) continue;
       seen.add(name);
-      const watchCount = parseInt(row['watch_count'] || '0', 10);
-      const status: Status = watchCount > 0 ? 'watched' : 'want';
-      results.push({ name, status, mediaType: 'movie' });
+      const uuid   = (row['uuid'] || '').trim();
+      const status: Status = watchedUUIDs.has(uuid) ? 'watched' : 'want';
+      titles.push({ name, status, mediaType: 'movie' });
     }
   }
 
-  return results;
+  // ── Episode comments → show reviews ──────────────────────
+  // episode_comment.csv: tv_show_name, comment, created_at, episode_season_number, episode_number
+  const commentFile = files.find((f) => f.name.toLowerCase().includes('episode_comment') && !f.dir);
+  const reviewsByShow = new Map<string, ParsedReview>();
+  if (commentFile) {
+    const rows = parseCSV(await commentFile.async('string'));
+    for (const row of rows) {
+      const show = (row['tv_show_name'] || '').trim();
+      const text = (row['comment'] || '').trim();
+      if (!show || !text) continue;
+      const existing = reviewsByShow.get(show);
+      if (!existing) {
+        reviewsByShow.set(show, { showName: show, mediaType: 'tv', text, rating: 0, date: row['created_at'] || new Date().toISOString() });
+      } else if (!existing.text) {
+        existing.text = text;
+      }
+    }
+  }
+
+  // ── Episode ratings → merge with reviews ─────────────────
+  // vote_key format: {episode_id}-{user_id}-{vote}   (vote is the rating value)
+  const ratingFile = files.find((f) => f.name.toLowerCase().includes('ratings-3-prod-episode_votes') && !f.dir);
+  if (ratingFile) {
+    const rows = parseCSV(await ratingFile.async('string'));
+    for (const row of rows) {
+      const show    = (row['series_name'] || '').trim();
+      const voteKey = (row['vote_key']    || '').trim();
+      if (!show || !voteKey) continue;
+      const parts  = voteKey.split('-');
+      const rating = parseInt(parts[parts.length - 1], 10) || 0;
+      const existing = reviewsByShow.get(show);
+      if (existing) {
+        existing.rating = rating;
+      } else {
+        reviewsByShow.set(show, { showName: show, mediaType: 'tv', text: '', rating, date: new Date().toISOString() });
+      }
+    }
+  }
+
+  // Only include reviews that have at least text or a rating
+  for (const rev of reviewsByShow.values()) {
+    if (rev.text || rev.rating > 0) reviews.push(rev);
+  }
+
+  return { titles, reviews };
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -176,12 +236,14 @@ export default function ImportPage() {
   const { user } = useAuth();
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const [step,     setStep]     = useState<Step>('upload');
-  const [parsed,   setParsed]   = useState<ParsedTitle[]>([]);
-  const [results,  setResults]  = useState<ImportResult[]>([]);
-  const [progress, setProgress] = useState(0);
-  const [current,  setCurrent]  = useState('');
-  const [fileErr,  setFileErr]  = useState('');
+  const [step,           setStep]          = useState<Step>('upload');
+  const [parsed,         setParsed]        = useState<ParsedTitle[]>([]);
+  const [parsedReviews,  setParsedReviews] = useState<ParsedReview[]>([]);
+  const [results,        setResults]       = useState<ImportResult[]>([]);
+  const [progress,       setProgress]      = useState(0);
+  const [current,        setCurrent]       = useState('');
+  const [fileErr,        setFileErr]       = useState('');
+  const [importedReviews, setImportedReviews] = useState(0);
 
   /* ── File upload handler ── */
   const handleFile = async (file: File) => {
@@ -191,12 +253,13 @@ export default function ImportPage() {
       return;
     }
     try {
-      const items = await parseTVTimeZip(file);
-      if (items.length === 0) {
+      const { titles, reviews } = await parseTVTimeZip(file);
+      if (titles.length === 0) {
         setFileErr('Não encontramos títulos no arquivo. Verifique se é o export correto do TV Time (GDPR).');
         return;
       }
-      setParsed(items);
+      setParsed(titles);
+      setParsedReviews(reviews);
       setStep('preview');
     } catch {
       setFileErr('Erro ao ler o arquivo. Verifique se é um .zip válido do TV Time.');
@@ -240,6 +303,34 @@ export default function ImportPage() {
       setProgress(Math.min(Math.round(((i + BATCH) / parsed.length) * 100), 100));
       await new Promise((res) => setTimeout(res, 80));
     }
+
+    // ── Save reviews ──────────────────────────────────────────
+    let savedReviews = 0;
+    if (parsedReviews.length > 0) {
+      const profile = profileStore.get();
+      for (const pr of parsedReviews) {
+        const matched = out.find((r) => r.name === pr.showName && r.matched && r.tmdbId);
+        if (!matched || !matched.tmdbId) continue;
+        const titleKey = `${matched.mediaType === 'movie' ? 'movie' : 'tv'}_${matched.tmdbId}`;
+        const review: Review = {
+          id: `tvtime_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          user: profile.username || profile.name || 'eu',
+          avatar: profile.avatarLetter || '?',
+          photoUrl: profile.avatarImage || '',
+          rating: pr.rating,
+          text: pr.text,
+          date: pr.date,
+          likes: 0,
+          likedBy: [],
+        };
+        revStore.addReview(titleKey, review);
+        if (firebaseConfigured && user) {
+          try { await dbRevStore.add(getDB(), titleKey, review); } catch {}
+        }
+        savedReviews++;
+      }
+    }
+    setImportedReviews(savedReviews);
 
     setResults(out);
     setStep('done');
@@ -380,6 +471,15 @@ export default function ImportPage() {
               </div>
             </div>
 
+            {parsedReviews.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, padding: '12px 14px', background: 'rgba(52,199,89,0.07)', borderRadius: 12, border: '1px solid rgba(52,199,89,0.2)', marginBottom: 12 }}>
+                <Icon name="star" size={16} color="#34c759" style={{ flexShrink: 0, marginTop: 1 }} />
+                <Txt size={12} color={T.t2} style={{ lineHeight: 1.5 }}>
+                  {parsedReviews.length} avaliação{parsedReviews.length !== 1 ? 'ões' : ''} e comentário{parsedReviews.length !== 1 ? 's' : ''} encontrado{parsedReviews.length !== 1 ? 's' : ''} — serão importados junto com as listas.
+                </Txt>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, padding: '12px 14px', background: 'rgba(96,165,250,0.07)', borderRadius: 12, border: '1px solid rgba(96,165,250,0.2)', marginBottom: 24 }}>
               <Icon name="info" size={16} color="#60a5fa" style={{ flexShrink: 0, marginTop: 1 }} />
               <Txt size={12} color={T.t2} style={{ lineHeight: 1.5 }}>
@@ -445,6 +545,12 @@ export default function ImportPage() {
                 <div style={{ textAlign: 'center' }}>
                   <Txt size={36} weight={900} color={T.gold} style={{ display: 'block', lineHeight: 1 }}>{unmatched.length}</Txt>
                   <Txt size={11} color={T.t3}>não encontrados</Txt>
+                </div>
+              )}
+              {importedReviews > 0 && (
+                <div style={{ textAlign: 'center' }}>
+                  <Txt size={36} weight={900} color="#60a5fa" style={{ display: 'block', lineHeight: 1 }}>{importedReviews}</Txt>
+                  <Txt size={11} color={T.t3}>avaliações</Txt>
                 </div>
               )}
             </div>
