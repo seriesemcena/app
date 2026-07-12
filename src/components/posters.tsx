@@ -334,38 +334,21 @@ export const MasonryGrid2 = ({
   getTag?: (item: TMDBItem) => { label: string; color: string; bg: string } | undefined;
   padding?: string;
 }) => {
-  const col1 = items.filter((_, i) => i % 2 === 0);
-  const col2 = items.filter((_, i) => i % 2 === 1);
-  const sk1  = Math.ceil(skeletonCount / 2);
-  const sk2  = Math.floor(skeletonCount / 2);
-
   if (loading) return (
-    <div style={{ display: 'flex', gap: 13, padding }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {Array.from({ length: sk1 }).map((_, i) => (
-          <div key={i} style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
-        ))}
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {Array.from({ length: sk2 }).map((_, i) => (
-          <div key={i} style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
-        ))}
-      </div>
+    <div className="masonry-cols" style={{ padding }}>
+      {Array.from({ length: skeletonCount }).map((_, i) => (
+        <div key={i} className="masonry-item" style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
+      ))}
     </div>
   );
 
   return (
-    <div style={{ display: 'flex', gap: 13, padding }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {col1.map(item => (
-          <TMDBGridCard key={item.id} item={item} onClick={() => onItem(item)} tag={getTag?.(item)} />
-        ))}
-      </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {col2.map(item => (
-          <TMDBGridCard key={item.id} item={item} onClick={() => onItem(item)} tag={getTag?.(item)} />
-        ))}
-      </div>
+    <div className="masonry-cols" style={{ padding }}>
+      {items.map((item) => (
+        <div key={item.id} className="masonry-item">
+          <TMDBGridCard item={item} onClick={() => onItem(item)} tag={getTag?.(item)} />
+        </div>
+      ))}
     </div>
   );
 };
