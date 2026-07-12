@@ -239,7 +239,7 @@ export default function TitleDetailPage() {
           </div>
         </div>
 
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 90 } as React.CSSProperties}>
 
           {/* ── Backdrop hero com título e botões sobrepostos ── */}
           <div style={{ height: 400, position: 'relative', overflow: 'hidden' }}>

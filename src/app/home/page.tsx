@@ -184,7 +184,7 @@ export default function HomePage() {
   return (
     <Frame>
       <Screen style={{ background: 'var(--c-bg)' }}>
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 90 } as React.CSSProperties}>
 
           {/* ── Hero Section — slider só em Para você ── */}
           {homeTab === 'para_voce' ? (() => {
