@@ -14,14 +14,18 @@ export function Frame({ children }: { children: ReactNode }) {
 
   return (
     <MobileFrame>
-      <div className="screen-anim" key={pathname} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {children}
-      </div>
-      {showTabs && (
-        <div style={{ flexShrink: 0, position: 'relative', zIndex: 30 }}>
-          <TabBar />
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div className="screen-anim" key={pathname} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {children}
         </div>
-      )}
+        {showTabs && (
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 30, pointerEvents: 'none' }}>
+            <div style={{ pointerEvents: 'auto' }}>
+              <TabBar />
+            </div>
+          </div>
+        )}
+      </div>
     </MobileFrame>
   );
 }
