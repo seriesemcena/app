@@ -1,13 +1,14 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import JSZip from 'jszip';
 import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { listStore, profileStore } from '@/lib/store';
+import { listStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbListStore, dbActivityStore } from '@/lib/db';
+import { dbListStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 
 /* ─────────────────────────────────────────────────────────────
@@ -17,10 +18,8 @@ type Status = 'watched' | 'watching' | 'want';
 
 interface ParsedTitle {
   name: string;
-  year?: string;
   status: Status;
   mediaType: 'tv' | 'movie';
-  rating?: number;
 }
 
 interface ImportResult {
@@ -36,63 +35,90 @@ interface ImportResult {
 type Step = 'upload' | 'preview' | 'importing' | 'done';
 
 /* ─────────────────────────────────────────────────────────────
-   TV Time JSON parser — handles multiple export formats
+   CSV parser — handles quoted fields and CRLF
 ───────────────────────────────────────────────────────────── */
-function parseTVTimeFile(raw: unknown): ParsedTitle[] {
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (lines.length < 2) return [];
+
+  const parseLine = (line: string): string[] => {
+    const fields: string[] = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuote = !inQuote;
+      } else if (ch === ',' && !inQuote) {
+        fields.push(cur); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    fields.push(cur);
+    return fields;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const vals = parseLine(line);
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h.trim()] = (vals[idx] ?? '').trim(); });
+    rows.push(row);
+  }
+  return rows;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TV Time ZIP → ParsedTitle[]
+───────────────────────────────────────────────────────────── */
+async function parseTVTimeZip(file: File): Promise<ParsedTitle[]> {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const results: ParsedTitle[] = [];
 
-  const mapStatus = (s?: string): Status => {
-    if (!s) return 'watched';
-    const l = s.toLowerCase();
-    if (l.includes('watch') && l.includes('ing')) return 'watching';
-    if (l.includes('want') || l.includes('plan') || l.includes('will')) return 'want';
-    return 'watched';
-  };
+  // ── TV shows from user_tv_show_data.csv ──────────────────
+  // headers: is_favorited,nb_episodes_seen,tv_show_name,user_id,tv_show_id,is_followed
+  const showFile = Object.values(zip.files).find((f) =>
+    f.name.toLowerCase().includes('user_tv_show_data') && !f.dir
+  );
+  if (showFile) {
+    const text = await showFile.async('string');
+    const rows = parseCSV(text);
+    for (const row of rows) {
+      const name = (row['tv_show_name'] || '').trim();
+      if (!name) continue;
+      const followed = row['is_followed'] === '1';
+      const seen     = parseInt(row['nb_episodes_seen'] || '0', 10);
+      let status: Status;
+      if (followed && seen > 0)   status = 'watching';
+      else if (followed)          status = 'want';
+      else if (!followed && seen > 0) status = 'watched';
+      else continue; // never followed, never seen — skip
+      results.push({ name, status, mediaType: 'tv' });
+    }
+  }
 
-  // Helper: extract name from various field names
-  const extractName = (obj: Record<string, unknown>): string =>
-    (obj.name || obj.show_name || obj.title || obj.series_name || obj.Name || obj.Title || '') as string;
-
-  // Helper: extract year
-  const extractYear = (obj: Record<string, unknown>): string | undefined => {
-    const yr = obj.year || obj.first_air_date || obj.release_date || obj.Year;
-    if (!yr) return undefined;
-    return String(yr).slice(0, 4);
-  };
-
-  const processItem = (item: unknown, defaultType: 'tv' | 'movie' = 'tv') => {
-    if (!item || typeof item !== 'object') return;
-    const obj = item as Record<string, unknown>;
-    const name = extractName(obj);
-    if (!name) return;
-    results.push({
-      name,
-      year: extractYear(obj),
-      status: mapStatus(obj.status as string || obj.watch_status as string),
-      mediaType: (obj.type === 'movie' || obj.media_type === 'movie') ? 'movie' : defaultType,
-      rating: obj.rating ? Number(obj.rating) : undefined,
-    });
-  };
-
-  if (Array.isArray(raw)) {
-    // Format: top-level array
-    raw.forEach((item) => processItem(item));
-  } else if (raw && typeof raw === 'object') {
-    const obj = raw as Record<string, unknown>;
-
-    // Format: { tv_shows: [...], movies: [...] }
-    if (Array.isArray(obj.tv_shows)) obj.tv_shows.forEach((i) => processItem(i, 'tv'));
-    if (Array.isArray(obj.movies))   obj.movies.forEach((i)   => processItem(i, 'movie'));
-
-    // Format: { shows: [...], movies: [...] }
-    if (Array.isArray(obj.shows))    obj.shows.forEach((i)    => processItem(i, 'tv'));
-
-    // Format: { data: { ... } }
-    if (obj.data)                    return parseTVTimeFile(obj.data);
-
-    // Format: { followed: [...], watched: [...] }
-    if (Array.isArray(obj.followed)) obj.followed.forEach((i) => processItem(i, 'tv'));
-    if (Array.isArray(obj.watched))  obj.watched.forEach((i)  => processItem(i, 'tv'));
+  // ── Movies from tracking-prod-records.csv ────────────────
+  // key columns: movie_name, watch_count, entity_type
+  const trackFile = Object.values(zip.files).find((f) =>
+    f.name.toLowerCase().includes('tracking-prod-records') && !f.dir
+  );
+  if (trackFile) {
+    const text = await trackFile.async('string');
+    const rows = parseCSV(text);
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const name = (row['movie_name'] || '').trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const watchCount = parseInt(row['watch_count'] || '0', 10);
+      const status: Status = watchCount > 0 ? 'watched' : 'want';
+      results.push({ name, status, mediaType: 'movie' });
+    }
   }
 
   return results;
@@ -103,20 +129,15 @@ function parseTVTimeFile(raw: unknown): ParsedTitle[] {
 ───────────────────────────────────────────────────────────── */
 async function searchTMDB(title: ParsedTitle): Promise<ImportResult> {
   try {
-    const q = encodeURIComponent(title.name);
+    const q    = encodeURIComponent(title.name);
     const type = title.mediaType === 'movie' ? 'movie' : 'tv';
-    const yr = title.year ? `&year=${title.year}` : '';
-    const res = await fetch(`/api/tmdb?endpoint=/search/${type}&query=${q}${yr}`);
+    const res  = await fetch(`/api/tmdb?endpoint=/search/${type}&query=${q}`);
     const data = await res.json();
     const hit  = data?.results?.[0];
     if (!hit) throw new Error('not found');
     return {
-      name: title.name,
-      status: title.status,
-      mediaType: title.mediaType,
-      tmdbId: hit.id,
-      tmdbTitle: hit.title || hit.name,
-      poster: hit.poster_path,
+      name: title.name, status: title.status, mediaType: title.mediaType,
+      tmdbId: hit.id, tmdbTitle: hit.title || hit.name, poster: hit.poster_path,
       matched: true,
     };
   } catch {
@@ -151,32 +172,34 @@ function ProgressRing({ pct }: { pct: number }) {
    Main page
 ───────────────────────────────────────────────────────────── */
 export default function ImportPage() {
-  const router  = useRouter();
+  const router   = useRouter();
   const { user } = useAuth();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef  = useRef<HTMLInputElement>(null);
 
   const [step,     setStep]     = useState<Step>('upload');
   const [parsed,   setParsed]   = useState<ParsedTitle[]>([]);
   const [results,  setResults]  = useState<ImportResult[]>([]);
-  const [progress, setProgress] = useState(0);    // 0–100
-  const [current,  setCurrent]  = useState('');   // current title being fetched
+  const [progress, setProgress] = useState(0);
+  const [current,  setCurrent]  = useState('');
   const [fileErr,  setFileErr]  = useState('');
 
   /* ── File upload handler ── */
   const handleFile = async (file: File) => {
     setFileErr('');
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      setFileErr('Selecione o arquivo .zip exportado pelo TV Time.');
+      return;
+    }
     try {
-      const text  = await file.text();
-      const json  = JSON.parse(text);
-      const items = parseTVTimeFile(json);
+      const items = await parseTVTimeZip(file);
       if (items.length === 0) {
-        setFileErr('Não encontramos títulos no arquivo. Verifique se é o export correto do TV Time.');
+        setFileErr('Não encontramos títulos no arquivo. Verifique se é o export correto do TV Time (GDPR).');
         return;
       }
       setParsed(items);
       setStep('preview');
     } catch {
-      setFileErr('Arquivo inválido. O export do TV Time deve ser um arquivo .json');
+      setFileErr('Erro ao ler o arquivo. Verifique se é um .zip válido do TV Time.');
     }
   };
 
@@ -196,7 +219,7 @@ export default function ImportPage() {
     setStep('importing');
     setProgress(0);
     const out: ImportResult[] = [];
-    const BATCH = 3; // parallel requests per batch
+    const BATCH = 3;
 
     for (let i = 0; i < parsed.length; i += BATCH) {
       const batch = parsed.slice(i, i + BATCH);
@@ -204,25 +227,17 @@ export default function ImportPage() {
       const batchResults = await Promise.all(batch.map(searchTMDB));
       out.push(...batchResults);
 
-      // Save matched items to localStorage + Firestore
       for (const r of batchResults) {
         if (!r.matched || !r.tmdbId) continue;
-        const listType = r.status === 'watching' ? 'watching' : r.status === 'want' ? 'want' : 'watched';
-        const item = {
-          id: r.tmdbId,
-          title: r.tmdbTitle || r.name,
-          type: r.mediaType,
-          poster_path: r.poster ?? null,
-        };
+        const listType = r.status;
+        const item = { id: r.tmdbId, title: r.tmdbTitle || r.name, type: r.mediaType, poster_path: r.poster ?? null };
         listStore.add(listType, item);
         if (firebaseConfigured && user) {
           try { await dbListStore.add(getDB(), user.uid, listType, item); } catch {}
         }
       }
 
-      const pct = Math.round(((i + BATCH) / parsed.length) * 100);
-      setProgress(Math.min(pct, 100));
-      // Small delay so UI breathes between batches
+      setProgress(Math.min(Math.round(((i + BATCH) / parsed.length) * 100), 100));
       await new Promise((res) => setTimeout(res, 80));
     }
 
@@ -240,7 +255,6 @@ export default function ImportPage() {
         <HeaderBar title="Importar do TV Time" onBack={() => router.back()} />
         <ScrollArea style={{ padding: '0 16px 32px' }}>
 
-          {/* Hero */}
           <div style={{ textAlign: 'center', padding: '32px 16px 24px' }}>
             <div style={{ width: 72, height: 72, borderRadius: 22, background: 'linear-gradient(135deg,#e84393,#ff6d3a)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Icon name="tv" size={34} color="#fff" />
@@ -259,8 +273,8 @@ export default function ImportPage() {
             {[
               { n: '1', text: 'Acesse tvtime.com no navegador e entre na sua conta' },
               { n: '2', text: 'Vá em Configurações → Conta → Privacidade dos dados' },
-              { n: '3', text: 'Clique em "Exportar meus dados" e aguarde o e-mail' },
-              { n: '4', text: 'Abra o e-mail, baixe o arquivo .json e faça upload abaixo' },
+              { n: '3', text: 'Clique em "Exportar meus dados (GDPR)" e aguarde o e-mail' },
+              { n: '4', text: 'Abra o e-mail, baixe o arquivo .zip e faça upload abaixo' },
             ].map(({ n, text }, i, arr) => (
               <div key={n} style={{ padding: '13px 16px', display: 'flex', alignItems: 'flex-start', gap: 12, borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
                 <div style={{ width: 24, height: 24, borderRadius: 12, background: T.pink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
@@ -287,13 +301,12 @@ export default function ImportPage() {
             <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(192,105,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="plus" size={24} color={T.pink} />
             </div>
-            <Txt size={14} weight={700} color={T.t1}>Selecionar arquivo .json</Txt>
+            <Txt size={14} weight={700} color={T.t1}>Selecionar arquivo .zip</Txt>
             <Txt size={12} color={T.t3}>ou arraste e solte aqui</Txt>
             {fileErr && <Txt size={12} color={T.red} style={{ display: 'block', textAlign: 'center', marginTop: 4 }}>{fileErr}</Txt>}
           </div>
-          <input ref={fileRef} type="file" accept=".json" onChange={onFilePick} style={{ display: 'none' }} />
+          <input ref={fileRef} type="file" accept=".zip" onChange={onFilePick} style={{ display: 'none' }} />
 
-          {/* Note */}
           <div style={{ display: 'flex', gap: 8, marginTop: 16, padding: '12px 14px', background: 'rgba(245,197,24,0.07)', borderRadius: 12, border: '1px solid rgba(245,197,24,0.18)' }}>
             <Icon name="info" size={16} color={T.gold} style={{ flexShrink: 0, marginTop: 1 }} />
             <Txt size={12} color={T.t2} style={{ lineHeight: 1.5 }}>
@@ -329,7 +342,6 @@ export default function ImportPage() {
               <Txt size={13} color={T.t3}>Confirme antes de importar</Txt>
             </div>
 
-            {/* Breakdown */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
               {[
                 { value: watchedC,  label: 'Assistidos',  color: T.pink },
@@ -348,7 +360,6 @@ export default function ImportPage() {
               ))}
             </div>
 
-            {/* Title list preview (first 20) */}
             <div style={{ background: T.card, borderRadius: 18, border: `1px solid ${T.border}`, marginBottom: 20, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}` }}>
                 <Txt size={12} weight={800} color={T.t2} style={{ textTransform: 'uppercase', letterSpacing: 1 }}>Títulos detectados</Txt>
@@ -369,7 +380,6 @@ export default function ImportPage() {
               </div>
             </div>
 
-            {/* Warning about duplicates */}
             <div style={{ display: 'flex', gap: 8, padding: '12px 14px', background: 'rgba(96,165,250,0.07)', borderRadius: 12, border: '1px solid rgba(96,165,250,0.2)', marginBottom: 24 }}>
               <Icon name="info" size={16} color="#60a5fa" style={{ flexShrink: 0, marginTop: 1 }} />
               <Txt size={12} color={T.t2} style={{ lineHeight: 1.5 }}>
@@ -421,14 +431,11 @@ export default function ImportPage() {
         <HeaderBar title="Importação concluída" onBack={() => router.push('/settings')} />
         <ScrollArea style={{ padding: '0 16px 32px' }}>
 
-          {/* Hero */}
           <div style={{ textAlign: 'center', padding: '32px 16px 28px' }}>
             <div style={{ width: 72, height: 72, borderRadius: 36, background: 'rgba(52,199,89,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Icon name="check" size={32} color="#34c759" />
             </div>
             <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', marginBottom: 8 }}>Pronto!</Txt>
-
-            {/* Big number */}
             <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginTop: 8 }}>
               <div style={{ textAlign: 'center' }}>
                 <Txt size={36} weight={900} color="#34c759" style={{ display: 'block', lineHeight: 1 }}>{matched.length}</Txt>
@@ -443,7 +450,6 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {/* Matched summary */}
           {matched.length > 0 && (
             <div style={{ background: T.card, borderRadius: 18, border: `1px solid ${T.border}`, marginBottom: 16, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -463,9 +469,7 @@ export default function ImportPage() {
                       <Txt size={13} weight={600} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {r.tmdbTitle || r.name}
                       </Txt>
-                      <Txt size={11} color={T.t3}>
-                        {r.mediaType === 'movie' ? 'Filme' : 'Série'}
-                      </Txt>
+                      <Txt size={11} color={T.t3}>{r.mediaType === 'movie' ? 'Filme' : 'Série'}</Txt>
                     </div>
                     <StatusPill status={r.status} />
                   </div>
@@ -474,7 +478,6 @@ export default function ImportPage() {
             </div>
           )}
 
-          {/* Unmatched list */}
           {unmatched.length > 0 && (
             <div style={{ background: T.card, borderRadius: 18, border: `1px solid rgba(245,197,24,0.2)`, marginBottom: 20, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
