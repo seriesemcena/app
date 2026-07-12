@@ -4,7 +4,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, Btn, MetaChip, Toast, BottomSheet, Stars } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
-import { TMDBBackdrop, TMDBPersonPhoto, TMDBPosterCard } from '@/components/posters';
+import { TMDBBackdrop, TMDBPersonPhoto, TMDBPosterCard, ImgWithSkeleton } from '@/components/posters';
 import { StreamCircle } from '@/components/primitives';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB } from '@/lib/tmdb';
@@ -234,10 +234,13 @@ export default function TitleDetailPage() {
 
           {/* ── Backdrop hero com título e botões sobrepostos ── */}
           <div style={{ height: 400, position: 'relative', overflow: 'hidden' }}>
-            {detail.backdrop_path
-              ? <img src={`https://image.tmdb.org/t/p/w780${detail.backdrop_path}`} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%', display: 'block' }} />
-              : <div style={{ width: '100%', height: '100%', background: T.surface2 }} />
-            }
+            <ImgWithSkeleton
+              src={detail.backdrop_path ? `https://image.tmdb.org/t/p/w780${detail.backdrop_path}` : null}
+              alt={title}
+              width="100%" height={400}
+              objectPosition="center 20%"
+              style={{ position: 'absolute', inset: 0 }}
+            />
             {/* Gradiente escuro de baixo */}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.3) 50%, transparent 80%)', pointerEvents: 'none' }} />
             {/* Fade para cor do fundo */}
@@ -917,12 +920,12 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: 
             boxSizing: 'border-box',
           } as React.CSSProperties}>
           {/* Thumbnail — landscape */}
-          <div style={{ width: 120, height: 80, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
-            {ep.still_path
-              ? <img src={`https://image.tmdb.org/t/p/w300${ep.still_path}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="play" size={22} color={T.t4} /></div>
-            }
-          </div>
+          <ImgWithSkeleton
+            src={ep.still_path ? `https://image.tmdb.org/t/p/w300${ep.still_path}` : null}
+            alt=""
+            width={120} height={80}
+            radius={10}
+          />
           {/* Info */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <Txt size={14} weight={700} color={T.t1}

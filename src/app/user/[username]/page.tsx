@@ -5,6 +5,7 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
+import { ImgWithSkeleton } from '@/components/posters';
 import { listStore, revStore, profileStore, prefsStore, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
@@ -171,9 +172,11 @@ function UserProfileInner() {
                 if (slot.right !== undefined) posStyle.right = slot.right;
                 return (
                   <div key={item.id} style={posStyle}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`https://image.tmdb.org/t/p/w185${item.poster_path}`} alt=""
-                      style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }} />
+                    <ImgWithSkeleton
+                      src={`https://image.tmdb.org/t/p/w185${item.poster_path}`}
+                      alt="" width="100%" height="auto"
+                      style={{ display: 'block', aspectRatio: '2/3' }}
+                    />
                   </div>
                 );
               })}
@@ -362,15 +365,11 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
         <div style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', paddingLeft: 16, paddingRight: 16, paddingBottom: 16 } as React.CSSProperties}>
           {items.slice(0, 10).map(x => (
             <div key={x.id} onClick={() => onItem(x)} style={{ flexShrink: 0, cursor: 'pointer' }}>
-              {x.poster_path ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`https://image.tmdb.org/t/p/w185${x.poster_path}`} alt={x.title}
-                  style={{ width: 84, height: 126, borderRadius: 10, objectFit: 'cover', display: 'block', border: '1px solid rgba(255,255,255,0.08)' }} />
-              ) : (
-                <div style={{ width: 84, height: 126, borderRadius: 10, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="film" size={22} color={T.t4} />
-                </div>
-              )}
+              <ImgWithSkeleton
+                src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
+                alt={x.title} width={84} height={126} radius={10}
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              />
             </div>
           ))}
         </div>
@@ -398,15 +397,11 @@ function ListSection({ label, icon, items, onItem, last }: {
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingLeft: 16, paddingRight: 16, paddingBottom: last ? 16 : 12 } as React.CSSProperties}>
           {items.slice(0, 10).map(x => (
             <div key={x.id} onClick={() => onItem(x)} style={{ flexShrink: 0, cursor: 'pointer' }}>
-              {x.poster_path ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`https://image.tmdb.org/t/p/w185${x.poster_path}`} alt={x.title}
-                  style={{ width: 60, height: 90, borderRadius: 8, objectFit: 'cover', display: 'block', border: '1px solid rgba(255,255,255,0.08)' }} />
-              ) : (
-                <div style={{ width: 60, height: 90, borderRadius: 8, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="film" size={16} color={T.t4} />
-                </div>
-              )}
+              <ImgWithSkeleton
+                src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
+                alt={x.title} width={60} height={90} radius={8}
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              />
             </div>
           ))}
         </div>

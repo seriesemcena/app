@@ -1,5 +1,5 @@
 'use client';
-import { CSSProperties, ReactNode, useState, useEffect } from 'react';
+import React, { CSSProperties, ReactNode, useState, useEffect } from 'react';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { Txt, Skeleton } from './primitives';
@@ -44,6 +44,36 @@ export const HeroPoster = ({ title = '', width, height }: { title?: string; widt
       <div style={{ position: 'absolute', bottom: 0, left: '40%', width: '40%', height: '95%', background: 'linear-gradient(to top,rgba(0,0,0,0.25),transparent)', borderRadius: '50% 50% 0 0 / 30% 30% 0 0', opacity: 0.7 }} />
       <div style={{ position: 'absolute', bottom: 0, right: '8%', width: '28%', height: '75%', background: 'linear-gradient(to top,rgba(0,0,0,0.2),transparent)', borderRadius: '50% 50% 0 0 / 30% 30% 0 0', opacity: 0.5 }} />
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55%', background: `linear-gradient(to bottom, transparent, ${T.bg})` }} />
+    </div>
+  );
+};
+
+export const ImgWithSkeleton = ({
+  src, alt = '', width, height, radius = 0, objectPosition = 'center',
+  style,
+}: {
+  src: string | null | undefined;
+  alt?: string;
+  width: number | string;
+  height: number | string;
+  radius?: number;
+  objectPosition?: string;
+  style?: React.CSSProperties;
+}) => {
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr]       = useState(false);
+
+  if (!src || err) {
+    return <div className="img-skeleton" style={{ width, height, borderRadius: radius, flexShrink: 0, ...style }} />;
+  }
+  return (
+    <div style={{ width, height, borderRadius: radius, overflow: 'hidden', position: 'relative', flexShrink: 0, ...style }}>
+      {!loaded && <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />}
+      <img
+        src={src} alt={alt}
+        onLoad={() => setLoaded(true)} onError={() => { setErr(true); }}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition, display: 'block', opacity: loaded ? 1 : 0, transition: 'opacity 0.35s' }}
+      />
     </div>
   );
 };
@@ -223,6 +253,10 @@ export const TMDBGridCard = ({
     >
       {/* ── Imagem com aspecto fixo + gradiente que dissolve no fundo ── */}
       <div style={{ position: 'relative', aspectRatio: '5 / 6.6', overflow: 'hidden', flexShrink: 0 }}>
+        {/* Skeleton shimmer enquanto a imagem não carregou */}
+        {(!fetchDone || (src && !imgLoaded && !imgErr)) && (
+          <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />
+        )}
         {src && !imgErr && (
           <img
             key={src}
