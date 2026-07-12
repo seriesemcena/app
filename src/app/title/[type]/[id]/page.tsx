@@ -8,7 +8,7 @@ import { TMDBBackdrop, TMDBPersonPhoto, TMDBPosterCard } from '@/components/post
 import { StreamCircle } from '@/components/primitives';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB } from '@/lib/tmdb';
-import { listStore, revStore, profileStore, type Review } from '@/lib/store';
+import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore, dbListStore, dbActivityStore } from '@/lib/db';
@@ -882,6 +882,14 @@ function SeasonDropdown({ seasons, active, onSelect }: { seasons: number[]; acti
 function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: string; seasonNum: number; showName: string; network: string; onEpisode: (ep: any) => void }) {
   const { data, loading } = useTMDB(() => tmdb.season(tvId, seasonNum), [tvId, seasonNum]);
   const episodes = data?.episodes || [];
+  const [watchedMap, setWatchedMap] = useState<Record<string, number[]>>({});
+  useEffect(() => { setWatchedMap(epWatchedStore.getShow(tvId)); }, [tvId, seasonNum]);
+
+  const toggleWatched = (epNum: number) => {
+    epWatchedStore.markWatched(tvId, seasonNum, epNum);
+    setWatchedMap({ ...epWatchedStore.getShow(tvId) });
+  };
+  const isWatched = (epNum: number) => (watchedMap[String(seasonNum)] ?? []).includes(epNum);
 
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -929,6 +937,22 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: 
             <Txt size={12} color={T.t3} style={{ display: 'block' }}>
               Temporada {seasonNum} - Ep {ep.episode_number}
             </Txt>
+          </div>
+          {/* Check toggle — div because outer row is already a button */}
+          <div
+            onClick={(e) => { e.stopPropagation(); toggleWatched(ep.episode_number); }}
+            role="button"
+            aria-label="Marcar como assistido"
+            style={{
+              width: 32, height: 32, borderRadius: 16, flexShrink: 0,
+              border: isWatched(ep.episode_number) ? 'none' : `1.5px solid ${T.border}`,
+              background: isWatched(ep.episode_number) ? T.pink : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'background 0.2s, border-color 0.2s',
+            } as React.CSSProperties}
+          >
+            <Icon name="check" size={14} color={isWatched(ep.episode_number) ? '#fff' : T.t4} />
           </div>
           <Icon name="chevronR" size={14} color={T.t4} />
         </button>

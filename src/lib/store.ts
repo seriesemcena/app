@@ -77,6 +77,40 @@ export const revStore = {
   },
 };
 
+/* ─── Watched episodes store ────────────────────────────────
+   Format: { [tmdbTvId: string]: { [season: string]: number[] } }
+   Key: localStorage 'sec_ep_watched_v1'
+─────────────────────────────────────────────────────────── */
+const EP_KEY = 'sec_ep_watched_v1';
+
+export const epWatchedStore = {
+  getAll(): Record<string, Record<string, number[]>> {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(EP_KEY) || '{}'); } catch { return {}; }
+  },
+  getShow(tvId: string | number): Record<string, number[]> {
+    return epWatchedStore.getAll()[String(tvId)] ?? {};
+  },
+  isWatched(tvId: string | number, season: number, epNum: number): boolean {
+    const show = epWatchedStore.getShow(tvId);
+    return (show[String(season)] ?? []).includes(epNum);
+  },
+  markWatched(tvId: string | number, season: number, epNum: number) {
+    const all  = epWatchedStore.getAll();
+    const id   = String(tvId);
+    const s    = String(season);
+    if (!all[id])    all[id]    = {};
+    if (!all[id][s]) all[id][s] = [];
+    if (!all[id][s].includes(epNum)) all[id][s].push(epNum);
+    try { localStorage.setItem(EP_KEY, JSON.stringify(all)); } catch {}
+  },
+  setShow(tvId: string | number, data: Record<string, number[]>) {
+    const all = epWatchedStore.getAll();
+    all[String(tvId)] = data;
+    try { localStorage.setItem(EP_KEY, JSON.stringify(all)); } catch {}
+  },
+};
+
 /* ─── Profile store ─── */
 export type Profile = {
   name: string;

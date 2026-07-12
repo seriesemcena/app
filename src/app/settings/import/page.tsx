@@ -6,7 +6,7 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { listStore, revStore, profileStore, type Review } from '@/lib/store';
+import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbListStore, dbRevStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
@@ -40,6 +40,11 @@ interface ParsedReview {
   text: string;
   rating: number;
   date: string;
+}
+
+interface ParsedWatchedEps {
+  showName: string;
+  episodes: { season: number; ep: number }[];
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -84,11 +89,12 @@ function parseCSV(text: string): Record<string, string>[] {
 /* ─────────────────────────────────────────────────────────────
    TV Time ZIP → { titles, reviews }
 ───────────────────────────────────────────────────────────── */
-async function parseTVTimeZip(file: File): Promise<{ titles: ParsedTitle[]; reviews: ParsedReview[] }> {
+async function parseTVTimeZip(file: File): Promise<{ titles: ParsedTitle[]; reviews: ParsedReview[]; watchedEps: ParsedWatchedEps[] }> {
   const zip   = await JSZip.loadAsync(await file.arrayBuffer());
   const files = Object.values(zip.files);
-  const titles:  ParsedTitle[]  = [];
-  const reviews: ParsedReview[] = [];
+  const titles:     ParsedTitle[]      = [];
+  const reviews:    ParsedReview[]     = [];
+  const watchedEps: ParsedWatchedEps[] = [];
 
   // ── TV shows from user_tv_show_data.csv ──────────────────
   const showFile = files.find((f) => f.name.toLowerCase().includes('user_tv_show_data') && !f.dir);
@@ -181,7 +187,31 @@ async function parseTVTimeZip(file: File): Promise<{ titles: ParsedTitle[]; revi
     if (rev.text || rev.rating > 0) reviews.push(rev);
   }
 
-  return { titles, reviews };
+  // ── Watched episodes from tracking-prod-records-v2.csv ───
+  // watch-episode-* rows have series_name, season_number, episode_number
+  const v2File = files.find((f) => {
+    const n = f.name.toLowerCase();
+    return n.includes('tracking-prod-records-v2') && !f.dir;
+  });
+  if (v2File) {
+    const rows = parseCSV(await v2File.async('string'));
+    const byShow = new Map<string, { season: number; ep: number }[]>();
+    for (const row of rows) {
+      const key = (row['key'] || '').trim();
+      if (!key.startsWith('watch-episode-')) continue;
+      const show  = (row['series_name'] || '').trim();
+      const sNo   = parseInt(row['season_number'] || row['s_no'] || '0', 10);
+      const epNo  = parseInt(row['episode_number'] || row['ep_no'] || '0', 10);
+      if (!show || !sNo || !epNo) continue;
+      if (!byShow.has(show)) byShow.set(show, []);
+      byShow.get(show)!.push({ season: sNo, ep: epNo });
+    }
+    for (const [showName, episodes] of byShow) {
+      watchedEps.push({ showName, episodes });
+    }
+  }
+
+  return { titles, reviews, watchedEps };
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -257,14 +287,15 @@ export default function ImportPage() {
   const { user } = useAuth();
   const fileRef  = useRef<HTMLInputElement>(null);
 
-  const [step,           setStep]          = useState<Step>('upload');
-  const [parsed,         setParsed]        = useState<ParsedTitle[]>([]);
-  const [parsedReviews,  setParsedReviews] = useState<ParsedReview[]>([]);
-  const [results,        setResults]       = useState<ImportResult[]>([]);
-  const [progress,       setProgress]      = useState(0);
-  const [current,        setCurrent]       = useState('');
-  const [fileErr,        setFileErr]       = useState('');
-  const [importedReviews, setImportedReviews] = useState(0);
+  const [step,             setStep]            = useState<Step>('upload');
+  const [parsed,           setParsed]          = useState<ParsedTitle[]>([]);
+  const [parsedReviews,    setParsedReviews]   = useState<ParsedReview[]>([]);
+  const [parsedEps,        setParsedEps]       = useState<ParsedWatchedEps[]>([]);
+  const [results,          setResults]         = useState<ImportResult[]>([]);
+  const [progress,         setProgress]        = useState(0);
+  const [current,          setCurrent]         = useState('');
+  const [fileErr,          setFileErr]         = useState('');
+  const [importedReviews,  setImportedReviews] = useState(0);
 
   /* ── File upload handler ── */
   const handleFile = async (file: File) => {
@@ -274,13 +305,14 @@ export default function ImportPage() {
       return;
     }
     try {
-      const { titles, reviews } = await parseTVTimeZip(file);
+      const { titles, reviews, watchedEps } = await parseTVTimeZip(file);
       if (titles.length === 0) {
         setFileErr('Não encontramos títulos no arquivo. Verifique se é o export correto do TV Time (GDPR).');
         return;
       }
       setParsed(titles);
       setParsedReviews(reviews);
+      setParsedEps(watchedEps);
       setStep('preview');
     } catch {
       setFileErr('Erro ao ler o arquivo. Verifique se é um .zip válido do TV Time.');
@@ -325,14 +357,36 @@ export default function ImportPage() {
       await new Promise((res) => setTimeout(res, 80));
     }
 
+    // ── Helper: resolve TMDB id by show name ─────────────────
+    // Looks in current import results first, then falls back to
+    // the user's existing lists (handles re-imports & partial matches).
+    const resolveTmdbId = (showName: string, mediaType: 'tv' | 'movie'): { tmdbId: number; mediaType: 'tv' | 'movie' } | null => {
+      const nameLower = showName.toLowerCase().trim();
+      const fromOut = out.find(
+        (r) => r.matched && r.tmdbId &&
+        r.name.toLowerCase().trim() === nameLower &&
+        r.mediaType === mediaType
+      );
+      if (fromOut?.tmdbId) return { tmdbId: fromOut.tmdbId, mediaType };
+
+      // Fallback: search existing lists
+      for (const listType of ['watched', 'watching', 'want', 'favorites'] as const) {
+        const item = listStore.get(listType).find(
+          (i) => i.title.toLowerCase().trim() === nameLower && i.type === mediaType
+        );
+        if (item) return { tmdbId: item.id, mediaType };
+      }
+      return null;
+    };
+
     // ── Save reviews ──────────────────────────────────────────
     let savedReviews = 0;
     if (parsedReviews.length > 0) {
       const profile = profileStore.get();
       for (const pr of parsedReviews) {
-        const matched = out.find((r) => r.name === pr.showName && r.matched && r.tmdbId);
-        if (!matched || !matched.tmdbId) continue;
-        const titleKey = `${matched.mediaType === 'movie' ? 'movie' : 'tv'}_${matched.tmdbId}`;
+        const resolved = resolveTmdbId(pr.showName, pr.mediaType);
+        if (!resolved) continue;
+        const titleKey = `${resolved.mediaType === 'movie' ? 'movie' : 'tv'}_${resolved.tmdbId}`;
         const review: Review = {
           id: `tvtime_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           user: profile.username || profile.name || 'eu',
@@ -352,6 +406,19 @@ export default function ImportPage() {
       }
     }
     setImportedReviews(savedReviews);
+
+    // ── Save watched episodes ─────────────────────────────────
+    for (const pe of parsedEps) {
+      const resolved = resolveTmdbId(pe.showName, 'tv');
+      if (!resolved) continue;
+      const bySeasonMap: Record<string, number[]> = {};
+      for (const { season, ep } of pe.episodes) {
+        const s = String(season);
+        if (!bySeasonMap[s]) bySeasonMap[s] = [];
+        if (!bySeasonMap[s].includes(ep)) bySeasonMap[s].push(ep);
+      }
+      epWatchedStore.setShow(resolved.tmdbId, bySeasonMap);
+    }
 
     setResults(out);
     setStep('done');
