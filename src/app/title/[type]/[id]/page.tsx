@@ -28,6 +28,8 @@ export default function TitleDetailPage() {
   // Status icon: determina qual ícone mostrar no canto do hero
   type StatusKey = 'atrasado' | 'watching' | 'favorites' | 'want' | null;
   const [statusKey, setStatusKey] = useState<StatusKey>(null);
+  type ListStatus = 'want' | 'watching' | 'watched' | null;
+  const [listStatus, setListStatus] = useState<ListStatus>(null);
   const [toast, setToast] = useState<string | false>(false);
   const [listSheet, setListSheet] = useState(false);
   const [maisSheet, setMaisSheet] = useState(false);
@@ -67,7 +69,14 @@ export default function TitleDetailPage() {
     const isWatching = listStore.get('watching').some((i) => i.id === iid);
     const isFavorite = listStore.get('favorites').some((i) => i.id === iid);
     const isWant     = listStore.get('want').some((i) => i.id === iid);
+    const isWatched  = listStore.get('watched').some((i) => i.id === iid);
     setIsFav(isFavorite);
+    // listStatus button
+    if (isWatched)       setListStatus('watched');
+    else if (isWatching) setListStatus('watching');
+    else if (isWant)     setListStatus('want');
+    else                 setListStatus(null);
+    // statusKey badge
     if (isWatching) {
       const lastAir = (detail as any).last_episode_to_air?.air_date;
       if (lastAir) {
@@ -251,17 +260,34 @@ export default function TitleDetailPage() {
               <h1 style={{ margin: '0 0 14px', fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.05, letterSpacing: -1, fontFamily: "'Greed','Area',sans-serif", textShadow: '0 2px 20px rgba(0,0,0,0.6)', whiteSpace: 'pre-line' }}>
                 {title.includes(': ') ? title.replace(': ', ':\n') : title}
               </h1>
+              {(() => {
+                const LIST_META: Record<NonNullable<ListStatus>, { label: string; icon: import('@/lib/tokens').IconName; accent: string; bg: string; border: string }> = {
+                  want:     { label: 'Quero assistir', icon: 'bookmark', accent: '#C069FF', bg: 'rgba(192,105,255,0.22)', border: 'rgba(192,105,255,0.45)' },
+                  watching: { label: 'Maratonando',    icon: 'eye',      accent: '#FF8C00', bg: 'rgba(255,140,0,0.22)',   border: 'rgba(255,140,0,0.45)'   },
+                  watched:  { label: 'Finalizado',     icon: 'check',    accent: '#34D399', bg: 'rgba(52,211,153,0.22)',  border: 'rgba(52,211,153,0.45)'  },
+                };
+                const meta = listStatus ? LIST_META[listStatus] : null;
+                return (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button onClick={() => setListSheet(true)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 24, background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(255,255,255,0.5)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,1)' } as React.CSSProperties}>
-                  <Icon name="plus" size={14} color="#0a0a0a" />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0a0a0a', fontFamily: "'Area','Inter',sans-serif" }}>Adicionar à lista</span>
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 24, cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', transition: 'background 0.25s, border 0.25s',
+                    background: meta ? meta.bg : 'rgba(255,255,255,0.88)',
+                    border: `1px solid ${meta ? meta.border : 'rgba(255,255,255,0.5)'}`,
+                    boxShadow: meta ? `0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 ${meta.border}` : '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,1)',
+                  } as React.CSSProperties}>
+                  <Icon name={meta ? meta.icon : 'plus'} size={14} color={meta ? meta.accent : '#0a0a0a'} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: meta ? meta.accent : '#0a0a0a', fontFamily: "'Area','Inter',sans-serif" }}>
+                    {meta ? meta.label : 'Adicionar à lista'}
+                  </span>
+                  {meta && <Icon name="chevronD" size={11} color={meta.accent} />}
                 </button>
                 <button onClick={() => setMaisSheet(true)}
                   style={{ width: 42, height: 42, borderRadius: 21, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.25)', flexShrink: 0 } as React.CSSProperties}>
                   <Icon name="share" size={17} color="#fff" />
                 </button>
               </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -475,52 +501,56 @@ export default function TitleDetailPage() {
         </div>
 
         <Toast msg={toast} visible={!!toast} />
-        <BottomSheet visible={listSheet} onClose={() => setListSheet(false)} title="Adicionar à lista">
+        <BottomSheet visible={listSheet} onClose={() => setListSheet(false)} title={listStatus ? 'Minha lista' : 'Adicionar à lista'}>
           {([
-            { key: 'want',     label: 'Quero assistir',  action: 'want'     as const },
-            { key: 'watching', label: 'Maratonando',      action: 'watching' as const },
-            { key: 'watched',  label: 'Finalizado',       action: 'watched'  as const },
-          ] as const).map(({ key, label, action }) => (
+            { key: 'want',     label: 'Quero assistir', icon: 'bookmark' as const, action: 'want'     as const },
+            { key: 'watching', label: 'Maratonando',     icon: 'eye'      as const, action: 'watching' as const },
+            { key: 'watched',  label: 'Finalizado',      icon: 'check'    as const, action: 'watched'  as const },
+          ] as const).map(({ key, label, icon, action }) => {
+            const isActive = listStatus === key;
+            return (
             <button key={key} onClick={async () => {
               const item = { id: detail.id, title, type: isTV ? 'tv' : 'movie', poster_path: detail.poster_path };
-
-              // Remove from other lists first (avoid duplicates across lists)
               const others = (['want', 'watching', 'watched'] as const).filter((l) => l !== key);
               others.forEach((l) => listStore.remove(l, detail.id));
-
               listStore.add(key, item);
+              setListStatus(key);
               setListSheet(false);
-              showToast(`Adicionado: ${label}`);
-
+              showToast(`${label} ✓`);
               if (firebaseConfigured && user) {
                 const db = getDB();
                 try {
-                  // Mirror remove + add to Firestore
                   await Promise.all(others.map((l) => dbListStore.remove(db, user.uid, l, detail.id)));
                   await dbListStore.add(db, user.uid, key, item);
-
-                  // Write activity for the global feed
                   const displayName  = user.displayName || user.email?.split('@')[0] || 'Usuário';
                   const profile      = profileStore.get();
                   await dbActivityStore.add(db, {
-                    uid:       user.uid,
-                    username:  displayName,
-                    avatar:    displayName[0]?.toUpperCase() || 'U',
-                    photoUrl:  user.photoURL || profile.avatarImage || '',
-                    titleKey:  `${isTV ? 'tv' : 'movie'}_${detail.id}`,
-                    titleName: title,
-                    poster:    detail.poster_path ?? null,
-                    action,
-                    rating:    0,
-                    text:      '',
+                    uid: user.uid, username: displayName, avatar: displayName[0]?.toUpperCase() || 'U',
+                    photoUrl: user.photoURL || profile.avatarImage || '',
+                    titleKey: `${isTV ? 'tv' : 'movie'}_${detail.id}`, titleName: title,
+                    poster: detail.poster_path ?? null, action, rating: 0, text: '',
                     createdAt: new Date().toISOString(),
                   });
                 } catch {}
               }
-            }} style={{ width: '100%', padding: '14px 0', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Icon name="plus" size={16} color={T.pink} />{label}
+            }} style={{ width: '100%', padding: '14px 0', background: isActive ? 'rgba(192,105,255,0.08)' : 'none', border: 'none', borderBottom: `1px solid ${T.border}`, borderRadius: isActive ? 10 : 0, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 4, paddingRight: 4 }}>
+              <Icon name={icon} size={17} color={isActive ? T.pink : T.t3} />
+              <span style={{ flex: 1, color: isActive ? T.pink : T.t1, fontSize: 14, fontWeight: isActive ? 700 : 600, fontFamily: "'Area','Inter',sans-serif" }}>{label}</span>
+              {isActive && <Icon name="check" size={16} color={T.pink} />}
             </button>
-          ))}
+            );
+          })}
+          {listStatus && (
+            <button onClick={() => {
+              (['want', 'watching', 'watched'] as const).forEach((l) => listStore.remove(l, detail.id));
+              setListStatus(null);
+              setListSheet(false);
+              showToast('Removido da lista');
+            }} style={{ width: '100%', padding: '14px 0', background: 'none', border: 'none', marginTop: 4, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Icon name="close" size={17} color={T.t3} />
+              <span style={{ color: T.t3, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif" }}>Remover da lista</span>
+            </button>
+          )}
         </BottomSheet>
 
         <BottomSheet visible={maisSheet} onClose={() => setMaisSheet(false)} title="Mais opções">
