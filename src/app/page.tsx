@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen } from '@/components/primitives';
+import { Screen, Logo } from '@/components/primitives';
 import { useAuthContext } from '@/context/AuthContext';
 
 export default function SplashPage() {
@@ -35,7 +35,7 @@ export default function SplashPage() {
         {/* App name */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Maratonou" style={{ height: 30, width: 'auto', display: 'block' }} />
+          <Logo height={30} />
           <div style={{
             fontSize: 13, color: 'rgba(255,255,255,0.38)',
             fontFamily: "'Area','Inter',sans-serif",

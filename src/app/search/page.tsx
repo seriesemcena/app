@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt } from '@/components/primitives';
+import { Screen, Txt, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { TMDBPosterCard } from '@/components/posters';
 import { T } from '@/lib/tokens';
@@ -73,7 +73,7 @@ export default function SearchPage() {
           {/* ── Header — igual home ── */}
           <div style={{ padding: '24px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Maratonou" style={{ height: 22, width: 'auto', display: 'block' }} />
+            <Logo height={22} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
                 onClick={() => router.push('/notifications')}

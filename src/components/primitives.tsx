@@ -17,6 +17,13 @@ export const Txt = ({
   <span style={{ fontSize: size, fontWeight: weight, color: color || T.t1, lineHeight: lineH || 1.4, fontFamily: fontFor(size), ...style }} {...rest}>{children}</span>
 );
 
+export const Logo = ({ height = 22, style = {} }: { height?: number; style?: CSSProperties }) => (
+  <>
+    <img src="/logo_dark.png"  alt="Maratonou" className="logo-dark"  style={{ height, width: 'auto', display: 'block', ...style }} />
+    <img src="/logo_light.png" alt="Maratonou" className="logo-light" style={{ height, width: 'auto', display: 'none',  ...style }} />
+  </>
+);
+
 export const Screen = ({ children, style = {} }: { children: ReactNode; style?: CSSProperties }) => (
   <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: T.bg, fontFamily: "'Area',sans-serif", overflow: 'hidden', position: 'relative', ...style }}>{children}</div>
 );
@@ -82,7 +89,7 @@ export const GlassHeader = ({
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {children ?? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src="/logo.png" alt="Maratonou" style={{ height: 22, width: 'auto', display: 'block' }} />
+          <Logo height={22} />
         )}
       </div>
 

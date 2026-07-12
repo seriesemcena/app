@@ -190,6 +190,12 @@ h3, h4, h5, h6, p {
 }
 .screen-anim { animation: slideIn 0.26s cubic-bezier(0.32,0.72,0,1) both; }
 
+/* ── Logo theme switching ── */
+.logo-dark  { display: block; }
+.logo-light { display: none;  }
+[data-theme="light"] .logo-dark  { display: none;  }
+[data-theme="light"] .logo-light { display: block; }
+
 @keyframes img-shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }

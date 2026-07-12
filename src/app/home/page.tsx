@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, Btn } from '@/components/primitives';
+import { Screen, Txt, Btn, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { TMDBBackdrop, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
@@ -277,7 +277,7 @@ export default function HomePage() {
                 {/* Header — centralizado, sobreposto */}
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, padding: '20px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/logo.png" alt="Maratonou" style={{ height: 20, width: 'auto', display: 'block' }} />
+                  <Logo height={20} />
                   <div style={{ position: 'absolute', right: 16, display: 'flex', gap: 8 }}>
                     <button onClick={() => router.push('/search')}
                       style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
@@ -319,7 +319,7 @@ export default function HomePage() {
             <div style={{ position: 'relative', padding: '20px 16px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.png" alt="Maratonou" style={{ height: 20, width: 'auto', display: 'block' }} />
+                <Logo height={20} />
                 <div style={{ position: 'absolute', right: 0, display: 'flex', gap: 8 }}>
                   <button onClick={() => router.push('/search')}
                     style={{ width: 34, height: 34, borderRadius: 17, background: 'var(--c-glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--c-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' } as React.CSSProperties}>

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea } from '@/components/primitives';
+import { Screen, ScrollArea, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -140,7 +140,7 @@ export default function AuthPage() {
           </div>
 
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Maratonou" style={{ height: 26, width: 'auto', display: 'block', marginBottom: 4 }} />
+          <Logo height={26} style={{ marginBottom: 4 }} />
           <div style={{ fontSize: 13, color: DK.t3, fontFamily: "'Area','Inter',sans-serif" }}>
             {mode === 'login' ? 'Bem-vindo de volta 👋' : 'Crie sua conta gratuitamente'}
           </div>

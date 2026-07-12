@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen } from '@/components/primitives';
+import { Screen, Logo } from '@/components/primitives';
 import { tmdb, tmdbImg, useTMDB, type TMDBItem } from '@/lib/tmdb';
 
 function PosterCol({ items, animClass }: { items: TMDBItem[]; animClass: string }) {
@@ -86,7 +86,7 @@ export default function WelcomePage() {
         }}>
           {/* App name */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Maratonou" style={{ height: 34, width: 'auto', display: 'block', marginBottom: 14 }} />
+          <Logo height={34} style={{ marginBottom: 14 }} />
 
           {/* Tagline */}
           <div style={{
