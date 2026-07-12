@@ -87,12 +87,7 @@ export default function ListsPage() {
               <Icon name="list" size={48} color={T.t4} style={{ marginBottom: 16 }} />
               <Txt size={16} weight={700} style={{ display: 'block', marginBottom: 8 }}>Nenhuma lista personalizada</Txt>
               <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 24 }}>Crie listas temáticas para organizar do seu jeito</Txt>
-              <Btn label="+ Criar lista" variant="primary" onClick={() => showToast('Função VIP — desbloqueie!')} />
-              <div style={{ marginTop: 16 }}>
-                <button onClick={() => router.push('/vip')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <Txt size={12} color={T.gold}>Listas ilimitadas com VIP →</Txt>
-                </button>
-              </div>
+              <Btn label="+ Criar lista" variant="primary" onClick={() => showToast('Em breve: listas personalizadas!')} />
             </div>
           )}
 

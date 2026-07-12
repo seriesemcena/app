@@ -42,7 +42,7 @@ export function TabBar() {
               width: 40, height: 32,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               borderRadius: 16,
-              background: isActive ? 'rgba(240,80,194,0.12)' : 'transparent',
+              background: isActive ? 'rgba(192,105,255,0.12)' : 'transparent',
               transition: 'background 0.2s',
             }}>
               <Icon name={t.icon} size={20} color={isActive ? T.pink : T.t3} />

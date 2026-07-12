@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, Btn } from '@/components/primitives';
+import { Screen, Txt, Btn, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T, type IconName } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
@@ -15,15 +15,10 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { signOut } = useAuth();
   const isLight = theme === 'light';
-  const [scrolled, setScrolled] = useState(false);
 
-  // VIP status — lê de localStorage; pode ser atualizado quando a compra for implementada
-  const [isVip, setIsVip] = useState(false);
-  useEffect(() => {
-    try {
-      setIsVip(localStorage.getItem('sec_vip_v1') === 'true');
-    } catch { /* noop */ }
-  }, []);
+  // Todo usuário registrado é VIP
+  const { user } = useAuth();
+  const isVip = !!user;
 
   const sections: Array<{ title: string; items: Item[] }> = [
     {
@@ -38,6 +33,11 @@ export default function SettingsPage() {
         { icon: 'wifi',  label: 'Meus streamings',     action: () => router.push('/settings/streamings') },
         { icon: 'heart', label: 'Meus gêneros',         action: () => router.push('/settings/genres') },
         { icon: 'play',  label: 'Gastos de streaming', action: () => router.push('/expenses') },
+      ],
+    },
+    {
+      title: 'Dados', items: [
+        { icon: 'tv',    label: 'Importar do TV Time', sub: 'Migre seu histórico de séries e filmes', action: () => router.push('/settings/import') },
       ],
     },
     {
@@ -73,73 +73,20 @@ export default function SettingsPage() {
 
   return (
     <Frame>
-      <Screen style={{ background: 'transparent', position: 'relative' }}>
-        {/* Gradient */}
-        <div style={{ position: 'absolute', inset: 0, background: 'var(--c-header-gradient)', pointerEvents: 'none', zIndex: 0 }} />
+      <Screen>
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
 
-        <div
-          onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 72)}
-          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', position: 'relative', zIndex: 1 } as React.CSSProperties}
-        >
-          {/* ── Sticky header — wrapper height:0 não reserva espaço no fluxo ── */}
-          <div style={{ position: 'sticky', top: 0, height: 0, overflow: 'visible', zIndex: 50 }}>
-            <div style={{
-              position: 'relative', overflow: 'hidden',
-              height: 52,
-              transform: `translateY(${scrolled ? 0 : -52}px)`,
-              transition: 'transform 0.25s ease',
-              pointerEvents: scrolled ? 'auto' : 'none',
-            } as React.CSSProperties}>
-
-              {/* Camadas de blur progressivo — igual ao header da página de títulos */}
-              {[
-                { blur: 24, start: 0, end: 30 },
-                { blur: 16, start: 0, end: 60 },
-                { blur: 8,  start: 0, end: 90 },
-                { blur: 4,  start: 0, end: 100 },
-              ].map(({ blur, start, end }, i) => (
-                <div key={i} style={{
-                  position: 'absolute', inset: 0,
-                  backdropFilter: `blur(${blur}px)`,
-                  WebkitBackdropFilter: `blur(${blur}px)`,
-                  maskImage: `linear-gradient(to bottom, black ${start}%, transparent ${end}%)`,
-                  WebkitMaskImage: `linear-gradient(to bottom, black ${start}%, transparent ${end}%)`,
-                } as React.CSSProperties} />
-              ))}
-
-              {/* Tint do tema — branco (light) ou cinza escuro (dark) */}
-              <div style={{
-                position: 'absolute', inset: 0,
-                background: T.card,
-                borderBottom: `1px solid ${T.border}`,
-              }} />
-
-              {/* Conteúdo — botão voltar + título */}
-              <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, height: '100%', padding: '0 16px' }}>
-                <button
-                  onClick={() => router.back()}
-                  style={{ width: 32, height: 32, borderRadius: 16, background: T.surface2, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon name="chevronL" size={18} color={T.t1} />
-                </button>
-                <Txt size={16} weight={700} color={T.t1}>Configurações</Txt>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Header ── */}
-          <div style={{ padding: '24px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '-1px', lineHeight: 1, color: '#fff', textTransform: 'uppercase', fontFamily: "'Area','Inter',sans-serif" }}>
-              Maratonou
-            </h1>
-            <button
-              onClick={() => router.push('/notifications')}
-              style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="bell" size={18} color="#fff" />
-            </button>
-          </div>
+          {/* ── Header glass sticky ── */}
+          <GlassHeader
+            right={
+              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="bell" size={16} color="#fff" />
+              </button>
+            }
+          />
 
           {/* ── Content ── */}
-          <div style={{ background: 'linear-gradient(to bottom, transparent 0px, var(--c-bg) 56px)', minHeight: 500, padding: '0 16px 32px' }}>
+          <div style={{ minHeight: 500, padding: '0 16px 32px' }}>
 
             {/* Título */}
             <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', paddingTop: 16, marginBottom: 20, letterSpacing: '-0.5px' }}>
@@ -176,8 +123,8 @@ export default function SettingsPage() {
                 onClick={() => router.push('/vip')}
                 style={{
                   marginBottom: 12, borderRadius: 18, overflow: 'hidden', cursor: 'pointer',
-                  background: 'linear-gradient(135deg, #7B2FBE 0%, #A861FF 100%)',
-                  boxShadow: '0 4px 20px rgba(168,97,255,0.35)',
+                  background: 'linear-gradient(135deg, #7B2FBE 0%, #C069FF 100%)',
+                  boxShadow: '0 4px 20px rgba(192,105,255,0.35)',
                   padding: '20px 20px',
                   display: 'flex', alignItems: 'center', gap: 16,
                 }}
@@ -206,8 +153,8 @@ export default function SettingsPage() {
                   display: 'flex', flexDirection: 'column', gap: 10, minHeight: 110,
                 }}
               >
-                <div style={{ width: 36, height: 36, borderRadius: 12, background: 'rgba(168,97,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="star" size={18} color="#A861FF" />
+                <div style={{ width: 36, height: 36, borderRadius: 12, background: 'rgba(192,105,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="star" size={18} color="#C069FF" />
                 </div>
                 <div>
                   <Txt size={13} weight={900} color="#fff" style={{ display: 'block', lineHeight: 1.25 }}>Curadoria{'\n'}por IA</Txt>
@@ -245,11 +192,11 @@ export default function SettingsPage() {
                 <Txt size={13} weight={600} color={T.t2} style={{ display: 'block', marginBottom: 12 }}>Tema do app</Txt>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => setTheme('dark')}
-                    style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: `2px solid ${!isLight ? T.pink : T.border}`, background: !isLight ? 'rgba(240,80,194,0.08)' : T.surface2, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, transition: 'all 0.2s' }}>
+                    style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: `2px solid ${!isLight ? T.pink : T.border}`, background: !isLight ? 'rgba(192,105,255,0.08)' : T.surface2, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, transition: 'all 0.2s' }}>
                     <div style={{ width: 52, height: 36, borderRadius: 8, background: '#1A1A1A', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4, padding: '0 8px', overflow: 'hidden' }}>
                       <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.6)', width: '70%' }} />
                       <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.3)', width: '50%' }} />
-                      <div style={{ height: 3, borderRadius: 2, background: '#F050C2', width: '35%' }} />
+                      <div style={{ height: 3, borderRadius: 2, background: '#C069FF', width: '35%' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       {!isLight && <div style={{ width: 8, height: 8, borderRadius: 4, background: T.pink }} />}
@@ -258,11 +205,11 @@ export default function SettingsPage() {
                   </button>
 
                   <button onClick={() => setTheme('light')}
-                    style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: `2px solid ${isLight ? T.pink : T.border}`, background: isLight ? 'rgba(240,80,194,0.08)' : T.surface2, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, transition: 'all 0.2s' }}>
+                    style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: `2px solid ${isLight ? T.pink : T.border}`, background: isLight ? 'rgba(192,105,255,0.08)' : T.surface2, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, transition: 'all 0.2s' }}>
                     <div style={{ width: 52, height: 36, borderRadius: 8, background: '#F2F2F7', border: '1px solid rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4, padding: '0 8px', overflow: 'hidden' }}>
                       <div style={{ height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.65)', width: '70%' }} />
                       <div style={{ height: 3, borderRadius: 2, background: 'rgba(0,0,0,0.25)', width: '50%' }} />
-                      <div style={{ height: 3, borderRadius: 2, background: '#F050C2', width: '35%' }} />
+                      <div style={{ height: 3, borderRadius: 2, background: '#C069FF', width: '35%' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       {isLight && <div style={{ width: 8, height: 8, borderRadius: 4, background: T.pink }} />}

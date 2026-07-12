@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { User } from 'firebase/auth';
 import { firebaseConfigured, getFirebaseAuth, getDB } from '@/lib/firebase';
-import { migrateLocalToFirestore, syncFromFirestore } from '@/lib/db';
+import { migrateLocalToFirestore, syncFromFirestore, subscribeUserDoc } from '@/lib/db';
 
 interface AuthState {
   user:    User | null;
@@ -30,21 +30,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    // Dynamic import to avoid SSR issues
-    let unsubscribe = () => {};
+
+    // Holds the Firestore real-time subscription for the current user
+    let unsubDoc: (() => void) | null = null;
+    let unsubAuth = () => {};
+
     import('firebase/auth').then(({ onAuthStateChanged }) => {
-      unsubscribe = onAuthStateChanged(getFirebaseAuth(), async (u) => {
+      unsubAuth = onAuthStateChanged(getFirebaseAuth(), async (u) => {
+        // Clean up previous user's real-time subscription
+        unsubDoc?.();
+        unsubDoc = null;
+
         setUser(u);
         setLoading(false);
+
         if (u) {
-          // Migrate localStorage → Firestore on first login
-          try { await migrateLocalToFirestore(getDB(), u.uid); } catch {}
-          // Pull cloud data → localStorage so all pages that read localStorage work correctly
-          try { await syncFromFirestore(getDB(), u.uid); } catch {}
+          const db = getDB();
+
+          // 1. Migrate localStorage → Firestore (one-time, first login)
+          try { await migrateLocalToFirestore(db, u.uid); } catch {}
+
+          // 2. Initial pull: Firestore → localStorage (catches up any offline changes)
+          try { await syncFromFirestore(db, u.uid); } catch {}
+
+          // 3. Real-time subscription: whenever Firestore changes (other device or
+          //    server-side update), localStorage is refreshed automatically and
+          //    components listening to 'maratonou:sync' re-render.
+          try { unsubDoc = subscribeUserDoc(db, u.uid); } catch {}
         }
       });
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubAuth();
+      unsubDoc?.();
+    };
   }, []);
 
   return (

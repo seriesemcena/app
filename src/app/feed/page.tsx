@@ -2,13 +2,14 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt } from '@/components/primitives';
+import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { listStore } from '@/lib/store';
+import { listStore, profileStore, notifInboxStore } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { dbActivityStore } from '@/lib/db';
 
 type FeedTab = 'para_voce' | 'seguindo';
 
@@ -19,6 +20,7 @@ type ActivityItem = {
   user: string;
   avatar: string;
   color: string;
+  photoUrl?: string;
   action: string;
   rating: number;
   text: string;
@@ -115,9 +117,15 @@ export default function FeedPage() {
   const [feedTab, setFeedTab]         = useState<FeedTab>('para_voce');
   const [globalFeed, setGlobalFeed]   = useState<ActivityItem[]>([]);
   const [loadingFeed, setLoadingFeed] = useState(true);
+  const [scrolled, setScrolled]       = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setUnreadNotifs(notifInboxStore.unreadCount()); }, []);
 
   const displayName  = user?.displayName || user?.email?.split('@')[0] || 'Você';
   const avatarLetter = displayName[0]?.toUpperCase() || 'U';
+  const myPhotoUrl   = user?.photoURL || profileStore.get().avatarImage || '';
 
   /* ── My real activities from local lists ── */
   const myActivities = useMemo<ActivityItem[]>(() => {
@@ -128,7 +136,7 @@ export default function FeedPage() {
         id: `me_watched_${i}`,
         titleKey: `${item.type}_${item.id}`,
         displayTitle: item.title,
-        user: displayName, avatar: avatarLetter, color: '#E050C8',
+        user: displayName, avatar: avatarLetter, color: '#C069FF', photoUrl: myPhotoUrl,
         action: 'terminou', rating: 0, text: '',
         time: 'recentemente', posterColor: POSTER_COLORS[i % POSTER_COLORS.length], isMe: true,
       })),
@@ -136,26 +144,51 @@ export default function FeedPage() {
         id: `me_want_${i}`,
         titleKey: `${item.type}_${item.id}`,
         displayTitle: item.title,
-        user: displayName, avatar: avatarLetter, color: '#E050C8',
+        user: displayName, avatar: avatarLetter, color: '#C069FF', photoUrl: myPhotoUrl,
         action: 'adicionou', rating: 0, text: '',
         time: 'recentemente', posterColor: POSTER_COLORS[(i + 3) % POSTER_COLORS.length], isMe: true,
       })),
     ];
-  }, [displayName, avatarLetter]);
+  }, [displayName, avatarLetter, myPhotoUrl]);
 
-  /* ── Global feed from Firestore reviews ── */
+  /* ── Global feed: activity collection + reviews collection ── */
   useEffect(() => {
     async function loadFeed() {
       setLoadingFeed(true);
       if (!firebaseConfigured) { setLoadingFeed(false); return; }
       try {
-        const db   = getDB();
-        const snap = await getDocs(collection(db, 'reviews'));
+        const db    = getDB();
         const items: ActivityItem[] = [];
+
+        // 1. Activity items (watched/watching/want actions)
+        const activityDocs = await dbActivityStore.getRecent(db, 60);
+        activityDocs.forEach((a) => {
+          const actionLabel =
+            a.action === 'watched'  ? 'finalizou' :
+            a.action === 'watching' ? 'está assistindo' :
+            a.action === 'want'     ? 'adicionou à lista' : 'avaliou';
+          items.push({
+            id:           `act_${a.uid}_${a.titleKey}_${a.createdAt}`,
+            titleKey:     a.titleKey,
+            displayTitle: a.titleName,
+            user:         a.username,
+            avatar:       a.avatar,
+            color:        '#C069FF',
+            photoUrl:     a.photoUrl,
+            action:       actionLabel,
+            rating:       a.rating,
+            text:         a.text,
+            time:         timeAgo(a.createdAt),
+            posterColor:  POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
+          });
+        });
+
+        // 2. Reviews
+        const snap = await getDocs(collection(db, 'reviews'));
         snap.forEach((doc) => {
           const titleKey = doc.id;
           const reviews: any[] = doc.data()?.items ?? [];
-          reviews.slice(0, 3).forEach((rev: any) => {
+          reviews.slice(0, 2).forEach((rev: any) => {
             items.push({
               id:           `rev_${titleKey}_${rev.id}`,
               titleKey,
@@ -163,6 +196,7 @@ export default function FeedPage() {
               user:         rev.user || 'Usuário',
               avatar:       rev.avatar || rev.user?.[0]?.toUpperCase() || 'U',
               color:        '#6366f1',
+              photoUrl:     rev.photoUrl || '',
               action:       'avaliou',
               rating:       rev.rating || 0,
               text:         rev.text || '',
@@ -171,6 +205,9 @@ export default function FeedPage() {
             });
           });
         });
+
+        // Sort combined list by recency (activity docs have ISO createdAt, reviews have date)
+        items.sort((a, b) => (b.time > a.time ? 1 : -1));
         setGlobalFeed(items);
       } catch { /* ignore */ }
       setLoadingFeed(false);
@@ -185,44 +222,50 @@ export default function FeedPage() {
 
   return (
     <Frame>
-      <Screen style={{ background: 'transparent', position: 'relative' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'var(--c-header-gradient)', pointerEvents: 'none', zIndex: 0 }} />
+      <Screen>
+        <div
+          ref={scrollRef}
+          onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)}
+          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}
+        >
 
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', position: 'relative', zIndex: 1 } as React.CSSProperties}>
+          {/* ── Header glass sticky ── */}
+          <GlassHeader
+            right={
+              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <Icon name="bell" size={16} color="#fff" />
+                {unreadNotifs > 0 && (
+                  <div style={{ position: 'absolute', top: 5, right: 5, width: 8, height: 8, borderRadius: 4, background: T.pink, border: '1.5px solid rgba(0,0,0,0.4)' }} />
+                )}
+              </button>
+            }
+          />
 
-          {/* ── Header ── */}
-          <div style={{ padding: '24px 16px 12px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '-1px', lineHeight: 1, color: '#fff', textTransform: 'uppercase', fontFamily: "'Area','Inter',sans-serif" }}>
-              Maratonou
-            </h1>
-            <button
-              onClick={() => router.push('/notifications')}
-              style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="bell" size={18} color="#fff" />
-            </button>
+          {/* ── Tabs — sticky logo abaixo do header ── */}
+          <div style={{
+            position: 'sticky', top: 56, zIndex: 48,
+            display: 'flex', gap: 8,
+            padding: scrolled ? '2px 16px 8px' : '8px 16px 10px',
+            overflowX: 'auto', scrollbarWidth: 'none',
+            background: 'transparent',
+            transition: 'padding 0.25s ease',
+          } as React.CSSProperties}>
+            {([['para_voce', 'Para você'], ['seguindo', 'Seguindo']] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setFeedTab(id)} style={{
+                padding: scrolled ? '4.5px 13px' : '7px 16px',
+                borderRadius: 24, flexShrink: 0,
+                background: feedTab === id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.12)',
+                border: feedTab === id ? 'none' : '1px solid rgba(255,255,255,0.20)',
+                color: feedTab === id ? '#C069FF' : 'rgba(255,255,255,0.80)',
+                fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
+                fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
+                backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+              } as React.CSSProperties}>{label}</button>
+            ))}
           </div>
 
           {/* ── Content ── */}
-          <div style={{ background: 'linear-gradient(to bottom, transparent 0px, var(--c-bg) 56px)', minHeight: 400, padding: '0 0 100px' }}>
-
-            {/* Feed title + tabs */}
-            <div style={{ padding: '16px 16px 14px', display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Txt size={28} weight={900} color={T.t1} style={{ fontStretch: 'condensed', fontFamily: "'Greed','Area',sans-serif", lineHeight: 1 } as React.CSSProperties}>
-                Feed
-              </Txt>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {([['para_voce', 'Para você'], ['seguindo', 'Seguindo']] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => setFeedTab(id)} style={{
-                    padding: '9px 18px', borderRadius: 24, flexShrink: 0,
-                    background: feedTab === id ? '#1a1a1a' : 'transparent',
-                    border: feedTab === id ? 'none' : `1px solid ${T.border}`,
-                    color: feedTab === id ? '#fff' : T.t2,
-                    fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif",
-                    cursor: 'pointer', transition: 'all 0.2s',
-                  }}>{label}</button>
-                ))}
-              </div>
-            </div>
+          <div style={{ minHeight: 400, padding: '0 0 100px' }}>
 
             {/* Loading skeletons */}
             {loadingFeed && (
@@ -271,8 +314,11 @@ export default function FeedPage() {
 
 /* ──────────────────────────────────────────────── */
 function FeedCard({ item }: { item: ActivityItem }) {
+  const router      = useRouter();
   const actionColor = ACTION_COLOR[item.action] || T.t2;
   const actionIcon  = ACTION_ICON[item.action]  || 'star';
+
+  const goToProfile = () => router.push(`/user/${encodeURIComponent(item.user)}`);
 
   /* ── TMDB resolved data ── */
   const [cardData, setCardData] = useState<{ label: string; imageUrl: string | null } | null>(null);
@@ -327,12 +373,21 @@ function FeedCard({ item }: { item: ActivityItem }) {
 
       {/* ── User row ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div style={{ width: 42, height: 42, borderRadius: 21, background: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Txt size={15} weight={800} color="#fff">{item.avatar}</Txt>
-        </div>
+        <button onClick={goToProfile} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
+          {item.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.photoUrl} alt={item.user} style={{ width: 42, height: 42, borderRadius: 21, objectFit: 'cover', display: 'block' }} />
+          ) : (
+            <div style={{ width: 42, height: 42, borderRadius: 21, background: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Txt size={15} weight={800} color="#fff">{item.avatar}</Txt>
+            </div>
+          )}
+        </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-            <Txt size={14} weight={700} color={T.t1}>{item.user}</Txt>
+            <button onClick={goToProfile} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <Txt size={14} weight={700} color={T.t1}>{item.user}</Txt>
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
               <Icon name={actionIcon as Parameters<typeof Icon>[0]['name']} size={11} color={actionColor} />
               <Txt size={12} weight={600} color={actionColor}>{item.action}</Txt>
@@ -344,12 +399,6 @@ function FeedCard({ item }: { item: ActivityItem }) {
           </Txt>
           <Txt size={11} color={T.t4} style={{ display: 'block', marginTop: 1 }}>{item.time}</Txt>
         </div>
-        {item.rating > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 8, background: T.goldDim, border: `1px solid rgba(245,197,24,0.2)`, flexShrink: 0 }}>
-            <Icon name="star" size={10} color={T.gold} />
-            <Txt size={12} weight={700} color={T.gold}>{item.rating}/10</Txt>
-          </div>
-        )}
       </div>
 
       {/* ── Review text — sem background ── */}
@@ -371,13 +420,6 @@ function FeedCard({ item }: { item: ActivityItem }) {
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Txt size={13} weight={600} color="rgba(255,255,255,0.5)">{displayLabel}</Txt>
-          </div>
-        )}
-        {/* Rating overlay on image */}
-        {item.rating > 0 && imageUrl && (
-          <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', alignItems: 'center', gap: 3, padding: '4px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
-            <span style={{ fontSize: 12 }}>⭐</span>
-            <Txt size={12} weight={700} color="#fff">{item.rating}/10</Txt>
           </div>
         )}
       </div>
@@ -433,7 +475,7 @@ function FeedCard({ item }: { item: ActivityItem }) {
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setShowEmojis(v => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, background: myReaction ? 'rgba(168,97,255,0.10)' : 'none', border: 'none', borderRadius: 16, padding: '5px 8px', cursor: 'pointer' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 5, background: myReaction ? 'rgba(192,105,255,0.10)' : 'none', border: 'none', borderRadius: 16, padding: '5px 8px', cursor: 'pointer' }}>
             <span style={{ fontSize: 16 }}>{myReaction || '🙂'}</span>
             {totalReactions > 0 && <Txt size={12} color={T.t2} weight={600}>{totalReactions}</Txt>}
           </button>
@@ -454,7 +496,7 @@ function FeedCard({ item }: { item: ActivityItem }) {
                     key={e}
                     onClick={() => react(e)}
                     style={{
-                      fontSize: 22, background: myReaction === e ? 'rgba(168,97,255,0.12)' : 'transparent',
+                      fontSize: 22, background: myReaction === e ? 'rgba(192,105,255,0.12)' : 'transparent',
                       border: 'none', borderRadius: 10, padding: '4px 6px', cursor: 'pointer',
                       transform: myReaction === e ? 'scale(1.2)' : 'scale(1)',
                       transition: 'transform 0.15s',

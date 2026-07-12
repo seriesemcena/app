@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes heroFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ── Area font family (paragraphs, H3, H4) ── */
 @font-face {
   font-family: 'Area';
@@ -71,28 +76,8 @@
   font-display: swap;
 }
 
-/* ── CSS custom properties — light theme (default) ── */
+/* ── CSS custom properties — dark theme (default) ── */
 :root {
-  --c-bg:        #F2F2F7;
-  --c-card:      #FFFFFF;
-  --c-surface:   #FFFFFF;
-  --c-surface2:  #E5E5EA;
-  --c-t1:        rgba(0,0,0,0.88);
-  --c-t2:        rgba(0,0,0,0.55);
-  --c-t3:        rgba(0,0,0,0.38);
-  --c-t4:        rgba(0,0,0,0.10);
-  --c-border:    rgba(0,0,0,0.09);
-  --c-dim:       rgba(0,0,0,0.14);
-  --c-input-bg:  rgba(0,0,0,0.05);
-  --c-glass-bg:  rgba(0,0,0,0.06);
-  --c-outer:     #C7C7CC;
-  --c-body-text: #1A1A1A;
-  /* Light: orange blob → purple → transparent → white bg */
-  --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #F040D0 0%, #A040F0 25%, #FF6B2B 52%, #FF8C42 68%, transparent 80%);
-}
-
-/* ── Dark theme ── */
-[data-theme="dark"] {
   --c-bg:        #1A1A1A;
   --c-card:      #252525;
   --c-surface:   #2E2E2E;
@@ -108,7 +93,27 @@
   --c-outer:     #111111;
   --c-body-text: #fff;
   /* Dark: bright pink → deep purple → transparent → dark bg */
-  --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #F040D0 0%, #6B10A0 44%, transparent 72%);
+  --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #C069FF 0%, #6B10A0 44%, transparent 72%);
+}
+
+/* ── Light theme override ── */
+[data-theme="light"] {
+  --c-bg:        #F2F2F7;
+  --c-card:      #FFFFFF;
+  --c-surface:   #FFFFFF;
+  --c-surface2:  #E5E5EA;
+  --c-t1:        rgba(0,0,0,0.88);
+  --c-t2:        rgba(0,0,0,0.55);
+  --c-t3:        rgba(0,0,0,0.38);
+  --c-t4:        rgba(0,0,0,0.10);
+  --c-border:    rgba(0,0,0,0.09);
+  --c-dim:       rgba(0,0,0,0.14);
+  --c-input-bg:  rgba(0,0,0,0.05);
+  --c-glass-bg:  rgba(0,0,0,0.06);
+  --c-outer:     #C7C7CC;
+  --c-body-text: #1A1A1A;
+  /* Light: orange blob → purple → transparent → white bg */
+  --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #C069FF 0%, #A040F0 25%, #FF6B2B 52%, #FF8C42 68%, transparent 80%);
 }
 
 /* ── Base reset ── */

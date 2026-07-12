@@ -11,19 +11,19 @@ interface ThemeCtxValue {
 }
 
 const ThemeCtx = createContext<ThemeCtxValue>({
-  theme: 'light',
+  theme: 'dark',
   setTheme: () => {},
   toggle: () => {},
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('light');
+  const [theme, setThemeState] = useState<Theme>('dark');
 
-  /* On mount, read the saved preference and apply it */
+  /* On mount, read the saved preference and apply it (default: dark) */
   useEffect(() => {
     try {
       const saved = localStorage.getItem(THEME_KEY) as Theme | null;
-      const active = (saved === 'light' || saved === 'dark') ? saved : 'light';
+      const active = (saved === 'light' || saved === 'dark') ? saved : 'dark';
       setThemeState(active);
       document.documentElement.setAttribute('data-theme', active);
     } catch {}

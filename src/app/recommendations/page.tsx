@@ -65,7 +65,7 @@ export default function RecommendationsPage() {
                 <Txt size={11} color={T.t3} weight={700} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>Baseado nos seus gostos</Txt>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {likedGenres.map((g) => (
-                    <div key={g} style={{ padding: '6px 14px', borderRadius: 20, background: 'rgba(240,80,194,0.15)', border: `1px solid rgba(240,80,194,0.3)` }}>
+                    <div key={g} style={{ padding: '6px 14px', borderRadius: 20, background: 'rgba(192,105,255,0.15)', border: `1px solid rgba(192,105,255,0.3)` }}>
                       <Txt size={12} weight={700} color={T.pink}>{g}</Txt>
                     </div>
                   ))}

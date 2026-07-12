@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 40" fill="none">
+  <!-- 4 vertical bars: green (thin), orange, blue, purple (widest) -->
+  <rect x="0"  y="0" width="4"  height="40" rx="2" fill="#CCFF84"/>
+  <rect x="8"  y="0" width="7"  height="40" rx="2" fill="#FB772D"/>
+  <rect x="19" y="0" width="11" height="40" rx="2" fill="#3333FF"/>
+  <rect x="34" y="0" width="18" height="40" rx="2" fill="#D92FFF"/>
+</svg>

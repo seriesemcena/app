@@ -6,6 +6,9 @@ import { Screen, ScrollArea, AppBar, Txt, Toast } from '@/components/primitives'
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { profileStore } from '@/lib/store';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { dbProfileStore } from '@/lib/db';
+import { useAuth } from '@/hooks/useAuth';
 
 const GENRES = [
   { id: 'Ação',         emoji: '💥' },
@@ -30,6 +33,7 @@ const GENRES = [
 
 export default function GenresPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -39,8 +43,11 @@ export default function GenresPage() {
     setSelected(prev => prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id]);
   };
 
-  const save = () => {
+  const save = async () => {
     profileStore.set({ genres: selected });
+    if (firebaseConfigured && user) {
+      try { await dbProfileStore.set(getDB(), user.uid, { genres: selected }); } catch {}
+    }
     setToast('Gêneros salvos!');
     setTimeout(() => router.back(), 1100);
   };
@@ -65,7 +72,7 @@ export default function GenresPage() {
                   <button
                     key={g.id}
                     onClick={() => toggle(g.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: on ? 'rgba(240,80,194,0.12)' : T.card, border: `1px solid ${on ? T.pink + '80' : T.border}`, borderRadius: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: on ? 'rgba(192,105,255,0.12)' : T.card, border: `1px solid ${on ? T.pink + '80' : T.border}`, borderRadius: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
                   >
                     <span style={{ fontSize: 22 }}>{g.emoji}</span>
                     <Txt size={13} weight={on ? 700 : 500} color={on ? T.white : T.t2} style={{ flex: 1 }}>{g.id}</Txt>

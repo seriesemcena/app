@@ -8,10 +8,10 @@ import { TMDBBackdrop, TMDBPersonPhoto, TMDBPosterCard } from '@/components/post
 import { StreamCircle } from '@/components/primitives';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB } from '@/lib/tmdb';
-import { listStore, revStore, type Review } from '@/lib/store';
+import { listStore, revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRevStore, dbListStore } from '@/lib/db';
+import { dbRevStore, dbListStore, dbActivityStore } from '@/lib/db';
 
 export default function TitleDetailPage() {
   const router = useRouter();
@@ -21,8 +21,8 @@ export default function TitleDetailPage() {
   const id = params.id;
   const itemKey = `${params.type}_${id}`;
 
-  type Tab = 'episódios' | 'onde assistir' | 'avaliações' | 'detalhes';
-  const [tab, setTab] = useState<Tab>(params.type === 'tv' ? 'episódios' : 'onde assistir');
+  type Tab = 'sobre' | 'episódios' | 'onde assistir' | 'avaliações';
+  const [tab, setTab] = useState<Tab>(params.type === 'tv' ? 'episódios' : 'sobre');
   const [isFav, setIsFav] = useState(false);
 
   // Status icon: determina qual ícone mostrar no canto do hero
@@ -37,8 +37,6 @@ export default function TitleDetailPage() {
   const [reviewRating, setReviewRating] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
-  const [seasonDropOpen, setSeasonDropOpen] = useState(false);
-  const seasonBtnRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Load reviews: localStorage first, then Firestore for cross-device sync
@@ -110,10 +108,12 @@ export default function TitleDetailPage() {
   // Default to last/latest season
   const activeSeason = selectedSeason ?? seasons[seasons.length - 1] ?? 1;
 
-  // Tabs: episódios só para TV
+  // Tabs
   const tabs: Tab[] = [
+    'sobre',
     ...(isTV ? (['episódios'] as Tab[]) : []),
-    'onde assistir', 'avaliações', 'detalhes',
+    'onde assistir',
+    ...(!isTV ? (['avaliações'] as Tab[]) : []),
   ];
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2500); };
@@ -140,11 +140,13 @@ export default function TitleDetailPage() {
     if (!reviewText.trim() || reviewRating === 0) { showToast('Adicione nota e texto'); return; }
     const displayName = user?.displayName || user?.email?.split('@')[0] || 'Você';
     const avatarLetter = displayName[0]?.toUpperCase() || 'V';
+    const photoUrl = user?.photoURL || profileStore.get().avatarImage || '';
     const rev: Review = {
       id: `r_${Date.now()}`,
       user: displayName,
       avatar: avatarLetter,
-      rating: reviewRating,
+      photoUrl,
+      rating: reviewRating * 2,   /* 1-5 stars → 2-10 scale */
       text: reviewText.trim(),
       date: new Date().toISOString(),
       likes: 0, likedBy: [], replies: [],
@@ -174,9 +176,9 @@ export default function TitleDetailPage() {
     }
   };
 
-  const avgRating = reviews.length
+  const avgRating = reviews.length > 0
     ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : rating;
+    : null;
 
   return (
     <Frame>
@@ -209,63 +211,77 @@ export default function TitleDetailPage() {
         {/* Conteúdo do header — por cima das camadas de blur */}
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, zIndex: 41,
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          padding: '20px 16px 12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 14px 10px',
           pointerEvents: 'auto',
         }}>
-          {/* App name / back */}
-          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '-1px', lineHeight: 1.1, color: '#fff', textTransform: 'uppercase', fontFamily: "'Area','Inter',sans-serif", textShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
-              Mara-<br />tonando
-            </h1>
+          {/* Botão voltar */}
+          <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+            <Icon name="chevronL" size={16} color="#fff" />
           </button>
-          {/* Icons */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as React.CSSProperties}>
-              <Icon name="share" size={17} color="#fff" />
+          {/* Icons direita */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+              <Icon name="share" size={15} color="#fff" />
             </button>
-            <button onClick={() => router.push('/notifications')} style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' } as React.CSSProperties}>
-              <Icon name="bell" size={17} color="#fff" />
+            <button onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isFav ? 'rgba(192,105,255,0.30)' : 'rgba(255,255,255,0.14)', border: `1px solid ${isFav ? 'rgba(192,105,255,0.45)' : 'rgba(255,255,255,0.22)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+              <Icon name={isFav ? 'heart' : 'heartO'} size={15} color={isFav ? '#C069FF' : '#fff'} />
             </button>
           </div>
         </div>
 
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
 
-          {/* ── Backdrop hero ── */}
-          <div style={{ height: 345, position: 'relative', overflow: 'hidden' }}>
+          {/* ── Backdrop hero com título e botões sobrepostos ── */}
+          <div style={{ height: 400, position: 'relative', overflow: 'hidden' }}>
             {detail.backdrop_path
-              ? <img src={`https://image.tmdb.org/t/p/w780${detail.backdrop_path}`} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center', display: 'block' }} />
+              ? <img src={`https://image.tmdb.org/t/p/w780${detail.backdrop_path}`} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%', display: 'block' }} />
               : <div style={{ width: '100%', height: '100%', background: T.surface2 }} />
             }
-            {/* Gradient fade to page bg */}
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 160, background: `linear-gradient(to bottom, transparent 0%, ${T.bg} 100%)`, pointerEvents: 'none' }} />
+            {/* Gradiente escuro de baixo */}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.3) 50%, transparent 80%)', pointerEvents: 'none' }} />
+            {/* Fade para cor do fundo */}
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 140, background: `linear-gradient(to bottom, transparent 0%, ${T.bg} 100%)`, pointerEvents: 'none' }} />
+
+            {/* Título + botões sobrepostos */}
+            <div style={{ position: 'absolute', bottom: 20, left: 16, right: 16 }}>
+              <h1 style={{ margin: '0 0 14px', fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.05, letterSpacing: -1, fontFamily: "'Greed','Area',sans-serif", textShadow: '0 2px 20px rgba(0,0,0,0.6)', whiteSpace: 'pre-line' }}>
+                {title.includes(': ') ? title.replace(': ', ':\n') : title}
+              </h1>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button onClick={() => setListSheet(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 24, background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(255,255,255,0.5)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,1)' } as React.CSSProperties}>
+                  <Icon name="plus" size={14} color="#0a0a0a" />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0a0a0a', fontFamily: "'Area','Inter',sans-serif" }}>Adicionar à lista</span>
+                </button>
+                <button onClick={() => setMaisSheet(true)}
+                  style={{ width: 42, height: 42, borderRadius: 21, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.25)', flexShrink: 0 } as React.CSSProperties}>
+                  <Icon name="share" size={17} color="#fff" />
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* ── Info card — overlaps hero ── */}
-          <div style={{ margin: '-28px 12px 0', background: T.card, borderRadius: 20, padding: '18px 18px 20px', position: 'relative', boxShadow: '0 -2px 24px rgba(0,0,0,0.08)' }}>
-            {/* Status icon — top right */}
-            {statusKey && (() => {
-              const s = STATUS_ICON_MAP[statusKey];
-              return (
-                <div style={{ position: 'absolute', top: 16, right: 16, width: 40, height: 40, borderRadius: 20, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 12px rgba(0,0,0,0.25)' }}>
-                  <Icon name={s.icon} size={18} color={s.color} />
-                </div>
-              );
-            })()}
-            {/* Title */}
-            <Txt size={26} weight={900} color={T.t1} style={{ display: 'block', lineHeight: 1.15, letterSpacing: -0.5, marginBottom: 10, paddingRight: statusKey ? 52 : 0 }}>{title}</Txt>
-            {/* Chips: genre · rating · runtime */}
+          <div style={{ margin: '16px 12px 0', background: T.card, borderRadius: 20, padding: '18px 18px 20px', position: 'relative', boxShadow: '0 -2px 24px rgba(0,0,0,0.08)' }}>
+            {/* Chips: nota do app · genre · runtime */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+              {/* Nota média do app */}
+              {avgRating ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, background: '#FFEB13' }}>
+                  <Icon name="star" size={11} color="#1a1400" />
+                  <Txt size={11} weight={700} color="#1a1400">{avgRating}/10</Txt>
+                  <Txt size={10} weight={500} color="#1a1400" style={{ opacity: 0.6 }}>({reviews.length})</Txt>
+                </span>
+              ) : (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, background: T.surface2 }}>
+                  <Icon name="star" size={11} color={T.t3} />
+                  <Txt size={11} weight={600} color={T.t3}>Sem avaliações</Txt>
+                </span>
+              )}
               {genre && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 8, background: T.surface2 }}>
                   <Txt size={11} weight={600} color={T.t2}>{genre}</Txt>
-                </span>
-              )}
-              {rating && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, background: T.goldDim }}>
-                  <Icon name="star" size={11} color={T.gold} />
-                  <Txt size={11} weight={700} color={T.gold}>{rating}/10</Txt>
                 </span>
               )}
               {runtime && (
@@ -295,29 +311,30 @@ export default function TitleDetailPage() {
                 )}
               </>
             )}
-          </div>
 
-          {/* ── Action buttons ── */}
-          <div style={{ display: 'flex', gap: 10, padding: '20px 16px 6px', justifyContent: 'center' }}>
-            {([
-              { icon: 'play',                              label: 'Trailer',   action: () => setTab('onde assistir') },
-              { icon: isFav ? 'heart' : 'heartO',          label: isFav ? 'Favorito' : 'Favoritar', action: toggleFav, active: isFav },
-              { icon: 'award',                             label: 'Avaliar',   action: () => { setTab('avaliações'); setShowForm(true); } },
-              { icon: 'bookmark',                          label: 'Listas',    action: () => setListSheet(true) },
-              { icon: 'plus',                              label: 'Mais',      action: () => setMaisSheet(true) },
-            ] as Array<{ icon: import('@/lib/tokens').IconName; label: string; action: () => void; active?: boolean }>).map(({ icon, label, action, active }) => (
-              <button key={label} onClick={action} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                <div style={{
-                  width: 52, height: 52, borderRadius: 26,
-                  background: active ? T.redDim : T.surface2,
-                  border: `1.5px solid ${active ? T.red : T.border}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Icon name={icon} size={20} color={active ? T.red : T.t1} />
+            {/* ── Próximo episódio (séries em exibição) ── */}
+            {isTV && (() => {
+              const nextEp = (detail as any).next_episode_to_air;
+              if (!nextEp) return null;
+              const airDate = nextEp.air_date
+                ? new Date(nextEp.air_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+                : null;
+              return (
+                <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 14, background: 'linear-gradient(135deg, rgba(192,105,255,0.12) 0%, rgba(107,16,160,0.10) 100%)', border: '1px solid rgba(192,105,255,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 3, background: T.pink, flexShrink: 0, animation: 'none' }} />
+                    <Txt size={10} weight={800} color={T.pink} style={{ textTransform: 'uppercase', letterSpacing: 1 }}>Próximo episódio</Txt>
+                  </div>
+                  <Txt size={14} weight={700} style={{ display: 'block', lineHeight: 1.3, marginBottom: 4 }}>
+                    {nextEp.name || `Episódio ${nextEp.episode_number}`}
+                  </Txt>
+                  <Txt size={12} color={T.t3} style={{ display: 'block' }}>
+                    T{nextEp.season_number} · Ep {nextEp.episode_number}{airDate ? ` · ${airDate}` : ''}
+                  </Txt>
                 </div>
-                <Txt size={9} weight={600} color={T.t3} style={{ textAlign: 'center' }}>{label}</Txt>
-              </button>
-            ))}
+              );
+            })()}
+
           </div>
 
           {/* ── Tab bar wrapper — position:relative para o dropdown se ancorar aqui ── */}
@@ -330,11 +347,10 @@ export default function TitleDetailPage() {
                   return (
                     <button
                       key={t}
-                      ref={seasonBtnRef}
-                      onClick={() => { setTab('episódios'); setSeasonDropOpen((o) => !o); }}
+                      onClick={() => setTab('episódios')}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '9px 18px', borderRadius: 24, flexShrink: 0,
+                        padding: '9px 22px', borderRadius: 24, flexShrink: 0,
                         background: isActive ? T.t1 : 'transparent',
                         border: isActive ? 'none' : `1px solid ${T.dim}`,
                         color: isActive ? T.bg : T.t2,
@@ -342,16 +358,12 @@ export default function TitleDetailPage() {
                         fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
                         whiteSpace: 'nowrap',
                       }}>
-                      {seasons.length > 0 ? `Temporada ${activeSeason}` : 'Episódios'}
-                      {seasons.length > 1 && (
-                        <Icon name="chevronD" size={14} color={isActive ? T.bg : T.t2}
-                          style={{ transition: 'transform 0.2s', transform: seasonDropOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-                      )}
+                      Episódios
                     </button>
                   );
                 }
                 return (
-                  <button key={t} onClick={() => { setTab(t); setSeasonDropOpen(false); }} style={{
+                  <button key={t} onClick={() => setTab(t)} style={{
                     padding: '9px 22px', borderRadius: 24, flexShrink: 0,
                     background: isActive ? T.t1 : 'transparent',
                     border: isActive ? 'none' : `1px solid ${T.dim}`,
@@ -366,35 +378,6 @@ export default function TitleDetailPage() {
               })}
             </div>
 
-            {/* Dropdown — fora do overflow, ancorado no wrapper */}
-            {seasonDropOpen && seasons.length > 1 && (
-              <>
-                <div onClick={() => setSeasonDropOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
-                <div style={{
-                  position: 'absolute', top: '100%', left: 16,
-                  background: T.card, borderRadius: 14,
-                  border: `1px solid ${T.border}`,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
-                  overflow: 'hidden', zIndex: 20, minWidth: 190,
-                }}>
-                  {seasons.map((sn, idx) => (
-                    <button key={sn}
-                      onClick={() => { setSelectedSeason(sn); setSeasonDropOpen(false); }}
-                      style={{
-                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '13px 16px', background: 'none', border: 'none',
-                        borderBottom: idx < seasons.length - 1 ? `1px solid ${T.border}` : 'none',
-                        color: sn === activeSeason ? T.pink : T.t1,
-                        fontSize: 14, fontWeight: sn === activeSeason ? 700 : 500,
-                        fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', textAlign: 'left',
-                      }}>
-                      Temporada {sn}
-                      {sn === activeSeason && <Icon name="check" size={15} color={T.pink} />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
           </div>
 
           {/* ── Tab content ── */}
@@ -403,6 +386,15 @@ export default function TitleDetailPage() {
             {/* Episódios */}
             {tab === 'episódios' && isTV && (
               <div>
+                {seasons.length > 1 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <SeasonDropdown
+                      seasons={seasons}
+                      active={activeSeason}
+                      onSelect={(sn) => setSelectedSeason(sn)}
+                    />
+                  </div>
+                )}
                 <EpisodeList
                   tvId={id} seasonNum={activeSeason}
                   showName={title} network={(detail as any).networks?.[0]?.name || ''}
@@ -413,6 +405,7 @@ export default function TitleDetailPage() {
                       showName: title, runtime: String(ep.runtime || ''),
                       overview: ep.overview || '', still: ep.still_path || '',
                       network: (detail as any).networks?.[0]?.name || '',
+                      airDate: ep.air_date || '',
                     });
                     router.push(`/episode?${p.toString()}`);
                   }}
@@ -425,19 +418,25 @@ export default function TitleDetailPage() {
               <WatchProvidersTab type={isTV ? 'tv' : 'movie'} id={id} onVIP={() => router.push('/vip')} />
             )}
 
-            {/* Avaliações */}
-            {tab === 'avaliações' && (
-              <ReviewsTab
-                reviews={reviews} avgRating={avgRating}
-                showForm={showForm} reviewText={reviewText} reviewRating={reviewRating}
-                onToggleForm={() => setShowForm((f) => !f)}
-                onTextChange={setReviewText} onRatingChange={setReviewRating}
-                onSubmit={submitReview} onLike={toggleLike}
+            {/* Avaliações (filmes) */}
+            {tab === 'avaliações' && !isTV && (
+              <MovieReviewsTab
+                reviews={reviews}
+                avgRating={avgRating}
+                showForm={showForm}
+                setShowForm={setShowForm}
+                reviewRating={reviewRating}
+                setReviewRating={setReviewRating}
+                reviewText={reviewText}
+                setReviewText={setReviewText}
+                onSubmit={submitReview}
+                onLike={toggleLike}
+                user={user}
               />
             )}
 
-            {/* Detalhes: elenco + informações */}
-            {tab === 'detalhes' && (
+            {/* Sobre: elenco + informações + títulos semelhantes */}
+            {tab === 'sobre' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
                 {cast.length > 0 && (
                   <div>
@@ -475,17 +474,45 @@ export default function TitleDetailPage() {
         <Toast msg={toast} visible={!!toast} />
         <BottomSheet visible={listSheet} onClose={() => setListSheet(false)} title="Adicionar à lista">
           {([
-            { key: 'want',     label: 'Quero assistir' },
-            { key: 'watching', label: 'Maratonando' },
-            { key: 'watched',  label: 'Finalizado' },
-          ] as const).map(({ key, label }) => (
+            { key: 'want',     label: 'Quero assistir',  action: 'want'     as const },
+            { key: 'watching', label: 'Maratonando',      action: 'watching' as const },
+            { key: 'watched',  label: 'Finalizado',       action: 'watched'  as const },
+          ] as const).map(({ key, label, action }) => (
             <button key={key} onClick={async () => {
               const item = { id: detail.id, title, type: isTV ? 'tv' : 'movie', poster_path: detail.poster_path };
+
+              // Remove from other lists first (avoid duplicates across lists)
+              const others = (['want', 'watching', 'watched'] as const).filter((l) => l !== key);
+              others.forEach((l) => listStore.remove(l, detail.id));
+
               listStore.add(key, item);
               setListSheet(false);
               showToast(`Adicionado: ${label}`);
+
               if (firebaseConfigured && user) {
-                try { await dbListStore.add(getDB(), user.uid, key, item); } catch {}
+                const db = getDB();
+                try {
+                  // Mirror remove + add to Firestore
+                  await Promise.all(others.map((l) => dbListStore.remove(db, user.uid, l, detail.id)));
+                  await dbListStore.add(db, user.uid, key, item);
+
+                  // Write activity for the global feed
+                  const displayName  = user.displayName || user.email?.split('@')[0] || 'Usuário';
+                  const profile      = profileStore.get();
+                  await dbActivityStore.add(db, {
+                    uid:       user.uid,
+                    username:  displayName,
+                    avatar:    displayName[0]?.toUpperCase() || 'U',
+                    photoUrl:  user.photoURL || profile.avatarImage || '',
+                    titleKey:  `${isTV ? 'tv' : 'movie'}_${detail.id}`,
+                    titleName: title,
+                    poster:    detail.poster_path ?? null,
+                    action,
+                    rating:    0,
+                    text:      '',
+                    createdAt: new Date().toISOString(),
+                  });
+                } catch {}
               }
             }} style={{ width: '100%', padding: '14px 0', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
               <Icon name="plus" size={16} color={T.pink} />{label}
@@ -495,11 +522,13 @@ export default function TitleDetailPage() {
 
         <BottomSheet visible={maisSheet} onClose={() => setMaisSheet(false)} title="Mais opções">
           {([
-            { icon: 'share' as const, label: 'Compartilhar',    action: () => { showToast('Link copiado!'); setMaisSheet(false); } },
-            { icon: 'flag' as const,  label: 'Relatar problema', action: () => { showToast('Obrigado pelo relato!'); setMaisSheet(false); } },
-          ]).map(({ icon, label, action }) => (
-            <button key={label} onClick={action} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 18, background: T.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            { icon: 'play'     as const, label: 'Ver trailer',      action: () => { setTab('onde assistir'); setMaisSheet(false); } },
+            { icon: 'bookmark' as const, label: 'Adicionar à lista', action: () => { setMaisSheet(false); setListSheet(true); } },
+            { icon: 'share'    as const, label: 'Compartilhar',      action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); } },
+            { icon: 'flag'     as const, label: 'Relatar problema',  action: () => { showToast('Obrigado pelo relato!'); setMaisSheet(false); } },
+          ]).map(({ icon, label, action }, idx, arr) => (
+            <button key={label} onClick={action} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: idx < arr.length - 1 ? `1px solid ${T.border}` : 'none', textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name={icon} size={17} color={T.t2} />
               </div>
               {label}
@@ -508,6 +537,167 @@ export default function TitleDetailPage() {
         </BottomSheet>
       </Screen>
     </Frame>
+  );
+}
+
+/* ── Movie reviews tab ── */
+function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRating, setReviewRating, reviewText, setReviewText, onSubmit, onLike, user }: {
+  reviews: Review[];
+  avgRating: string | null;
+  showForm: boolean;
+  setShowForm: (v: boolean) => void;
+  reviewRating: number;
+  setReviewRating: (v: number) => void;
+  reviewText: string;
+  setReviewText: (v: string) => void;
+  onSubmit: () => void;
+  onLike: (id: string) => void;
+  user: any;
+}) {
+  const [sort, setSort] = useState<'recentes' | 'melhores' | 'piores'>('recentes');
+
+  function timeAgo(dateStr: string): string {
+    try {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const m = Math.floor(diff / 60000);
+      if (m < 1)  return 'agora';
+      if (m < 60) return `${m}min atrás`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `${h}h atrás`;
+      return `${Math.floor(h / 24)}d atrás`;
+    } catch { return dateStr; }
+  }
+
+  const sorted = [...reviews].sort((a, b) => {
+    if (sort === 'melhores') return b.rating - a.rating;
+    if (sort === 'piores')   return a.rating - b.rating;
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+
+  const SORT_OPTIONS = [
+    { key: 'recentes' as const, label: 'Recentes' },
+    { key: 'melhores' as const, label: 'Melhores' },
+    { key: 'piores'   as const, label: 'Piores'   },
+  ];
+
+  return (
+    <div>
+      {/* ── Média geral ── */}
+      {avgRating ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, background: '#FFEB13', marginBottom: 20 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 32, fontWeight: 900, color: '#1a1400', lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{avgRating}</div>
+            <div style={{ fontSize: 11, color: 'rgba(26,20,0,0.6)', marginTop: 2 }}>/10</div>
+          </div>
+          <div style={{ width: 1, height: 40, background: 'rgba(26,20,0,0.15)' }} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1400', fontFamily: "'Area',sans-serif" }}>
+              {reviews.length} {reviews.length === 1 ? 'avaliação' : 'avaliações'}
+            </div>
+            <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
+              {[1,2,3,4,5].map(i => (
+                <Icon key={i} name="star" size={12} color={i <= Math.round(Number(avgRating) / 2) ? '#1a1400' : 'rgba(26,20,0,0.25)'} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}`, marginBottom: 20 }}>
+          <Icon name="star" size={20} color={T.t4} />
+          <Txt size={13} weight={600} color={T.t2}>Sem avaliações ainda — seja o primeiro!</Txt>
+        </div>
+      )}
+
+      {/* ── Filtros ── */}
+      {reviews.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          {SORT_OPTIONS.map(({ key, label }) => (
+            <button key={key} onClick={() => setSort(key)} style={{
+              padding: '7px 16px', borderRadius: 20, flexShrink: 0,
+              background: sort === key ? T.pink : T.surface2,
+              border: sort === key ? 'none' : `1px solid ${T.border}`,
+              color: sort === key ? '#fff' : T.t2,
+              fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
+            }}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Lista ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        {sorted.map(rev => {
+          const liked = !!(rev as any).liked;
+          return (
+            <div key={rev.id} style={{ padding: '14px 16px', background: T.card, borderRadius: 16, border: `1px solid ${T.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 19, background: T.pink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Txt size={13} weight={800} color="#fff">{rev.avatar}</Txt>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Txt size={13} weight={700} style={{ display: 'block' }}>{rev.user}</Txt>
+                  <Txt size={11} color={T.t4} style={{ display: 'block' }}>{timeAgo(rev.date)}</Txt>
+                </div>
+                {rev.rating > 0 && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, background: '#FFEB13' }}>
+                    <Icon name="star" size={10} color="#1a1400" />
+                    <Txt size={12} weight={700} color="#1a1400">{rev.rating}/10</Txt>
+                  </div>
+                )}
+              </div>
+              {rev.text ? (
+                <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 10 }}>{rev.text}</Txt>
+              ) : null}
+              <button onClick={() => onLike(rev.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                <Icon name={liked ? 'heart' : 'heartO'} size={15} color={liked ? T.pink : T.t3} />
+                <Txt size={12} color={liked ? T.pink : T.t3}>{(rev.likes || 0) + (liked ? 1 : 0)}</Txt>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Botão + modal de avaliação ── */}
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)}
+          style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}`, marginBottom: 8 }}>
+          <Txt size={15} weight={700} color="#fff">+ Adicionar avaliação</Txt>
+        </button>
+      ) : (
+        <div style={{ background: T.card, borderRadius: 16, border: `1px solid ${T.border}`, padding: '16px', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <Txt size={15} weight={700}>Sua avaliação</Txt>
+            <button onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+              <Icon name="close" size={18} color={T.t3} />
+            </button>
+          </div>
+          <div style={{ marginBottom: 14, textAlign: 'center' }}>
+            <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>Sua nota</Txt>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <Stars value={reviewRating} max={5} size={36} onChange={setReviewRating} />
+            </div>
+            {reviewRating > 0 && (
+              <Txt size={13} weight={700} color={T.pink} style={{ display: 'block', marginTop: 6 }}>
+                {['', 'Ruim', 'Regular', 'Bom', 'Ótimo', 'Obra-prima'][reviewRating]}
+              </Txt>
+            )}
+          </div>
+          <textarea
+            value={reviewText}
+            onChange={e => setReviewText(e.target.value)}
+            placeholder="Escreva seu comentário..."
+            rows={3}
+            maxLength={500}
+            style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, color: T.white, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", padding: '12px 14px', outline: 'none', resize: 'none', boxSizing: 'border-box', marginBottom: 12 }}
+          />
+          <button onClick={onSubmit}
+            style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}` }}>
+            <Txt size={15} weight={700} color="#fff">Publicar avaliação</Txt>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -563,17 +753,6 @@ function WatchProvidersTab({ type, id, onVIP }: {
           {buy.map((p: any) => <ProviderRow key={p.provider_id} p={p} label="Comprar" />)}
         </div>
       )}
-      {/* VIP card */}
-      <div onClick={onVIP} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: T.card, borderRadius: T.radiusSm, border: `1px solid rgba(245,197,24,0.2)`, marginTop: 8, cursor: 'pointer' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 22, background: T.goldDim, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon name="crown" size={18} color={T.gold} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <Txt size={13} weight={700} color={T.gold} style={{ display: 'block' }}>Mais com VIP</Txt>
-          <Txt size={11} color={T.t3}>Alertas quando chegar em novos streamings</Txt>
-        </div>
-        <Btn label="VIP" variant="gold" size="sm" onClick={onVIP} />
-      </div>
     </div>
   );
 }
@@ -587,8 +766,6 @@ function InformationsTab({ detail, crew, similar, isTV, onCrew, onSimilar }: {
   ).slice(0, 8);
 
   const infoRows = [
-    { label: 'Lançamento',  value: detail.release_date || detail.first_air_date || '—' },
-    { label: 'Duração',     value: detail.runtime ? `${detail.runtime} min` : detail.episode_run_time?.[0] ? `${detail.episode_run_time[0]} min/ep` : '—' },
     { label: 'País',        value: (detail.production_countries || [])[0]?.name || '—' },
     { label: 'Idioma',      value: (detail.spoken_languages || [])[0]?.name || '—' },
     ...(isTV ? [
@@ -749,15 +926,9 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: 
               style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
               {ep.name}
             </Txt>
-            <Txt size={12} color={T.t3} style={{ display: 'block', marginBottom: 8 }}>
+            <Txt size={12} color={T.t3} style={{ display: 'block' }}>
               Temporada {seasonNum} - Ep {ep.episode_number}
             </Txt>
-            {ep.vote_average > 0 && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 8, background: T.goldDim, border: `1px solid rgba(245,197,24,0.2)` }}>
-                <Icon name="star" size={10} color={T.gold} />
-                <Txt size={11} weight={700} color={T.gold}>{ep.vote_average.toFixed(1)}/10</Txt>
-              </span>
-            )}
           </div>
           <Icon name="chevronR" size={14} color={T.t4} />
         </button>
@@ -853,7 +1024,7 @@ function ReviewCard({ review, onLike }: { review: Review; onLike: () => void }) 
 const STATUS_ICON_MAP = {
   watching:  { icon: 'eye'      as const, bg: '#FF8C00', color: '#fff' },
   favorites: { icon: 'heart'    as const, bg: '#E5002E', color: '#fff' },
-  want:      { icon: 'search'   as const, bg: '#A861FF', color: '#fff' },
+  want:      { icon: 'search'   as const, bg: '#C069FF', color: '#fff' },
   atrasado:  { icon: 'clock'    as const, bg: '#FF3B30', color: '#fff' },
 };
 
@@ -928,35 +1099,13 @@ function HeroWithGlur({
         zIndex: BLUR_DETAIL + 2, pointerEvents: 'none',
       }} />
 
-      {/* ④ Status icon — top right */}
-      {statusKey && (() => {
-        const s = STATUS_ICON_MAP[statusKey];
-        return (
-          <div style={{
-            position: 'absolute', top: 16, right: 16, zIndex: BLUR_DETAIL + 3,
-            width: 42, height: 42, borderRadius: 21,
-            background: s.bg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: `0 3px 14px rgba(0,0,0,0.35)`,
-          }}>
-            <Icon name={s.icon} size={20} color={s.color} />
-          </div>
-        );
-      })()}
-
-      {/* ⑤ Title + chips */}
+      {/* ④ Title + chips */}
       <div style={{ position: 'absolute', bottom: 20, left: 16, right: 16, zIndex: BLUR_DETAIL + 3 }}>
         <Txt size={28} weight={800} color={T.white} style={{ display: 'block', lineHeight: 1.15, letterSpacing: -0.5, marginBottom: 10, textShadow: 'none' }}>{title}</Txt>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {genre && (
             <div style={{ display: 'flex', alignItems: 'center', padding: '4px 12px', borderRadius: 20, background: 'var(--c-t4)', border: '1px solid var(--c-t4)' }}>
               <Txt size={11} weight={700} color={T.white}>{genre}</Txt>
-            </div>
-          )}
-          {rating && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 20, background: 'var(--c-t4)', border: '1px solid var(--c-t4)' }}>
-              <Icon name="star" size={11} color={T.gold} />
-              <Txt size={11} weight={700} color={T.white}>{rating}/10</Txt>
             </div>
           )}
           {runtime && (

@@ -16,9 +16,9 @@ export const prefsStore = {
 };
 
 export type Review = {
-  id: string; user: string; avatar: string; rating: number; text: string;
+  id: string; user: string; avatar: string; photoUrl?: string; rating: number; text: string;
   date: string; likes?: number; likedBy?: string[];
-  replies?: Array<{ id: string; user: string; avatar: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
+  replies?: Array<{ id: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
 };
 
 const REV_KEY = 'sec_reviews_v1';
@@ -49,6 +49,21 @@ export const revStore = {
       return Object.values(all).reduce((sum: number, arr: unknown) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
     } catch { return 0; }
   },
+  /** Returns all reviews across ALL keys that belong to a given username */
+  getByUser(username: string): Array<Review & { itemKey: string }> {
+    if (typeof window === 'undefined') return [];
+    try {
+      const all: Record<string, Review[]> = JSON.parse(localStorage.getItem(REV_KEY) || '{}');
+      const result: Array<Review & { itemKey: string }> = [];
+      for (const [key, reviews] of Object.entries(all)) {
+        if (!Array.isArray(reviews)) continue;
+        for (const r of reviews) {
+          if (r.user === username) result.push({ ...r, itemKey: key });
+        }
+      }
+      return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } catch { return []; }
+  },
   toggleLike(itemKey: string, reviewId: string, userId = 'me') {
     const list = revStore.get(itemKey);
     const rev = list.find((r) => r.id === reviewId);
@@ -74,6 +89,8 @@ export type Profile = {
   social: { instagram: string; twitter: string; letterboxd: string };
   streamings: string[];
   genres: string[];
+  followers: number;
+  following: number;
 };
 
 const PROFILE_KEY = 'sec_profile_v1';
@@ -82,12 +99,14 @@ const PROFILE_DEFAULT: Profile = {
   username: 'lucastales',
   bio: '',
   avatarLetter: 'L',
-  avatarGradient: 'linear-gradient(135deg,#E050C8,#c030a0)',
+  avatarGradient: 'linear-gradient(135deg,#C069FF,#c030a0)',
   avatarImage: '',
   coverImage: '',
   social: { instagram: '', twitter: '', letterboxd: '' },
   streamings: [],
   genres: [],
+  followers: 0,
+  following: 0,
 };
 
 export const profileStore = {
@@ -183,5 +202,63 @@ export const listStore = {
     all[type] = (all[type] || []).filter((x: any) => x.id !== id);
     try { localStorage.setItem(LIST_KEY, JSON.stringify(all)); } catch {}
     return all[type];
+  },
+};
+
+/* ─── Notification inbox store ─── */
+export type InboxNotif = {
+  id: string;
+  type: 'new_episode' | 'like' | 'reply' | 'follow' | 'release' | 'general';
+  title: string;
+  body: string;
+  time: string;    // ISO date
+  read: boolean;
+  link?: string;   // optional route to open on tap
+};
+
+const INBOX_KEY = 'sec_notif_inbox_v1';
+const INBOX_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+
+export const notifInboxStore = {
+  get(): InboxNotif[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const all: InboxNotif[] = JSON.parse(localStorage.getItem(INBOX_KEY) || '[]');
+      const now = Date.now();
+      const filtered = all.filter(n => now - new Date(n.time).getTime() < INBOX_TTL);
+      if (filtered.length !== all.length) {
+        localStorage.setItem(INBOX_KEY, JSON.stringify(filtered));
+      }
+      return filtered.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    } catch { return []; }
+  },
+  add(n: InboxNotif) {
+    if (typeof window === 'undefined') return;
+    try {
+      const all: InboxNotif[] = JSON.parse(localStorage.getItem(INBOX_KEY) || '[]');
+      all.unshift(n);
+      localStorage.setItem(INBOX_KEY, JSON.stringify(all));
+    } catch {}
+  },
+  markRead(id: string) {
+    if (typeof window === 'undefined') return;
+    try {
+      const all = notifInboxStore.get().map(n => n.id === id ? { ...n, read: true } : n);
+      localStorage.setItem(INBOX_KEY, JSON.stringify(all));
+    } catch {}
+  },
+  markAllRead() {
+    if (typeof window === 'undefined') return;
+    try {
+      const all = notifInboxStore.get().map(n => ({ ...n, read: true }));
+      localStorage.setItem(INBOX_KEY, JSON.stringify(all));
+    } catch {}
+  },
+  unreadCount(): number {
+    return notifInboxStore.get().filter(n => !n.read).length;
+  },
+  clear() {
+    if (typeof window === 'undefined') return;
+    try { localStorage.removeItem(INBOX_KEY); } catch {}
   },
 };

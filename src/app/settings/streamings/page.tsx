@@ -6,6 +6,9 @@ import { Screen, ScrollArea, AppBar, Txt, Toast } from '@/components/primitives'
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { profileStore } from '@/lib/store';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { dbProfileStore } from '@/lib/db';
+import { useAuth } from '@/hooks/useAuth';
 
 const SERVICES = [
   { id: 'Netflix',    color: '#E50914', icon: 'N',  monthly: 'R$ 39,90' },
@@ -22,6 +25,7 @@ const SERVICES = [
 
 export default function StreamingsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -31,8 +35,11 @@ export default function StreamingsPage() {
     setSelected(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   };
 
-  const save = () => {
+  const save = async () => {
     profileStore.set({ streamings: selected });
+    if (firebaseConfigured && user) {
+      try { await dbProfileStore.set(getDB(), user.uid, { streamings: selected }); } catch {}
+    }
     setToast('Streamings salvos!');
     setTimeout(() => router.back(), 1100);
   };

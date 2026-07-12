@@ -11,7 +11,7 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbProfileStore } from '@/lib/db';
 
 const GRADIENTS = [
-  'linear-gradient(135deg,#E050C8,#c030a0)',
+  'linear-gradient(135deg,#C069FF,#c030a0)',
   'linear-gradient(135deg,#E50914,#a00000)',
   'linear-gradient(135deg,#3b82f6,#1d4ed8)',
   'linear-gradient(135deg,#10b981,#047857)',

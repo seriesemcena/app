@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, AppBar, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
-import { TMDBPosterCard } from '@/components/posters';
+import { MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 
@@ -54,25 +54,16 @@ function PlatformSection({ platform, period, onTitle }: {
         </div>
       </div>
 
-      {/* Horizontal scroll */}
-      <div style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
-        {loading
-          ? [...Array(5)].map((_, i) => (
-              <div key={i} style={{ width: 90, flexShrink: 0 }}>
-                <div style={{ width: 90, height: 134, borderRadius: 10, background: T.card }} />
-                <div style={{ height: 10, background: T.surface, borderRadius: 4, marginTop: 8, width: '80%' }} />
-              </div>
-            ))
-          : items.map(item => (
-              <div key={item.id} style={{ flexShrink: 0 }}>
-                <TMDBPosterCard item={item} size="sm" onClick={() => onTitle(item)} />
-              </div>
-            ))
-        }
-        {!loading && items.length === 0 && (
-          <Txt size={13} color={T.t3} style={{ padding: '20px 0' }}>Sem resultados para esta plataforma.</Txt>
-        )}
-      </div>
+      {/* Masonry 2 colunas */}
+      {items.length === 0 && !loading
+        ? <Txt size={13} color={T.t3} style={{ padding: '0 16px 20px', display: 'block' }}>Sem resultados para esta plataforma.</Txt>
+        : <MasonryGrid2
+            items={items}
+            onItem={onTitle}
+            loading={loading}
+            skeletonCount={6}
+          />
+      }
     </div>
   );
 }
@@ -132,40 +123,19 @@ export default function TrendsPage() {
           ) : (
             <div style={{ padding: '0 0 80px' }}>
               {/* Top 10 geral */}
-              <Txt size={17} weight={800} style={{ display: 'block', padding: '0 16px', marginBottom: 16 }}>🔥 Top geral</Txt>
-              <div style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none', marginBottom: 28 } as React.CSSProperties}>
-                {ltA
-                  ? [...Array(6)].map((_, i) => <div key={i} style={{ width: 90, height: 134, borderRadius: 10, background: T.card, flexShrink: 0 }} />)
-                  : (trendAll?.results || []).slice(0, 10).map((item: TMDBItem) => (
-                      <div key={item.id} style={{ flexShrink: 0 }}>
-                        <TMDBPosterCard item={item} size="sm" onClick={() => openTitle(item)} />
-                      </div>
-                    ))
-                }
+              <Txt size={17} weight={800} style={{ display: 'block', padding: '0 16px', marginBottom: 14 }}>🔥 Top geral</Txt>
+              <div style={{ marginBottom: 32 }}>
+                <MasonryGrid2 items={(trendAll?.results || []).slice(0, 10)} onItem={openTitle} loading={ltA} skeletonCount={6} />
               </div>
 
-              <Txt size={17} weight={800} style={{ display: 'block', padding: '0 16px', marginBottom: 16 }}>🎬 Filmes em alta</Txt>
-              <div style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none', marginBottom: 28 } as React.CSSProperties}>
-                {ltM
-                  ? [...Array(6)].map((_, i) => <div key={i} style={{ width: 90, height: 134, borderRadius: 10, background: T.card, flexShrink: 0 }} />)
-                  : (trendMov?.results || []).slice(0, 10).map((item: TMDBItem) => (
-                      <div key={item.id} style={{ flexShrink: 0 }}>
-                        <TMDBPosterCard item={item} size="sm" onClick={() => openTitle(item)} />
-                      </div>
-                    ))
-                }
+              <Txt size={17} weight={800} style={{ display: 'block', padding: '0 16px', marginBottom: 14 }}>🎬 Filmes em alta</Txt>
+              <div style={{ marginBottom: 32 }}>
+                <MasonryGrid2 items={(trendMov?.results || []).slice(0, 10)} onItem={openTitle} loading={ltM} skeletonCount={6} />
               </div>
 
-              <Txt size={17} weight={800} style={{ display: 'block', padding: '0 16px', marginBottom: 16 }}>📺 Séries em alta</Txt>
-              <div style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none', marginBottom: 28 } as React.CSSProperties}>
-                {ltT
-                  ? [...Array(6)].map((_, i) => <div key={i} style={{ width: 90, height: 134, borderRadius: 10, background: T.card, flexShrink: 0 }} />)
-                  : (trendTV?.results || []).slice(0, 10).map((item: TMDBItem) => (
-                      <div key={item.id} style={{ flexShrink: 0 }}>
-                        <TMDBPosterCard item={item} size="sm" onClick={() => openTitle(item)} />
-                      </div>
-                    ))
-                }
+              <Txt size={17} weight={800} style={{ display: 'block', padding: '0 16px', marginBottom: 14 }}>📺 Séries em alta</Txt>
+              <div style={{ marginBottom: 32 }}>
+                <MasonryGrid2 items={(trendTV?.results || []).slice(0, 10)} onItem={openTitle} loading={ltT} skeletonCount={6} />
               </div>
             </div>
           )}

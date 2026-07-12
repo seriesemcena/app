@@ -1,34 +1,57 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen } from '@/components/primitives';
-import { Icon } from '@/components/Icon';
-import { T } from '@/lib/tokens';
+import { useAuthContext } from '@/context/AuthContext';
 
 export default function SplashPage() {
   const router = useRouter();
-  const [phase, setPhase] = useState(0);
+  const { user, loading, offline } = useAuthContext();
+
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase(1), 1200);
-    const t2 = setTimeout(() => router.push('/onboarding'), 2200);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [router]);
+    if (loading) return; // wait for Firebase to initialise
+
+    if (offline) {
+      // Firebase not configured — go straight to home
+      router.replace('/home');
+      return;
+    }
+
+    if (!user) {
+      // Not logged in — show splash briefly then welcome
+      const t = setTimeout(() => router.replace('/welcome'), 1600);
+      return () => clearTimeout(t);
+    }
+
+    // Logged in — check if onboarding was ever completed
+    const onboardingDone = localStorage.getItem('onboarding_done');
+    router.replace(onboardingDone ? '/home' : '/onboarding');
+  }, [user, loading, offline, router]);
 
   return (
     <Frame>
-      <Screen style={{ alignItems: 'center', justifyContent: 'center', background: T.bg }}>
-        <div style={{ opacity: phase === 0 ? 1 : 0, transition: 'opacity 0.6s ease', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-          <div style={{ width: 80, height: 80, borderRadius: 22, background: `linear-gradient(135deg,${T.red},#8B0000)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 40px rgba(229,9,20,0.4)` }}>
-            <Icon name="film" size={38} color={T.white} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: T.white, letterSpacing: -0.5 }}>Séries em Cena</div>
-            <div style={{ fontSize: 13, color: T.t3, marginTop: 3 }}>Seu guia de filmes e séries</div>
+      <Screen style={{ alignItems: 'center', justifyContent: 'center', background: '#0D0D0F' }}>
+        {/* App name */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Maratonou" style={{ height: 30, width: 'auto', display: 'block' }} />
+          <div style={{
+            fontSize: 13, color: 'rgba(255,255,255,0.38)',
+            fontFamily: "'Area','Inter',sans-serif",
+          }}>
+            Seu app de filmes e séries
           </div>
         </div>
+
+        {/* Dots */}
         <div style={{ position: 'absolute', bottom: 60, display: 'flex', gap: 6 }}>
-          {[0, 1, 2].map((i) => <div key={i} style={{ width: 6, height: 6, borderRadius: 3, background: i === 0 ? T.red : T.t4 }} />)}
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{
+              width: 6, height: 6, borderRadius: 3,
+              background: i === 0 ? '#C069FF' : 'rgba(255,255,255,0.18)',
+            }} />
+          ))}
         </div>
       </Screen>
     </Frame>

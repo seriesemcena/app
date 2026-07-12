@@ -11,6 +11,12 @@ export function useAuth() {
   const { user, loading, offline } = useAuthContext();
   const router = useRouter();
 
+  /** After login, send new users to onboarding and returning users to home */
+  const postLoginRoute = () => {
+    const done = typeof window !== 'undefined' && localStorage.getItem('onboarding_done');
+    router.push(done ? '/home' : '/onboarding');
+  };
+
   const signInWithGoogle = async () => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
     const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
@@ -18,7 +24,7 @@ export function useAuth() {
     provider.addScope('email');
     provider.addScope('profile');
     await signInWithPopup(getFirebaseAuth(), provider);
-    router.push('/home');
+    postLoginRoute();
   };
 
   const signInWithApple = async () => {
@@ -28,14 +34,14 @@ export function useAuth() {
     provider.addScope('email');
     provider.addScope('name');
     await signInWithPopup(getFirebaseAuth(), provider);
-    router.push('/home');
+    postLoginRoute();
   };
 
   const signInWithEmail = async (email: string, password: string) => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
     const { signInWithEmailAndPassword } = await import('firebase/auth');
     await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
-    router.push('/home');
+    postLoginRoute();
   };
 
   const registerWithEmail = async (name: string, email: string, password: string) => {
@@ -43,7 +49,7 @@ export function useAuth() {
     const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
     const { user: newUser } = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
     await updateProfile(newUser, { displayName: name });
-    router.push('/home');
+    postLoginRoute();
   };
 
   const resetPassword = async (email: string) => {

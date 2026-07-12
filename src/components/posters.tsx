@@ -1,5 +1,5 @@
 'use client';
-import { CSSProperties, ReactNode, useState } from 'react';
+import { CSSProperties, ReactNode, useState, useEffect } from 'react';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { Txt, Skeleton } from './primitives';
@@ -142,6 +142,196 @@ export const SkeletonCards = ({ count = 5, size = 'md' }: { count?: number; size
           <Skeleton w={w * 0.5} h={8} style={{ marginTop: 4 }} />
         </div>
       ))}
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
+   TMDBGridCard — card para grade 2 colunas
+   Imagem no topo + título/info abaixo no fundo do card
+   Busca poster sem texto (iso_639_1 = null) via TMDB images API
+   ───────────────────────────────────────────────────────────── */
+export const TMDBGridCard = ({
+  item, onClick, tag,
+}: {
+  item: TMDBItem;
+  onClick?: () => void;
+  tag?: { label: string; color: string; bg: string };
+}) => {
+  const [imgLoaded,    setImgLoaded]    = useState(false);
+  const [imgErr,       setImgErr]       = useState(false);
+  const [textlessSrc,  setTextlessSrc]  = useState<string | null>(null);
+  const [fetchDone,    setFetchDone]    = useState(false);
+
+  const n        = normalize(item);
+  // normalize() usa media_type ou first_air_date para detectar TV.
+  // WatchingItem não tem nenhum dos dois — usa o campo próprio `type`.
+  const resolvedType: 'tv' | 'movie' =
+    n.type === 'tv' ? 'tv' : ((item as any).type === 'tv' ? 'tv' : 'movie');
+  const apiType  = resolvedType === 'tv' ? 'tv' : 'movie';
+  const fallback = n.poster_path ? tmdbImg(n.poster_path, 'w342') : null;
+  // Só mostra imagem após o fetch terminar — evita glitch de troca
+  const src      = fetchDone ? (textlessSrc ?? fallback) : null;
+
+  const isTV    = resolvedType === 'tv';
+  const seasons = (item as any).number_of_seasons as number | undefined;
+  const subtitle = isTV
+    ? (seasons ? `${seasons} temporada${seasons !== 1 ? 's' : ''}` : 'Série')
+    : `Filme${n.year ? ` · ${n.year}` : ''}`;
+
+  /* Lazy-fetch textless poster (iso_639_1 === null) */
+  useEffect(() => {
+    if (!item.id) return;
+    let alive = true;
+    const url = `/api/tmdb?endpoint=/${apiType}/${item.id}/images&include_image_language=null`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (!alive) return;
+        const posters: Array<{ file_path: string; iso_639_1: string | null; vote_average: number }> =
+          data?.posters ?? [];
+        const best = posters
+          .filter(p => p.iso_639_1 === null)
+          .sort((a, b) => b.vote_average - a.vote_average)[0];
+        if (best?.file_path) {
+          setTextlessSrc(tmdbImg(best.file_path, 'w342') ?? null);
+        }
+        setFetchDone(true); // revela a imagem (textless ou fallback) só agora
+      })
+      .catch(() => {
+        if (!alive) return;
+        setFetchDone(true); // erro: revela o fallback sem textless
+      });
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, apiType]);
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        width: '100%',
+        borderRadius: 16,
+        overflow: 'hidden',
+        cursor: 'pointer',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#0a0a0c',
+        border: '1px solid rgba(255,255,255,0.10)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 2px 12px rgba(0,0,0,0.45)',
+      }}
+    >
+      {/* ── Imagem com aspecto fixo + gradiente que dissolve no fundo ── */}
+      <div style={{ position: 'relative', aspectRatio: '5 / 6.6', overflow: 'hidden', flexShrink: 0 }}>
+        {src && !imgErr && (
+          <img
+            key={src}
+            src={src}
+            alt={n.title}
+            onLoad={() => setImgLoaded(true)}
+            onError={() => setImgErr(true)}
+            style={{
+              width: '100%', height: '100%',
+              objectFit: 'cover', display: 'block',
+              opacity: imgLoaded ? 1 : 0,
+              transition: 'opacity 0.35s',
+              transform: 'scale(1.10)',
+            }}
+          />
+        )}
+
+        {/* Gradiente: dissolve para o mesmo fundo escuro do texto abaixo */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(to bottom, transparent 42%, #0a0a0c 100%)',
+          pointerEvents: 'none',
+        }} />
+
+        {/* Tag badge — topo esquerdo */}
+        {tag && (
+          <div style={{
+            position: 'absolute', top: 8, left: 8,
+            padding: '3px 7px', borderRadius: 6,
+            background: tag.bg,
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          } as React.CSSProperties}>
+            <span style={{
+              fontSize: 9, fontWeight: 800,
+              color: tag.color,
+              fontFamily: "'Area','Inter',sans-serif",
+              letterSpacing: 0.4,
+            }}>{tag.label}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Texto abaixo — mesmo fundo do gradiente, altura livre ── */}
+      <div style={{ padding: '2px 11px 13px', background: '#0a0a0c' }}>
+        <div style={{
+          fontSize: 14, fontWeight: 700,
+          color: 'rgba(255,255,255,0.95)',
+          fontFamily: "'Area','Inter',sans-serif",
+          lineHeight: 1.5,
+          marginBottom: 4,
+        }}>{n.title}</div>
+        <div style={{
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.50)',
+          fontFamily: "'Area','Inter',sans-serif",
+          lineHeight: 1.5,
+        }}>{subtitle}</div>
+      </div>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
+   MasonryGrid2 — grade masonry 2 colunas com alturas variáveis
+   Distribui items alternadamente nas colunas (0,2,4… / 1,3,5…)
+   ───────────────────────────────────────────────────────────── */
+export const MasonryGrid2 = ({
+  items, onItem, loading = false, skeletonCount = 8, getTag, padding = '0 16px',
+}: {
+  items: TMDBItem[];
+  onItem: (item: TMDBItem) => void;
+  loading?: boolean;
+  skeletonCount?: number;
+  getTag?: (item: TMDBItem) => { label: string; color: string; bg: string } | undefined;
+  padding?: string;
+}) => {
+  const col1 = items.filter((_, i) => i % 2 === 0);
+  const col2 = items.filter((_, i) => i % 2 === 1);
+  const sk1  = Math.ceil(skeletonCount / 2);
+  const sk2  = Math.floor(skeletonCount / 2);
+
+  if (loading) return (
+    <div style={{ display: 'flex', gap: 13, padding }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {Array.from({ length: sk1 }).map((_, i) => (
+          <div key={i} style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
+        ))}
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {Array.from({ length: sk2 }).map((_, i) => (
+          <div key={i} style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', gap: 13, padding }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {col1.map(item => (
+          <TMDBGridCard key={item.id} item={item} onClick={() => onItem(item)} tag={getTag?.(item)} />
+        ))}
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {col2.map(item => (
+          <TMDBGridCard key={item.id} item={item} onClick={() => onItem(item)} tag={getTag?.(item)} />
+        ))}
+      </div>
     </div>
   );
 };

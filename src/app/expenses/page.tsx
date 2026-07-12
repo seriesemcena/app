@@ -66,7 +66,7 @@ export default function ExpensesPage() {
         } />
 
         <ScrollArea>
-          <div style={{ margin: '16px 16px 0', padding: 20, background: `linear-gradient(135deg,rgba(240,80,194,0.15),rgba(240,80,194,0.05))`, borderRadius: T.radius, border: `1px solid rgba(240,80,194,0.2)` }}>
+          <div style={{ margin: '16px 16px 0', padding: 20, background: `linear-gradient(135deg,rgba(192,105,255,0.15),rgba(192,105,255,0.05))`, borderRadius: T.radius, border: `1px solid rgba(192,105,255,0.2)` }}>
             <Txt size={11} color={T.t3} weight={700} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Gasto total ativo</Txt>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
               <Txt size={38} weight={800} color={T.pink}>R$ {monthly.toFixed(2).replace('.', ',')}</Txt>
@@ -133,7 +133,7 @@ export default function ExpensesPage() {
                   <Txt size={11} color={T.t3}>{s.plan} · R$ {s.price.toFixed(2).replace('.', ',')}/mês</Txt>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => toggleSub(s.id)} style={{ width: 28, height: 28, borderRadius: 14, background: s.active ? 'rgba(240,80,194,0.15)' : T.surface2, border: `1px solid ${s.active ? T.pink : T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <button onClick={() => toggleSub(s.id)} style={{ width: 28, height: 28, borderRadius: 14, background: s.active ? 'rgba(192,105,255,0.15)' : T.surface2, border: `1px solid ${s.active ? T.pink : T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name={s.active ? 'check' : 'close'} size={13} color={s.active ? T.pink : T.t3} />
                   </button>
                   <button onClick={() => removeSub(s.id)} style={{ width: 28, height: 28, borderRadius: 14, background: 'rgba(229,9,20,0.1)', border: `1px solid rgba(229,9,20,0.2)`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -142,15 +142,6 @@ export default function ExpensesPage() {
                 </div>
               </div>
             ))}
-          </div>
-
-          <div onClick={() => router.push('/vip')} style={{ margin: '8px 16px 16px', padding: '14px 16px', borderRadius: T.radiusSm, background: T.goldDim, border: `1px solid rgba(245,197,24,0.2)`, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Icon name="crown" size={22} color={T.gold} />
-            <div style={{ flex: 1 }}>
-              <Txt size={13} weight={700} color={T.gold} style={{ display: 'block' }}>VIP: Alertas de promoções</Txt>
-              <Txt size={11} color={T.t3}>Seja notificado quando as assinaturas saírem mais baratas</Txt>
-            </div>
-            <Icon name="chevronR" size={16} color={T.gold} />
           </div>
 
           <div style={{ height: 90 }} />
@@ -179,7 +170,7 @@ export default function ExpensesPage() {
               <Txt size={12} color={T.t3} weight={700} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Plano</Txt>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                 {selStream.plans.map((p, i) => (
-                  <button key={i} onClick={() => setSelPlan(i)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: selPlan === i ? 'rgba(240,80,194,0.12)' : T.surface, border: `1px solid ${selPlan === i ? T.pink : T.border}`, borderRadius: T.radiusSm, cursor: 'pointer' }}>
+                  <button key={i} onClick={() => setSelPlan(i)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: selPlan === i ? 'rgba(192,105,255,0.12)' : T.surface, border: `1px solid ${selPlan === i ? T.pink : T.border}`, borderRadius: T.radiusSm, cursor: 'pointer' }}>
                     <Txt size={13} weight={600} color={selPlan === i ? T.white : T.t2}>{p.label}</Txt>
                     <Txt size={13} weight={700} color={selPlan === i ? T.pink : T.t3}>R$ {p.price.toFixed(2).replace('.', ',')}/mês</Txt>
                   </button>

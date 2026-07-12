@@ -5,7 +5,7 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Stars, StreamBadge, Toast, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { revStore, type Review } from '@/lib/store';
+import { revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore } from '@/lib/db';
@@ -41,6 +41,14 @@ function EpisodePageInner() {
   const overview= sp.get('overview')|| '';
   const still   = sp.get('still')   || '';
   const network = sp.get('network') || '';
+  const airDate = sp.get('airDate') || '';
+
+  /* ── Format air date ── */
+  const formattedAirDate = airDate ? (() => {
+    try {
+      return new Date(airDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return airDate; }
+  })() : null;
 
   /* localStorage key — unique per show + season + episode */
   const storageKey = `ep_${tvId}_s${season}_e${epNum}`;
@@ -49,6 +57,15 @@ function EpisodePageInner() {
   const [watched, setWatched]         = useState(false);
   const [toast, setToast]             = useState<string | false>(false);
   const [reviews, setReviews]         = useState<Review[]>([]);
+
+  /* ── Computed: ratings are private per user, only avg is public ── */
+  const currentUserName = user?.displayName || user?.email?.split('@')[0] || 'Você';
+  const ratedReviews    = reviews.filter(r => r.rating > 0);
+  const avgRating       = ratedReviews.length > 0
+    ? (ratedReviews.reduce((s, r) => s + r.rating, 0) / ratedReviews.length).toFixed(1)
+    : null;
+  const myRating        = reviews.find(r => r.user === currentUserName)?.rating || 0;
+  const commentCount    = reviews.filter(r => r.text).length;
 
   /* review modal */
   const [modalOpen, setModalOpen]     = useState(false);
@@ -63,8 +80,13 @@ function EpisodePageInner() {
   const [replyText, setReplyText]     = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  /* ── Load reviews: localStorage first (instant), then Firestore (sync) ── */
+  /* ── Load watched + reviews from localStorage, then sync Firestore ── */
   useEffect(() => {
+    if (!storageKey) return;
+
+    // Restore watched state
+    if (localStorage.getItem(`sec_watched_${storageKey}`) === 'true') setWatched(true);
+
     // Show local data immediately while Firestore loads
     const local = revStore.get(storageKey);
     setReviews(local);
@@ -100,11 +122,13 @@ function EpisodePageInner() {
     }
     const displayName  = user?.displayName || user?.email?.split('@')[0] || 'Você';
     const avatarLetter = displayName[0]?.toUpperCase() || 'V';
+    const photoUrl     = user?.photoURL || profileStore.get().avatarImage || '';
     const newRev: Review = {
       id: `ep_${Date.now()}`,
       user: displayName,
       avatar: avatarLetter,
-      rating: modalRating,
+      photoUrl,
+      rating: modalRating * 2,   /* 1-5 stars → 2-10 scale */
       text: comment.trim(),
       date: new Date().toISOString(),
       likes: 0,
@@ -190,7 +214,7 @@ function EpisodePageInner() {
         {/* Back button */}
         <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}>
           <button onClick={() => router.back()}
-            style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(0,0,0,0.55)', border: `1px solid var(--c-t4)`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
             <Icon name="chevronL" size={18} color={T.white} />
           </button>
         </div>
@@ -213,21 +237,27 @@ function EpisodePageInner() {
             {/* ── Episode info header ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6, marginTop: 4 }}>
               <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-                {/* Show name */}
+                {/* Show name + Temporada */}
                 {showName ? (
                   <Txt size={12} color={T.pink} weight={700} style={{ display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                    {showName}
+                    {showName}{season ? `  ·  Temporada ${season}` : ''}
                   </Txt>
                 ) : null}
-                {/* Episode name */}
+                {/* Episódio N: Título */}
                 <Txt size={20} weight={800} style={{ display: 'block', marginBottom: 6, lineHeight: 1.25 }}>
-                  {epName || `Episódio ${epNum}`}
+                  {`Episódio ${epNum}`}{epName ? `: ${epName}` : ''}
                 </Txt>
-                {/* Season · Episode · Duration */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <Txt size={12} color={T.t3}>
-                    T{season} · E{epNum}{runtime ? ` · ${runtime} min` : ''}
-                  </Txt>
+                {/* Air date · Duration */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {formattedAirDate && (
+                    <Txt size={12} color={T.t3}>{formattedAirDate}</Txt>
+                  )}
+                  {formattedAirDate && runtime && (
+                    <Txt size={12} color={T.t4}>·</Txt>
+                  )}
+                  {runtime && (
+                    <Txt size={12} color={T.t3}>{runtime} min</Txt>
+                  )}
                 </div>
               </div>
               {/* Streaming badge */}
@@ -241,9 +271,52 @@ function EpisodePageInner() {
               </Txt>
             ) : null}
 
+            {/* ── Ratings box (average public, individual private) ── */}
+            <div style={{ padding: '14px 16px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, marginBottom: 12 }}>
+              {avgRating ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ background: '#FFEB13', borderRadius: 10, padding: '8px 14px', textAlign: 'center', flexShrink: 0 }}>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: '#1a1400', lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{avgRating}</div>
+                    <div style={{ fontSize: 10, color: 'rgba(26,20,0,0.6)', marginTop: 1 }}>/10</div>
+                  </div>
+                  <div>
+                    <Txt size={13} weight={700} style={{ display: 'block' }}>
+                      {ratedReviews.length} {ratedReviews.length === 1 ? 'avaliação' : 'avaliações'}
+                    </Txt>
+                    {myRating > 0 && (
+                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 3 }}>Sua nota: {myRating}/10</Txt>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Icon name="star" size={20} color={T.t4} />
+                  <div>
+                    <Txt size={13} weight={600} color={T.t2} style={{ display: 'block' }}>Sem avaliações ainda</Txt>
+                    {myRating > 0 && (
+                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 2 }}>Sua nota: {myRating}/10</Txt>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* ── Mark as watched ── */}
             <button
-              onClick={() => { setWatched(w => !w); showToast(watched ? 'Desmarcado' : 'Marcado como assistido ✓'); }}
+              onClick={() => {
+                if (!watched) {
+                  setWatched(true);
+                  localStorage.setItem(`sec_watched_${storageKey}`, 'true');
+                  // Only open modal if user hasn't reviewed yet
+                  const alreadyReviewed = revStore.get(storageKey).some(r => r.user === currentUserName);
+                  if (!alreadyReviewed) setModalOpen(true);
+                  else showToast('Marcado como assistido ✓');
+                } else {
+                  setWatched(false);
+                  localStorage.removeItem(`sec_watched_${storageKey}`);
+                  showToast('Desmarcado');
+                }
+              }}
               style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: watched ? T.surface2 : T.pink, border: watched ? `1px solid ${T.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 12, boxShadow: watched ? 'none' : `0 4px 16px ${T.pinkGlow}` }}>
               <Icon name={watched ? 'check' : 'eye'} size={18} color={watched ? T.t2 : T.white} />
               <Txt size={15} weight={700} color={watched ? T.t2 : T.white}>
@@ -251,41 +324,14 @@ function EpisodePageInner() {
               </Txt>
             </button>
 
-            {/* ── Avaliar button ── */}
-            <button onClick={() => setModalOpen(true)}
+            {/* ── Ver comentários button ── */}
+            <button onClick={() => router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`Episódio ${epNum}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`)}
               style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 24 }}>
-              <Icon name="star" size={18} color={T.gold} />
-              <Txt size={15} weight={700} color={T.t1}>Avalie este episódio</Txt>
+              <Icon name="message" size={18} color={T.t2} />
+              <Txt size={15} weight={700} color={T.t1}>
+                Ver comentários{commentCount > 0 ? ` (${commentCount})` : ''}
+              </Txt>
             </button>
-
-            {/* ── Reviews ── */}
-            {reviews.length > 0 ? (
-              <>
-                <Txt size={15} weight={800} style={{ display: 'block', marginBottom: 14 }}>
-                  Avaliações ({reviews.length})
-                </Txt>
-                {reviews.map(rev => (
-                  <ReviewCard
-                    key={rev.id}
-                    rev={rev}
-                    timeAgo={timeAgo}
-                    onLike={() => toggleLike(rev.id)}
-                    replyOpen={replyOpen === rev.id}
-                    onToggleReply={() => setReplyOpen(r => r === rev.id ? null : rev.id)}
-                    replyText={replyText}
-                    onReplyChange={setReplyText}
-                    onSubmitReply={() => submitReply(rev.id)}
-                    gifData={FAKE_GIFS}
-                  />
-                ))}
-              </>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '24px 0 8px' }}>
-                <Txt size={13} color={T.t3} style={{ display: 'block' }}>
-                  Seja o primeiro a avaliar este episódio!
-                </Txt>
-              </div>
-            )}
           </div>
           <div style={{ height: 80 }} />
         </ScrollArea>

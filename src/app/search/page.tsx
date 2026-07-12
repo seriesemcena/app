@@ -72,9 +72,8 @@ export default function SearchPage() {
 
           {/* ── Header — igual home ── */}
           <div style={{ padding: '24px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '-1px', lineHeight: 1, color: '#fff', textTransform: 'uppercase', fontFamily: "'Area','Inter',sans-serif" }}>
-              Maratonou
-            </h1>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Maratonou" style={{ height: 22, width: 'auto', display: 'block' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
                 onClick={() => router.push('/notifications')}
@@ -188,7 +187,7 @@ export default function SearchPage() {
                             onClick={() => { setSort(s); setSortOpen(false); }}
                             style={{
                               width: '100%', padding: '13px 16px',
-                              background: sort === s ? 'rgba(240,80,194,0.08)' : 'transparent',
+                              background: sort === s ? 'rgba(192,105,255,0.08)' : 'transparent',
                               border: 'none', cursor: 'pointer',
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                               fontFamily: "'Area','Inter',sans-serif",

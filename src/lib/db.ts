@@ -12,7 +12,8 @@
    ───────────────────────────────────────────────────────────── */
 import {
   doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove,
-  type Firestore,
+  collection, addDoc, getDocs, query, orderBy, limit, onSnapshot,
+  type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import type { Profile, Review, SliderItem, Prefs } from './store';
 
@@ -40,6 +41,7 @@ const PROFILE_DEFAULT: Profile = {
   avatarLetter: '', avatarGradient: '', avatarImage: '', coverImage: '',
   social: { instagram: '', twitter: '', letterboxd: '' },
   streamings: [], genres: [],
+  followers: 0, following: 0,
 };
 
 export const dbProfileStore = {
@@ -125,6 +127,81 @@ export const dbSliderStore = {
     await setField(db, ['config', 'slider'], 'items', items);
   },
 };
+
+// ── Activity feed (list actions + reviews visible to all) ────
+// Firestore: activity/{auto-id}  ordered by createdAt desc
+
+export type ActivityDoc = {
+  uid:       string;
+  username:  string;
+  avatar:    string;
+  photoUrl:  string;
+  titleKey:  string;       // e.g. "tv_1396"
+  titleName: string;
+  poster:    string | null;
+  action:    'watched' | 'watching' | 'want' | 'reviewed';
+  rating:    number;       // 0 if not a review
+  text:      string;       // review text, empty otherwise
+  createdAt: string;       // ISO string
+};
+
+export const dbActivityStore = {
+  async add(db: Firestore, item: ActivityDoc): Promise<void> {
+    try { await addDoc(collection(db, 'activity'), item); } catch {}
+  },
+
+  async getRecent(db: Firestore, limitN = 60): Promise<ActivityDoc[]> {
+    try {
+      const q    = query(collection(db, 'activity'), orderBy('createdAt', 'desc'), limit(limitN));
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => d.data() as ActivityDoc);
+    } catch { return []; }
+  },
+};
+
+// ── Real-time subscription: users/{uid} → localStorage ───────
+// Call on login; returns an Unsubscribe function.
+// Whenever the user's doc changes in Firestore (other device wrote),
+// localStorage is refreshed and a custom event is fired so
+// any component can re-read and re-render.
+
+const LIST_KEY    = 'sec_lists_v1';
+const PROFILE_KEY = 'sec_profile_v1';
+const PREFS_KEY   = 'sec_prefs';
+
+export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
+  return onSnapshot(doc(db, 'users', uid), (snap) => {
+    if (typeof window === 'undefined' || !snap.exists()) return;
+    const data = snap.data();
+    if (!data) return;
+
+    // ── Lists ──────────────────────────────────────────────
+    const all: Record<string, unknown[]> = (() => {
+      try { return JSON.parse(localStorage.getItem(LIST_KEY) || '{}'); } catch { return {}; }
+    })();
+    let listsChanged = false;
+    for (const t of ['want', 'watching', 'watched', 'favorites'] as const) {
+      const items = data[`lists_${t}`];
+      if (Array.isArray(items)) { all[t] = items; listsChanged = true; }
+    }
+    if (listsChanged) {
+      try { localStorage.setItem(LIST_KEY, JSON.stringify(all)); } catch {}
+    }
+
+    // ── Profile ────────────────────────────────────────────
+    if (data.profile && typeof data.profile === 'object') {
+      try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data.profile)); } catch {}
+    }
+
+    // ── Prefs ──────────────────────────────────────────────
+    if (data.prefs && typeof data.prefs === 'object') {
+      try { localStorage.setItem(PREFS_KEY, JSON.stringify(data.prefs)); } catch {}
+    }
+
+    // Notify all listening components
+    window.dispatchEvent(new Event('maratonou:sync'));
+  });
+}
 
 // ── FCM Tokens ───────────────────────────────────────────────
 

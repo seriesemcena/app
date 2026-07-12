@@ -1,12 +1,13 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt } from '@/components/primitives';
+import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { tmdb, tmdbImg } from '@/lib/tmdb';
+import { tmdb, tmdbImg, type TMDBItem } from '@/lib/tmdb';
 import { listStore } from '@/lib/store';
+import { MasonryGrid2 } from '@/components/posters';
 
 type SeriesTab = 'minha_lista' | 'em_breve' | 'atrasadas';
 type WatchingTag = 'novo' | 'nao_assistido' | 'atrasado';
@@ -40,12 +41,16 @@ export default function SeriesPage() {
   const [loading, setLoading] = useState(true);
   const [wantList,    setWantList]    = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
   const [watchedList, setWatchedList] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
+  const [scrolled, setScrolled] = useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setWantList(listStore.get('want').filter((i) => i.type === 'tv'));
-    setWatchedList(listStore.get('watched').filter((i) => i.type === 'tv'));
+    const watched = listStore.get('watched').filter((i) => i.type === 'tv');
+    const watchedIds = new Set(watched.map((i) => i.id));
+    setWatchedList(watched);
+    setWantList(listStore.get('want').filter((i) => i.type === 'tv' && !watchedIds.has(i.id)));
 
-    const watching = listStore.get('watching').filter((i) => i.type === 'tv');
+    const watching = listStore.get('watching').filter((i) => i.type === 'tv' && !watchedIds.has(i.id));
     if (watching.length === 0) { setItems([]); setLoading(false); return; }
     setLoading(true);
     Promise.all(
@@ -86,51 +91,54 @@ export default function SeriesPage() {
   [items]);
 
   const TAG_STYLES: Record<WatchingTag, { bg: string; color: string; label: string }> = {
-    novo:          { bg: 'rgba(52,199,89,0.75)',  color: '#fff', label: 'NOVO' },
-    nao_assistido: { bg: 'rgba(255,159,10,0.75)', color: '#fff', label: 'NÃO ASSISTIDO' },
-    atrasado:      { bg: 'rgba(255,59,48,0.75)',  color: '#fff', label: 'ATRASADO' },
+    novo:          { bg: '#CCFF84', color: '#000', label: 'NOVO' },
+    nao_assistido: { bg: '#FB772D', color: '#fff', label: 'NÃO ASSISTIDO' },
+    atrasado:      { bg: '#e0352b', color: '#fff', label: 'ATRASADO' },
   };
 
   return (
     <Frame>
-      <Screen style={{ background: 'transparent', position: 'relative' }}>
-        {/* Gradient — imóvel, atrás de tudo */}
-        <div style={{ position: 'absolute', inset: 0, background: 'var(--c-header-gradient)', pointerEvents: 'none', zIndex: 0 }} />
+      <Screen>
+        <div ref={scrollRef} onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
 
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', position: 'relative', zIndex: 1 } as React.CSSProperties}>
+          {/* ── Header glass sticky ── */}
+          <GlassHeader
+            right={
+              <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="search" size={16} color="#fff" />
+              </button>
+            }
+          />
 
-          {/* ── Header ── */}
-          <div style={{ padding: '24px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: '-1px', lineHeight: 1, color: '#fff', textTransform: 'uppercase', fontFamily: "'Area','Inter',sans-serif" }}>
-              Maratonando
-            </h1>
-            <button
-              onClick={() => router.push('/search')}
-              style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="search" size={18} color="#fff" />
-            </button>
-          </div>
-
-          {/* ── Tabs ── */}
-          <div style={{ display: 'flex', gap: 8, padding: '0 16px 16px', overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+          {/* ── Tabs — sticky logo abaixo do header ── */}
+          <div style={{
+            position: 'sticky', top: 56, zIndex: 48,
+            display: 'flex', gap: 8,
+            padding: scrolled ? '2px 16px 8px' : '8px 16px 10px',
+            overflowX: 'auto', scrollbarWidth: 'none',
+            background: 'transparent',
+            transition: 'padding 0.25s ease',
+          } as React.CSSProperties}>
             {([
               ['minha_lista', 'Minha lista'],
               ['em_breve',    'Em breve'],
               ['atrasadas',   'Atrasadas'],
             ] as const).map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} style={{
-                padding: '9px 20px', borderRadius: 24, flexShrink: 0,
-                background: tab === id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.18)',
-                border: tab === id ? 'none' : '1px solid rgba(255,255,255,0.35)',
-                color: tab === id ? '#A861FF' : '#fff',
-                fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
-              }}>{label}</button>
+                padding: scrolled ? '4.5px 13px' : '7px 16px',
+                borderRadius: 24, flexShrink: 0,
+                background: tab === id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.12)',
+                border: tab === id ? 'none' : '1px solid rgba(255,255,255,0.20)',
+                color: tab === id ? '#C069FF' : 'rgba(255,255,255,0.80)',
+                fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
+                fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
+                backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+              } as React.CSSProperties}>{label}</button>
             ))}
           </div>
 
           {/* ── Content — fade in do bg cobre gradiente ao rolar ── */}
-          <div style={{ background: 'linear-gradient(to bottom, transparent 0px, var(--c-bg) 64px)', minHeight: 400 }}>
+          <div style={{ minHeight: 400 }}>
 
             {/* ══ TAB: Minha lista ══ */}
             {tab === 'minha_lista' && (
@@ -139,13 +147,7 @@ export default function SeriesPage() {
                 {/* ── Minhas séries (assistindo) ── */}
                 <div>
                   <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Minhas séries</Txt>
-                  {loading ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      {Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} style={{ aspectRatio: '2/3', borderRadius: 12, background: T.surface2 }} />
-                      ))}
-                    </div>
-                  ) : items.length === 0 ? (
+                  {items.length === 0 && !loading ? (
                     <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 12, borderRadius: 14, background: T.card, border: `1px solid ${T.border}`, paddingLeft: 16 }}>
                       <Icon name="tv" size={22} color={T.t4} />
                       <Txt size={13} color={T.t3} style={{ flex: 1 }}>
@@ -153,33 +155,17 @@ export default function SeriesPage() {
                       </Txt>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      {items.map((item) => {
-                        const poster = tmdbImg(item.poster_path, 'w342');
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => router.push(`/title/${item.type}/${item.id}`)}
-                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
-                            <div style={{ aspectRatio: '2/3', borderRadius: 12, overflow: 'hidden', background: T.surface2, marginBottom: 6, position: 'relative' }}>
-                              {poster
-                                ? <img src={poster} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={24} color={T.t4} /></div>
-                              }
-                              {item.tag && (
-                                <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 6px', borderRadius: 5, background: TAG_STYLES[item.tag].bg, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' } as React.CSSProperties}>
-                                  <Txt size={9} weight={800} color={TAG_STYLES[item.tag].color}>{TAG_STYLES[item.tag].label}</Txt>
-                                </div>
-                              )}
-                            </div>
-                            <Txt size={12} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Txt>
-                            {item.network && (
-                              <Txt size={11} color={T.t3} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.network}</Txt>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <MasonryGrid2
+                      items={items as unknown as TMDBItem[]}
+                      onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
+                      loading={loading}
+                      skeletonCount={6}
+                      padding="0"
+                      getTag={(item) => {
+                        const tag = (item as any).tag as WatchingTag | undefined;
+                        return tag ? TAG_STYLES[tag] : undefined;
+                      }}
+                    />
                   )}
                 </div>
 
@@ -192,25 +178,11 @@ export default function SeriesPage() {
                       <Txt size={13} color={T.t3}>Nenhuma série salva para assistir</Txt>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      {wantList.map((item) => {
-                        const poster = tmdbImg(item.poster_path, 'w342');
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => router.push(`/title/${item.type}/${item.id}`)}
-                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
-                            <div style={{ aspectRatio: '2/3', borderRadius: 12, overflow: 'hidden', background: T.surface2, marginBottom: 6 }}>
-                              {poster
-                                ? <img src={poster} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={24} color={T.t4} /></div>
-                              }
-                            </div>
-                            <Txt size={12} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Txt>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <MasonryGrid2
+                      items={wantList as unknown as TMDBItem[]}
+                      onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
+                      padding="0"
+                    />
                   )}
                 </div>
 
@@ -223,29 +195,12 @@ export default function SeriesPage() {
                       <Txt size={13} color={T.t3}>Nenhuma série finalizada ainda</Txt>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      {watchedList.map((item) => {
-                        const poster = tmdbImg(item.poster_path, 'w342');
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => router.push(`/title/${item.type}/${item.id}`)}
-                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
-                            <div style={{ aspectRatio: '2/3', borderRadius: 12, overflow: 'hidden', background: T.surface2, marginBottom: 6, position: 'relative' }}>
-                              {poster
-                                ? <img src={poster} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={24} color={T.t4} /></div>
-                              }
-                              {/* Badge "CONCLUÍDO" */}
-                              <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 6px', borderRadius: 5, background: 'rgba(52,199,89,0.75)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' } as React.CSSProperties}>
-                                <Txt size={9} weight={800} color="#fff">CONCLUÍDO</Txt>
-                              </div>
-                            </div>
-                            <Txt size={12} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Txt>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <MasonryGrid2
+                      items={watchedList as unknown as TMDBItem[]}
+                      onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
+                      padding="0"
+                      getTag={() => ({ label: 'CONCLUÍDO', color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
+                    />
                   )}
                 </div>
 
@@ -304,7 +259,7 @@ export default function SeriesPage() {
                           <div style={{ flexShrink: 0 }}>
                             <span style={{
                               display: 'inline-block', padding: '5px 10px', borderRadius: 10,
-                              background: isToday ? 'rgba(240,80,194,0.14)' : isTomorrow ? 'rgba(52,199,89,0.14)' : T.surface2,
+                              background: isToday ? 'rgba(192,105,255,0.14)' : isTomorrow ? 'rgba(52,199,89,0.14)' : T.surface2,
                             }}>
                               <Txt size={11} weight={700} color={isToday ? T.pink : isTomorrow ? '#1a8f3a' : T.t2}>{dateLabel}</Txt>
                             </span>
@@ -364,8 +319,8 @@ export default function SeriesPage() {
                               {item.title}
                             </Txt>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ padding: '2px 7px', borderRadius: 6, background: 'rgba(255,59,48,0.12)' }}>
-                                <Txt size={10} weight={800} color="#c0392b">ATRASADO</Txt>
+                              <span style={{ padding: '2px 7px', borderRadius: 6, background: '#e0352b' }}>
+                                <Txt size={10} weight={800} color="#fff">ATRASADO</Txt>
                               </span>
                               {lastDate && (
                                 <Txt size={12} color={T.t3}>Último: {lastDate}</Txt>

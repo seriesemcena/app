@@ -53,10 +53,6 @@ export default function CalendarPage() {
             <Chip key={v} label={v.charAt(0).toUpperCase() + v.slice(1)} active={view === v} onClick={() => setView(v)} />
           ))}
           <div style={{ flex: 1 }} />
-          <button onClick={() => router.push('/vip')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.goldDim, border: `1px solid rgba(245,197,24,0.3)`, borderRadius: 20, padding: '6px 12px', cursor: 'pointer' }}>
-            <Icon name="crown" size={12} color={T.gold} />
-            <Txt size={11} weight={700} color={T.gold}>Calendário VIP</Txt>
-          </button>
         </div>
 
         <ScrollArea>
@@ -104,14 +100,6 @@ export default function CalendarPage() {
                   </div>
                 ))}
 
-                <div onClick={() => router.push('/vip')} style={{ marginTop: 8, padding: '14px 16px', borderRadius: T.radiusSm, background: T.goldDim, border: `1px solid rgba(245,197,24,0.2)`, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-                  <Icon name="crown" size={22} color={T.gold} />
-                  <div style={{ flex: 1 }}>
-                    <Txt size={13} weight={700} color={T.gold} style={{ display: 'block' }}>Desbloqueie o calendário completo</Txt>
-                    <Txt size={11} color={T.t3}>Alertas antecipados e filtros avançados com VIP</Txt>
-                  </div>
-                  <Icon name="chevronR" size={16} color={T.gold} />
-                </div>
               </div>
             </>
           ) : (

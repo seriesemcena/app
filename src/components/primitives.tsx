@@ -34,6 +34,62 @@ export const AppBar = ({
   </div>
 );
 
+/* ─────────────────────────────────────────────────────────
+   GlassHeader — header sticky com logo centralizado,
+   blur glass por trás, ação à esquerda e/ou direita
+   ───────────────────────────────────────────────────────── */
+export const GlassHeader = ({
+  left, right, children,
+}: {
+  left?: ReactNode;
+  right?: ReactNode;
+  children?: ReactNode;
+}) => (
+  <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 56, overflow: 'visible' } as CSSProperties}>
+    {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
+    {[
+      { blur: 22, end: 35 },
+      { blur: 14, end: 55 },
+      { blur: 7,  end: 75 },
+      { blur: 3,  end: 90 },
+    ].map(({ blur, end }, i) => (
+      <div key={i} style={{
+        position: 'absolute', inset: 0,
+        backdropFilter: `blur(${blur}px)`,
+        WebkitBackdropFilter: `blur(${blur}px)`,
+        maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+        WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+        pointerEvents: 'none',
+      } as CSSProperties} />
+    ))}
+
+    {/* Tint escuro em degradê — opaco no topo, transparente embaixo */}
+    <div style={{
+      position: 'absolute', inset: 0,
+      background: 'linear-gradient(to bottom, rgba(13,13,15,0.82) 0%, rgba(13,13,15,0.30) 70%, transparent 100%)',
+      pointerEvents: 'none',
+    }} />
+
+    {/* Conteúdo — logo + botões */}
+    <div style={{
+      position: 'relative', zIndex: 2,
+      height: '100%', display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', padding: '0 12px',
+    }}>
+      <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
+
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        {children ?? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/logo.png" alt="Maratonou" style={{ height: 22, width: 'auto', display: 'block' }} />
+        )}
+      </div>
+
+      <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>{right}</div>
+    </div>
+  </div>
+);
+
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'gold' | 'pink' | 'danger';
 export const Btn = ({
   label, variant = 'primary', size = 'md', icon, onClick, style = {}, disabled = false, full = false,

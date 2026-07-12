@@ -32,8 +32,8 @@ export const T = {
   redDim:   'rgba(229,9,20,0.15)',
   gold:     '#F5C518',
   goldDim:  'rgba(245,197,24,0.15)',
-  pink:     '#F050C2',
-  pinkGlow: 'rgba(240,80,194,0.35)',
+  pink:     '#C069FF',
+  pinkGlow: 'rgba(192,105,255,0.35)',
 
   /* radii (numeric, not colours) */
   radius:   16,

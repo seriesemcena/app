@@ -702,9 +702,9 @@ export default function AdminPage() {
         </div>
 
         {/* Auto-notify upcoming releases */}
-        <div style={{ ...S.card, background: 'rgba(74,16,128,0.08)', border: '1px solid rgba(240,80,194,0.18)' }}>
+        <div style={{ ...S.card, background: 'rgba(74,16,128,0.08)', border: '1px solid rgba(192,105,255,0.18)' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(240,80,194,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(192,105,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Txt size={16}>🤖</Txt>
             </div>
             <div style={{ flex: 1 }}>
@@ -787,7 +787,7 @@ export default function AdminPage() {
       <SectionTitle label="🎬 Slider da home" />
 
       {/* Info */}
-      <div style={{ ...S.card, background: 'rgba(240,80,194,0.06)', border: '1px solid rgba(240,80,194,0.2)', marginBottom: 16 }}>
+      <div style={{ ...S.card, background: 'rgba(192,105,255,0.06)', border: '1px solid rgba(192,105,255,0.2)', marginBottom: 16 }}>
         <Txt size={13} color={T.t2} style={{ lineHeight: 1.6, display: 'block' }}>
           Adicione filmes e séries ao carrossel principal da home. Se o slider estiver vazio, a home exibirá automaticamente os títulos em tendência do TMDB.
         </Txt>
