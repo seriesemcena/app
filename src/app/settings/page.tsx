@@ -74,7 +74,7 @@ export default function SettingsPage() {
   return (
     <Frame>
       <Screen>
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'var(--tab-h, 90px)' } as React.CSSProperties}>
 
           {/* ── Header glass sticky ── */}
           <GlassHeader

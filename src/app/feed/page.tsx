@@ -226,7 +226,7 @@ export default function FeedPage() {
         <div
           ref={scrollRef}
           onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)}
-          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 90 } as React.CSSProperties}
+          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'var(--tab-h, 90px)' } as React.CSSProperties}
         >
 
           {/* ── Header glass sticky ── */}

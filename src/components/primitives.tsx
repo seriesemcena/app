@@ -29,7 +29,7 @@ export const Screen = ({ children, style = {} }: { children: ReactNode; style?: 
 );
 
 export const ScrollArea = ({ children, style = {} }: { children: ReactNode; style?: CSSProperties }) => (
-  <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', paddingBottom: 90, ...style } as CSSProperties}>{children}</div>
+  <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', ...style, paddingBottom: 'var(--tab-h, 90px)' } as CSSProperties}>{children}</div>
 );
 
 export const AppBar = ({

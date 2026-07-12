@@ -42,6 +42,10 @@ export default function HomePage() {
   const [newsItems, setNewsItems]       = useState<NewsPost[]>([]);
   const [customSlider, setCustomSlider] = useState<SliderItem[]>([]);
   const [watchingItems, setWatchingItems] = useState<WatchingItem[]>([]);
+  const [trendFilter, setTrendFilter]   = useState<'series' | 'movies'>('series');
+  const [novFilter, setNovFilter]       = useState<'series' | 'movies'>('series');
+  const [trendLimit, setTrendLimit]     = useState(10);
+  const [novLimit, setNovLimit]         = useState(10);
 
   const heroScrollRef = useRef<HTMLDivElement>(null);
   const [textlessPosters, setTextlessPosters] = useState<Record<number, string | null>>({});
@@ -169,22 +173,39 @@ export default function HomePage() {
 
 
   /* ── Section masonry 2 colunas ── */
-  const SectionGrid = ({ title, items, loading }: { title: string; items?: TMDBItem[]; loading?: boolean }) => (
-    <div style={{ marginBottom: 28 }}>
-      <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, paddingRight: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>
-      <MasonryGrid2
-        items={(items || []).slice(0, 10)}
-        onItem={openTitle}
-        loading={loading}
-        skeletonCount={6}
-      />
-    </div>
-  );
+  const SectionGrid = ({ title, items, loading, limit = 10, onLoadMore }: { title?: string; items?: TMDBItem[]; loading?: boolean; limit?: number; onLoadMore?: () => void }) => {
+    const sliced = (items || []).slice(0, limit);
+    const hasMore = !loading && (items || []).length > limit;
+    return (
+      <div style={{ marginBottom: 28 }}>
+        {title && <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, paddingRight: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>}
+        <MasonryGrid2
+          items={sliced}
+          onItem={openTitle}
+          loading={loading}
+          skeletonCount={6}
+        />
+        {hasMore && onLoadMore && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 8px' }}>
+            <button onClick={onLoadMore} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '10px 24px', borderRadius: 24,
+              background: 'transparent', border: `1px solid ${T.border}`,
+              cursor: 'pointer', fontFamily: "'Area','Inter',sans-serif",
+            }}>
+              <Txt size={13} weight={700} color={T.t2}>Carregar mais</Txt>
+              <Icon name="chevronR" size={13} color={T.t3} style={{ transform: 'rotate(90deg)' }} />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <Frame>
       <Screen style={{ background: 'var(--c-bg)' }}>
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 90 } as React.CSSProperties}>
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'var(--tab-h, 90px)' } as React.CSSProperties}>
 
           {/* ── Hero Section — slider só em Para você ── */}
           {homeTab === 'para_voce' ? (() => {
@@ -275,10 +296,10 @@ export default function HomePage() {
                 )}
 
                 {/* Header — centralizado, sobreposto */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, padding: '20px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, height: 74, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ width: 76 }} />
                   <Logo height={20} />
-                  <div style={{ position: 'absolute', right: 16, display: 'flex', gap: 8 }}>
+                  <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button onClick={() => router.push('/search')}
                       style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
                       <Icon name="search" size={16} color="#fff" />
@@ -291,7 +312,7 @@ export default function HomePage() {
                 </div>
 
                 {/* Tabs — sobreposto, Liquid Glass */}
-                <div style={{ position: 'absolute', top: 58, left: 0, right: 0, zIndex: 10, padding: '0 16px', display: 'flex', gap: 6 }}>
+                <div style={{ position: 'absolute', top: 74, left: 0, right: 0, zIndex: 10, padding: '0 16px', display: 'flex', gap: 6 }}>
                   {([
                     ['para_voce', 'Para você'],
                     ['em_alta',   'Em alta'],
@@ -316,11 +337,11 @@ export default function HomePage() {
             );
           })() : (
             /* ── Header simples para Em alta / Novidades ── */
-            <div style={{ position: 'relative', padding: '20px 16px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+            <div style={{ position: 'relative' }}>
+              <div style={{ height: 74, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ width: 76 }} />
                 <Logo height={20} />
-                <div style={{ position: 'absolute', right: 0, display: 'flex', gap: 8 }}>
+                <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                   <button onClick={() => router.push('/search')}
                     style={{ width: 34, height: 34, borderRadius: 17, background: 'var(--c-glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--c-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' } as React.CSSProperties}>
                     <Icon name="search" size={16} color="var(--c-t1)" />
@@ -331,7 +352,7 @@ export default function HomePage() {
                   </button>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6, padding: '0 16px 16px' }}>
                 {([
                   ['para_voce', 'Para você'],
                   ['em_alta',   'Em alta'],
@@ -568,8 +589,25 @@ export default function HomePage() {
              ══════════════════════════════════════════════ */}
           {homeTab === 'em_alta' && (
             <div style={{ paddingTop: 8, background: 'var(--c-bg)' }}>
-              <SectionGrid title="🔥 Filmes em alta" items={trendMovies?.results} loading={lTM} />
-              <SectionGrid title="🔥 Séries em alta" items={trendTV?.results} loading={lTTV} />
+              <div style={{ display: 'flex', gap: 8, padding: '0 16px 20px' }}>
+                {(['series', 'movies'] as const).map((f) => (
+                  <button key={f} onClick={() => { setTrendFilter(f); setTrendLimit(10); }} style={{
+                    padding: '8px 20px', borderRadius: 24, flexShrink: 0,
+                    background: trendFilter === f ? T.pink : T.surface2,
+                    border: trendFilter === f ? 'none' : `1px solid ${T.border}`,
+                    color: trendFilter === f ? '#fff' : T.t2,
+                    fontSize: 13, fontWeight: 700,
+                    fontFamily: "'Area','Inter',sans-serif",
+                    cursor: 'pointer', transition: 'all 0.2s',
+                  }}>
+                    {f === 'series' ? 'Séries' : 'Filmes'}
+                  </button>
+                ))}
+              </div>
+              {trendFilter === 'series'
+                ? <SectionGrid items={trendTV?.results}     loading={lTTV} limit={trendLimit} onLoadMore={() => setTrendLimit(l => l + 10)} />
+                : <SectionGrid items={trendMovies?.results} loading={lTM}  limit={trendLimit} onLoadMore={() => setTrendLimit(l => l + 10)} />
+              }
             </div>
           )}
 
@@ -578,8 +616,25 @@ export default function HomePage() {
              ══════════════════════════════════════════════ */}
           {homeTab === 'novidades' && (
             <div style={{ paddingTop: 8, background: 'var(--c-bg)' }}>
-              <SectionGrid title="🎬 Nos cinemas agora" items={nowPlaying?.results} loading={lNP} />
-              <SectionGrid title="📺 No streaming hoje" items={onAir?.results}     loading={lOA} />
+              <div style={{ display: 'flex', gap: 8, padding: '0 16px 20px' }}>
+                {(['series', 'movies'] as const).map((f) => (
+                  <button key={f} onClick={() => { setNovFilter(f); setNovLimit(10); }} style={{
+                    padding: '8px 20px', borderRadius: 24, flexShrink: 0,
+                    background: novFilter === f ? T.pink : T.surface2,
+                    border: novFilter === f ? 'none' : `1px solid ${T.border}`,
+                    color: novFilter === f ? '#fff' : T.t2,
+                    fontSize: 13, fontWeight: 700,
+                    fontFamily: "'Area','Inter',sans-serif",
+                    cursor: 'pointer', transition: 'all 0.2s',
+                  }}>
+                    {f === 'series' ? 'Séries' : 'Filmes'}
+                  </button>
+                ))}
+              </div>
+              {novFilter === 'series'
+                ? <SectionGrid items={onAir?.results}      loading={lOA} limit={novLimit} onLoadMore={() => setNovLimit(l => l + 10)} />
+                : <SectionGrid items={nowPlaying?.results} loading={lNP} limit={novLimit} onLoadMore={() => setNovLimit(l => l + 10)} />
+              }
             </div>
           )}
 

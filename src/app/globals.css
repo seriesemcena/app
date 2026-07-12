@@ -78,6 +78,7 @@
 
 /* ── CSS custom properties — dark theme (default) ── */
 :root {
+  --tab-h: 90px;   /* altura reservada para a pill TabBar */
   --c-bg:        #1A1A1A;
   --c-card:      #252525;
   --c-surface:   #2E2E2E;
