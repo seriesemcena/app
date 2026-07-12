@@ -132,7 +132,9 @@ export default function StatsPage() {
     setReviews(revStore.countAll());
     setFavCount(favs.length);
 
-    if (watched.length === 0) {
+    const allTracked = [...watched, ...watching];
+
+    if (allTracked.length === 0) {
       setRealStats({
         totalHours: 0, totalMinutes: 0,
         moviesCount: 0, tvCount: 0,
@@ -143,7 +145,10 @@ export default function StatsPage() {
       return;
     }
 
-    const toFetch = watched.slice(0, 30);
+    // Fetch TMDB data for watched + watching (capped at 40)
+    const toFetch = allTracked.slice(0, 40);
+    const watchedIds = new Set(watched.map((w) => w.id));
+
     Promise.all(
       toFetch.map(async (item) => {
         try {
@@ -160,16 +165,27 @@ export default function StatsPage() {
 
       results.forEach((d, i) => {
         if (!d) return;
-        const item = toFetch[i];
+        const item     = toFetch[i];
+        const isWatched = watchedIds.has(item.id);
         (d.genres || []).forEach((g: { name: string }) => {
           genreCount[g.name] = (genreCount[g.name] || 0) + 1;
         });
         if (item.type === 'movie') {
           moviesCount++;
-          totalMinutes += d.runtime || 110;
+          // Only count runtime for fully watched movies
+          if (isWatched) totalMinutes += d.runtime || 110;
         } else {
           tvCount++;
-          totalMinutes += (d.episode_run_time?.[0] || 45) * Math.min(d.number_of_episodes || 10, 24);
+          const epRuntime = d.episode_run_time?.[0] || 45;
+          if (isWatched) {
+            // Finished: count estimated full seasons
+            totalMinutes += epRuntime * Math.min(d.number_of_episodes || 10, 24);
+          } else {
+            // Watching: count episodes aired in current/latest season as estimate
+            const lastSeason = (d.seasons || []).filter((s: { season_number: number; episode_count: number }) => s.season_number > 0).at(-1);
+            const epsWatched = lastSeason?.episode_count ?? Math.min(d.number_of_episodes || 6, 12);
+            totalMinutes += epRuntime * epsWatched;
+          }
         }
       });
 
@@ -284,7 +300,9 @@ export default function StatsPage() {
             </div>
 
             <Txt size={12} color="rgba(255,255,255,0.40)">
-              {days > 0 ? `Equivalente a ${days} dia${days !== 1 ? 's' : ''} completo${days !== 1 ? 's' : ''}` : 'Adicione títulos assistidos para ver seu tempo'}
+              {days > 0
+                ? `Equivalente a ${days} dia${days !== 1 ? 's' : ''} completo${days !== 1 ? 's' : ''} · inclui séries em andamento`
+                : 'Adicione títulos assistidos para ver seu tempo'}
             </Txt>
           </div>
 
