@@ -5,7 +5,7 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Stars, StreamBadge, Toast, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { revStore, profileStore, type Review } from '@/lib/store';
+import { revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore } from '@/lib/db';
@@ -84,8 +84,10 @@ function EpisodePageInner() {
   useEffect(() => {
     if (!storageKey) return;
 
-    // Restore watched state
-    if (localStorage.getItem(`sec_watched_${storageKey}`) === 'true') setWatched(true);
+    // Restore watched state — old per-key flag OR unified epWatchedStore
+    const oldFlag = localStorage.getItem(`sec_watched_${storageKey}`) === 'true';
+    const inStore = epWatchedStore.isWatched(tvId, parseInt(season), parseInt(epNum));
+    if (oldFlag || inStore) setWatched(true);
 
     // Show local data immediately while Firestore loads
     const local = revStore.get(storageKey);
@@ -307,6 +309,7 @@ function EpisodePageInner() {
                 if (!watched) {
                   setWatched(true);
                   localStorage.setItem(`sec_watched_${storageKey}`, 'true');
+                  epWatchedStore.markWatched(tvId, parseInt(season), parseInt(epNum));
                   // Only open modal if user hasn't reviewed yet
                   const alreadyReviewed = revStore.get(storageKey).some(r => r.user === currentUserName);
                   if (!alreadyReviewed) setModalOpen(true);
@@ -314,6 +317,7 @@ function EpisodePageInner() {
                 } else {
                   setWatched(false);
                   localStorage.removeItem(`sec_watched_${storageKey}`);
+                  epWatchedStore.unmarkWatched(tvId, parseInt(season), parseInt(epNum));
                   showToast('Desmarcado');
                 }
               }}

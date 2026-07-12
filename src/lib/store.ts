@@ -104,6 +104,14 @@ export const epWatchedStore = {
     if (!all[id][s].includes(epNum)) all[id][s].push(epNum);
     try { localStorage.setItem(EP_KEY, JSON.stringify(all)); } catch {}
   },
+  unmarkWatched(tvId: string | number, season: number, epNum: number) {
+    const all = epWatchedStore.getAll();
+    const id  = String(tvId);
+    const s   = String(season);
+    if (!all[id]?.[s]) return;
+    all[id][s] = all[id][s].filter((n) => n !== epNum);
+    try { localStorage.setItem(EP_KEY, JSON.stringify(all)); } catch {}
+  },
   setShow(tvId: string | number, data: Record<string, number[]>) {
     const all = epWatchedStore.getAll();
     all[String(tvId)] = data;

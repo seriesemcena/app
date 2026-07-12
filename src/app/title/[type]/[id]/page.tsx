@@ -884,11 +884,6 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: 
   const episodes = data?.episodes || [];
   const [watchedMap, setWatchedMap] = useState<Record<string, number[]>>({});
   useEffect(() => { setWatchedMap(epWatchedStore.getShow(tvId)); }, [tvId, seasonNum]);
-
-  const toggleWatched = (epNum: number) => {
-    epWatchedStore.markWatched(tvId, seasonNum, epNum);
-    setWatchedMap({ ...epWatchedStore.getShow(tvId) });
-  };
   const isWatched = (epNum: number) => (watchedMap[String(seasonNum)] ?? []).includes(epNum);
 
   if (loading) return (
@@ -938,22 +933,16 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: 
               Temporada {seasonNum} - Ep {ep.episode_number}
             </Txt>
           </div>
-          {/* Check toggle — div because outer row is already a button */}
-          <div
-            onClick={(e) => { e.stopPropagation(); toggleWatched(ep.episode_number); }}
-            role="button"
-            aria-label="Marcar como assistido"
-            style={{
-              width: 32, height: 32, borderRadius: 16, flexShrink: 0,
-              border: isWatched(ep.episode_number) ? 'none' : `1.5px solid ${T.border}`,
-              background: isWatched(ep.episode_number) ? T.pink : 'transparent',
+          {/* Check indicator — read-only, toggled from inside the episode page */}
+          {isWatched(ep.episode_number) && (
+            <div style={{
+              width: 28, height: 28, borderRadius: 14, flexShrink: 0,
+              background: T.pink,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'background 0.2s, border-color 0.2s',
-            } as React.CSSProperties}
-          >
-            <Icon name="check" size={14} color={isWatched(ep.episode_number) ? '#fff' : T.t4} />
-          </div>
+            }}>
+              <Icon name="check" size={13} color="#fff" />
+            </div>
+          )}
           <Icon name="chevronR" size={14} color={T.t4} />
         </button>
       ))}
