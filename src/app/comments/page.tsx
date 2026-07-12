@@ -294,7 +294,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
   replyText: string;
   onReplyChange: (v: string) => void;
   onSubmitReply: () => void;
-  replyInputRef?: React.RefObject<HTMLInputElement>;
+  replyInputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const liked         = !!(rev as any).liked;
   const [showReplies, setShowReplies] = useState(false);
@@ -336,7 +336,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
         {replyCount > 0 && (
           <button onClick={() => setShowReplies(s => !s)}
             style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            <Icon name={showReplies ? 'chevronU' : 'chevronD'} size={12} color={T.t4} />
+            <Icon name={showReplies ? 'chevronR' : 'chevronD'} size={12} color={T.t4} />
             <Txt size={12} color={T.t4}>{replyCount} resposta{replyCount > 1 ? 's' : ''}</Txt>
           </button>
         )}

@@ -495,7 +495,7 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
 /* ── Compact list section row inside Minhas listas card ── */
 function ListSection({ label, icon, items, onItem, last }: {
   label: string;
-  icon: string;
+  icon: import('@/lib/tokens').IconName;
   items: Array<{ id: number; title: string; type: string; poster_path?: string | null }>;
   onItem: (x: { id: number; title: string; type: string; poster_path?: string | null }) => void;
   last?: boolean;

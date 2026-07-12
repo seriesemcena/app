@@ -382,7 +382,7 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
 /* ── List section row ── */
 function ListSection({ label, icon, items, onItem, last }: {
   label: string;
-  icon: string;
+  icon: import('@/lib/tokens').IconName;
   items: Array<{ id: number; title: string; type: string; poster_path?: string | null }>;
   onItem: (x: { id: number; title: string; type: string; poster_path?: string | null }) => void;
   last?: boolean;
