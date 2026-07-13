@@ -866,10 +866,10 @@ function SeasonDropdown({ seasons, active, onSelect }: { seasons: number[]; acti
       <button
         onClick={() => setOpen((o) => !o)}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '10px 16px', borderRadius: 12,
-          background: T.surface2, border: `1px solid ${T.border}`,
-          color: T.t1, fontSize: 14, fontWeight: 700,
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '4px 0', borderRadius: 0,
+          background: 'none', border: 'none',
+          color: T.t1, fontSize: 16, fontWeight: 800,
           fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', outline: 'none',
         }}>
         Temporada {active}
