@@ -63,7 +63,7 @@ export default function TitleDetailPage() {
   );
 
   // Status icon — MUST be before early return to respect Rules of Hooks
-  useEffect(() => {
+  const readListStatus = useCallback(() => {
     if (!detail) return;
     const iid = detail.id as number;
     const isWatching = listStore.get('watching').some((i) => i.id === iid);
@@ -89,6 +89,14 @@ export default function TitleDetailPage() {
     if (isWant)     { setStatusKey('want'); return; }
     setStatusKey(null);
   }, [detail]);
+
+  useEffect(() => { readListStatus(); }, [readListStatus]);
+
+  // Re-read after Firestore sync (new session / other device)
+  useEffect(() => {
+    window.addEventListener('maratonou:sync', readListStatus);
+    return () => window.removeEventListener('maratonou:sync', readListStatus);
+  }, [readListStatus]);
 
   if (loading || !detail) {
     return (

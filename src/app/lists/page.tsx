@@ -26,7 +26,7 @@ export default function ListsPage() {
   const [items, setItems] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
   const [counts, setCounts] = useState<Record<ListTab, number>>({ want: 0, watching: 0, watched: 0 });
 
-  useEffect(() => {
+  const reloadLists = React.useCallback(() => {
     setItems(listStore.get(tab));
     setCounts({
       want:     listStore.get('want').length,
@@ -34,6 +34,14 @@ export default function ListsPage() {
       watched:  listStore.get('watched').length,
     });
   }, [tab]);
+
+  useEffect(() => { reloadLists(); }, [reloadLists]);
+
+  // Re-read after Firestore sync (new session / other device)
+  useEffect(() => {
+    window.addEventListener('maratonou:sync', reloadLists);
+    return () => window.removeEventListener('maratonou:sync', reloadLists);
+  }, [reloadLists]);
 
   const activeTabMeta = TABS.find((t) => t.id === tab)!;
 
