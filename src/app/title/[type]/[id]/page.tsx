@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, Btn, MetaChip, Toast, BottomSheet, Stars } from '@/components/primitives';
