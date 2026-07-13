@@ -119,8 +119,8 @@ export default function TitleDetailPage() {
 
   // Tabs
   const tabs: Tab[] = [
-    'sobre',
     ...(isTV ? (['episódios'] as Tab[]) : []),
+    'sobre',
     'onde assistir',
     ...(!isTV ? (['avaliações'] as Tab[]) : []),
   ];
