@@ -751,7 +751,7 @@ function WatchProvidersTab({ type, id, onVIP }: {
       }
       <div style={{ flex: 1 }}>
         <Txt size={14} weight={700} style={{ display: 'block' }}>{p.provider_name}</Txt>
-        <Txt size={11} color={T.t3}>{label}</Txt>
+        <Txt size={11} color={T.t3}>Plataforma de streaming</Txt>
       </div>
       <Btn label={label === 'Incluído na assinatura' ? 'Assistir' : label} variant="pink" size="sm" />
     </div>
@@ -770,19 +770,16 @@ function WatchProvidersTab({ type, id, onVIP }: {
       )}
       {flatrate.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <Txt size={11} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>Incluído na assinatura</Txt>
           {flatrate.map((p: any) => <ProviderRow key={p.provider_id} p={p} label="Incluído na assinatura" />)}
         </div>
       )}
       {rent.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <Txt size={11} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>Alugar</Txt>
           {rent.map((p: any) => <ProviderRow key={p.provider_id} p={p} label="Alugar" />)}
         </div>
       )}
       {buy.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <Txt size={11} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 }}>Comprar</Txt>
           {buy.map((p: any) => <ProviderRow key={p.provider_id} p={p} label="Comprar" />)}
         </div>
       )}
