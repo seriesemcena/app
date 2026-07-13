@@ -298,13 +298,13 @@ export default function HomePage() {
                 {/* Header — centralizado, sobreposto */}
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, height: 74, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ width: 76 }} />
-                  <Logo height={20} />
+                  <div className="home-logo"><Logo height={20} /></div>
                   <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button onClick={() => router.push('/search')}
+                    <button className="home-icon-btn" onClick={() => router.push('/search')}
                       style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
                       <Icon name="search" size={16} color="#fff" />
                     </button>
-                    <button onClick={() => router.push('/notifications')}
+                    <button className="home-icon-btn" onClick={() => router.push('/notifications')}
                       style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
                       <Icon name="bell" size={16} color="#fff" />
                     </button>
@@ -318,7 +318,7 @@ export default function HomePage() {
                     ['em_alta',   'Em alta'],
                     ['novidades', 'Novidades'],
                   ] as const).map(([id, label]) => (
-                    <button key={id} onClick={() => setHomeTab(id)} style={{
+                    <button key={id} className="home-tab-btn" onClick={() => setHomeTab(id)} style={{
                       padding: '6px 14px', borderRadius: 20, flexShrink: 0,
                       background: homeTab === id ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.12)',
                       border: homeTab === id ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.22)',
@@ -340,13 +340,13 @@ export default function HomePage() {
             <div style={{ position: 'relative' }}>
               <div style={{ height: 74, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ width: 76 }} />
-                <Logo height={20} />
+                <div className="home-logo"><Logo height={20} /></div>
                 <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <button onClick={() => router.push('/search')}
+                  <button className="home-icon-btn" onClick={() => router.push('/search')}
                     style={{ width: 34, height: 34, borderRadius: 17, background: 'var(--c-glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--c-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' } as React.CSSProperties}>
                     <Icon name="search" size={16} color="var(--c-t1)" />
                   </button>
-                  <button onClick={() => router.push('/notifications')}
+                  <button className="home-icon-btn" onClick={() => router.push('/notifications')}
                     style={{ width: 34, height: 34, borderRadius: 17, background: 'var(--c-glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--c-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' } as React.CSSProperties}>
                     <Icon name="bell" size={16} color="var(--c-t1)" />
                   </button>
@@ -358,7 +358,7 @@ export default function HomePage() {
                   ['em_alta',   'Em alta'],
                   ['novidades', 'Novidades'],
                 ] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => setHomeTab(id)} style={{
+                  <button key={id} className="home-tab-btn" onClick={() => setHomeTab(id)} style={{
                     padding: '6px 14px', borderRadius: 20, flexShrink: 0,
                     background: homeTab === id ? 'var(--c-t1)' : 'var(--c-glass-bg)',
                     border: `1px solid ${homeTab === id ? 'transparent' : 'var(--c-border)'}`,
@@ -591,7 +591,7 @@ export default function HomePage() {
             <div style={{ paddingTop: 8, background: 'var(--c-bg)' }}>
               <div style={{ display: 'flex', gap: 8, padding: '0 16px 20px' }}>
                 {(['series', 'movies'] as const).map((f) => (
-                  <button key={f} onClick={() => { setTrendFilter(f); setTrendLimit(10); }} style={{
+                  <button key={f} className="home-filter-btn" onClick={() => { setTrendFilter(f); setTrendLimit(10); }} style={{
                     padding: '8px 20px', borderRadius: 24, flexShrink: 0,
                     background: trendFilter === f ? T.pink : T.surface2,
                     border: trendFilter === f ? 'none' : `1px solid ${T.border}`,
@@ -618,7 +618,7 @@ export default function HomePage() {
             <div style={{ paddingTop: 8, background: 'var(--c-bg)' }}>
               <div style={{ display: 'flex', gap: 8, padding: '0 16px 20px' }}>
                 {(['series', 'movies'] as const).map((f) => (
-                  <button key={f} onClick={() => { setNovFilter(f); setNovLimit(10); }} style={{
+                  <button key={f} className="home-filter-btn" onClick={() => { setNovFilter(f); setNovLimit(10); }} style={{
                     padding: '8px 20px', borderRadius: 24, flexShrink: 0,
                     background: novFilter === f ? T.pink : T.surface2,
                     border: novFilter === f ? 'none' : `1px solid ${T.border}`,

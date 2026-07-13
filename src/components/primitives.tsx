@@ -86,7 +86,7 @@ export const GlassHeader = ({
     }}>
       <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div className="glass-header-logo" style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         {children ?? (
           // eslint-disable-next-line @next/next/no-img-element
           <Logo height={22} />

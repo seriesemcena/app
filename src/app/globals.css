@@ -221,6 +221,22 @@ h3, h4, h5, h6, p {
 /* ── Responsive masonry grid ── */
 .masonry-cols { columns: 2; column-gap: 13px; }
 .masonry-item { break-inside: avoid; margin-bottom: 13px; }
+
 @media (min-width: 768px) {
-  .masonry-cols { columns: 4; }
+  /* Switch from CSS columns to CSS grid for uniform card heights */
+  .masonry-cols { columns: unset; display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+  .masonry-item { break-inside: unset; margin-bottom: 0; }
+
+  /* Lists page: 2 columns instead of 4 */
+  .masonry-2col .masonry-cols { grid-template-columns: repeat(2, 1fr); }
+
+  /* GlassHeader: hide centered logo (sidebar already shows it) */
+  .glass-header-logo { display: none !important; }
+
+  /* Home header: bigger tabs, icons, filter pills */
+  .home-tab-btn { padding: 9px 20px !important; font-size: 14px !important; }
+  .home-icon-btn { width: 42px !important; height: 42px !important; border-radius: 21px !important; }
+  .home-icon-btn svg { width: 20px !important; height: 20px !important; }
+  .home-filter-btn { padding: 10px 26px !important; font-size: 14px !important; }
+  .home-logo img { height: 26px !important; }
 }

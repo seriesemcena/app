@@ -116,7 +116,7 @@ export default function ListsPage() {
                 </button>
               </div>
             ) : (
-              <div style={{ padding: '8px 0 0' }}>
+              <div className="masonry-2col" style={{ padding: '8px 0 0' }}>
                 <MasonryGrid2
                   items={items as unknown as TMDBItem[]}
                   onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
