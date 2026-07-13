@@ -283,7 +283,7 @@ export default function TitleDetailPage() {
                 </button>
                 <button onClick={() => setMaisSheet(true)}
                   style={{ width: 42, height: 42, borderRadius: 21, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.25)', flexShrink: 0 } as React.CSSProperties}>
-                  <Icon name="share" size={17} color="#fff" />
+                  <Icon name="plus" size={17} color="#fff" />
                 </button>
               </div>
                 );
