@@ -29,14 +29,14 @@ export default function StreamingsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => { setSelected(profileStore.get().streamings); }, []);
+  useEffect(() => { setSelected(profileStore.get(user?.uid).streamings); }, [user]);
 
   const toggle = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   };
 
   const save = async () => {
-    profileStore.set({ streamings: selected });
+    profileStore.set({ streamings: selected }, user?.uid);
     if (firebaseConfigured && user) {
       try { await dbProfileStore.set(getDB(), user.uid, { streamings: selected }); } catch {}
     }

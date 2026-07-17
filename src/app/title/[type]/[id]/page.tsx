@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useTheme } from '@/context/ThemeContext';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, Btn, MetaChip, Toast, BottomSheet, Stars } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
@@ -11,10 +12,27 @@ import { tmdb, useTMDB } from '@/lib/tmdb';
 import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRevStore, dbListStore, dbActivityStore } from '@/lib/db';
+import { dbRevStore, dbListStore, dbActivityStore, dbEpWatchedStore } from '@/lib/db';
+
+const EMOJI_GROUPS = [
+  { label: '😀', emojis: ['😀','😂','🤣','😍','🥰','😎','🤩','😱','😭','😤','🙄','🤔','😴','🤯','🥳'] },
+  { label: '❤️', emojis: ['❤️','🔥','⭐','💯','👏','🎬','🍿','📺','🎥','🏆','💀','✨','💫','🎭','🎞️'] },
+  { label: '👍', emojis: ['👍','👎','🤌','💪','🙏','👀','🫣','🤦','🤷','💁','🫡','🫶','🤟','✌️','🤞'] },
+];
+
+type GiphyGif = {
+  id: string;
+  title: string;
+  images: {
+    fixed_height_small: { url: string; width: string; height: string };
+    downsized_small:     { mp4: string };
+  };
+};
 
 export default function TitleDetailPage() {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const { user } = useAuth();
   const params = useParams<{ type: string; id: string }>();
   const isTV = params.type === 'tv';
@@ -38,8 +56,18 @@ export default function TitleDetailPage() {
   const [reviewText, setReviewText] = useState('');
   const [reviewRating, setReviewRating] = useState(0);
   const [showForm, setShowForm] = useState(false);
+  const [selectedGif, setSelectedGif]   = useState<GiphyGif | null>(null);
+  const [showGif, setShowGif]           = useState(false);
+  const [gifSearch, setGifSearch]       = useState('');
+  const [gifResults, setGifResults]     = useState<GiphyGif[]>([]);
+  const [gifLoading, setGifLoading]     = useState(false);
+  const [showEmoji, setShowEmoji]       = useState(false);
+  const [emojiTab, setEmojiTab]         = useState(0);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [epWatchedRefresh, setEpWatchedRefresh] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reviewTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showNavTitle, setShowNavTitle] = useState(false);
 
   // Load reviews: localStorage first, then Firestore for cross-device sync
   useEffect(() => {
@@ -57,10 +85,34 @@ export default function TitleDetailPage() {
     }).catch(() => {});
   }, [itemKey]);
 
+  /* ── Giphy (movie reviews only) ── */
+  useEffect(() => {
+    if (!showGif || !showForm || isTV) return;
+    const delay = gifSearch ? 400 : 0;
+    const timer = setTimeout(async () => {
+      setGifLoading(true);
+      try {
+        const res  = await fetch(`/api/giphy?q=${encodeURIComponent(gifSearch)}&limit=15`);
+        const data = await res.json();
+        setGifResults(data.data || []);
+      } catch {}
+      setGifLoading(false);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [gifSearch, showGif, showForm, isTV]);
+
   const { data: detail, loading } = useTMDB(
     () => isTV ? tmdb.tvDetail(id) : tmdb.movieDetail(id),
     [id, isTV]
   );
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handler = () => setShowNavTitle(el.scrollTop > 280);
+    el.addEventListener('scroll', handler, { passive: true });
+    return () => el.removeEventListener('scroll', handler);
+  }, [loading]);
 
   // Status icon — MUST be before early return to respect Rules of Hooks
   const readListStatus = useCallback(() => {
@@ -154,26 +206,27 @@ export default function TitleDetailPage() {
   };
 
   const submitReview = async () => {
-    if (!reviewText.trim() || reviewRating === 0) { showToast('Adicione nota e texto'); return; }
-    const displayName = user?.displayName || user?.email?.split('@')[0] || 'Você';
+    if (reviewRating === 0 && !reviewText.trim() && !selectedGif) { showToast('Adicione nota ou comentário'); return; }
+    const prof         = profileStore.get(user?.uid);
+    const displayName  = prof.username || prof.name || user?.displayName || user?.email?.split('@')[0] || 'Você';
     const avatarLetter = displayName[0]?.toUpperCase() || 'V';
-    const photoUrl = user?.photoURL || profileStore.get().avatarImage || '';
+    const photoUrl     = user?.photoURL || prof.avatarImage || '';
     const rev: Review = {
-      id: `r_${Date.now()}`,
-      user: displayName,
-      avatar: avatarLetter,
+      id:      `r_${Date.now()}`,
+      user:    displayName,
+      avatar:  avatarLetter,
       photoUrl,
-      rating: reviewRating * 2,   /* 1-5 stars → 2-10 scale */
-      text: reviewText.trim(),
-      date: new Date().toISOString(),
+      rating:  reviewRating * 2,
+      text:    reviewText.trim(),
+      gifUrl:  selectedGif?.images?.fixed_height_small?.url || '',
+      date:    new Date().toISOString(),
       likes: 0, likedBy: [], replies: [],
     };
-    // Optimistic: localStorage + UI immediately
     const updated = revStore.addReview(itemKey, rev);
     setReviews(updated);
     setReviewText(''); setReviewRating(0); setShowForm(false);
-    showToast('Avaliação publicada!');
-    // Sync to Firestore in background
+    setSelectedGif(null); setShowGif(false); setShowEmoji(false); setGifSearch('');
+    showToast('Avaliação publicada! 🎉');
     if (firebaseConfigured) {
       try { await dbRevStore.add(getDB(), itemKey, rev); } catch {}
     }
@@ -228,16 +281,29 @@ export default function TitleDetailPage() {
         {/* Conteúdo do header — por cima das camadas de blur */}
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, zIndex: 41,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '16px 14px 10px',
+          display: 'flex', alignItems: 'center',
+          padding: 'calc(env(safe-area-inset-top, 0px) + 12px) 14px 10px',
           pointerEvents: 'auto',
         }}>
           {/* Botão voltar */}
-          <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+          <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)', flexShrink: 0 } as React.CSSProperties}>
             <Icon name="chevronL" size={16} color="#fff" />
           </button>
+
+          {/* Nav title — aparece ao rolar */}
+          <div style={{
+            flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center',
+            overflow: 'hidden', padding: '0 8px',
+            opacity: showNavTitle ? 1 : 0,
+            transform: showNavTitle ? 'translateY(0)' : 'translateY(6px)',
+            transition: 'opacity 0.22s ease, transform 0.22s ease',
+            pointerEvents: 'none',
+          } as React.CSSProperties}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#fff', fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+          </div>
+
           {/* Icons direita */}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
               <Icon name="share" size={15} color="#fff" />
             </button>
@@ -265,8 +331,8 @@ export default function TitleDetailPage() {
 
             {/* Título + botões sobrepostos */}
             <div style={{ position: 'absolute', bottom: 20, left: 16, right: 16 }}>
-              <h1 style={{ margin: '0 0 14px', fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.05, letterSpacing: -1, fontFamily: "'Greed','Area',sans-serif", textShadow: '0 2px 20px rgba(0,0,0,0.6)', whiteSpace: 'pre-line' }}>
-                {title.includes(': ') ? title.replace(': ', ':\n') : title}
+              <h1 style={{ margin: '0 0 14px', fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.05, letterSpacing: -1, fontFamily: "'Greed','Area',sans-serif", textShadow: '0 2px 20px rgba(0,0,0,0.6)' }}>
+                {title}
               </h1>
               {(() => {
                 const LIST_META: Record<NonNullable<ListStatus>, { label: string; icon: import('@/lib/tokens').IconName; accent: string; bg: string; border: string }> = {
@@ -279,18 +345,24 @@ export default function TitleDetailPage() {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button onClick={() => setListSheet(true)}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 20px', borderRadius: 24, cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', transition: 'background 0.25s, border 0.25s',
-                    background: meta ? meta.bg : 'rgba(255,255,255,0.88)',
-                    border: `1px solid ${meta ? meta.border : 'rgba(255,255,255,0.5)'}`,
-                    boxShadow: meta ? `0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 ${meta.border}` : '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,1)',
+                    background: isDark
+                      ? (meta ? meta.bg : 'rgba(255,255,255,0.88)')
+                      : (meta ? meta.accent : 'rgba(10,10,12,0.82)'),
+                    border: isDark
+                      ? `1px solid ${meta ? meta.border : 'rgba(255,255,255,0.5)'}`
+                      : 'none',
+                    boxShadow: isDark
+                      ? (meta ? `0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 ${meta.border}` : '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,1)')
+                      : '0 2px 12px rgba(0,0,0,0.25)',
                   } as React.CSSProperties}>
-                  <Icon name={meta ? meta.icon : 'plus'} size={14} color={meta ? meta.accent : '#0a0a0a'} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: meta ? meta.accent : '#0a0a0a', fontFamily: "'Area','Inter',sans-serif" }}>
+                  <Icon name={meta ? meta.icon : 'plus'} size={14} color={isDark ? (meta ? meta.accent : '#0a0a0a') : '#fff'} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: isDark ? (meta ? meta.accent : '#0a0a0a') : '#fff', fontFamily: "'Area','Inter',sans-serif" }}>
                     {meta ? meta.label : 'Adicionar à lista'}
                   </span>
-                  {meta && <Icon name="chevronD" size={11} color={meta.accent} />}
+                  {meta && <Icon name="chevronD" size={11} color={isDark ? meta.accent : '#fff'} />}
                 </button>
                 <button onClick={() => setMaisSheet(true)}
-                  style={{ width: 42, height: 42, borderRadius: 21, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.28)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.25)', flexShrink: 0 } as React.CSSProperties}>
+                  style={{ width: 42, height: 42, borderRadius: 21, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(10,10,12,0.72)', border: isDark ? '1px solid rgba(255,255,255,0.28)' : '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 8px rgba(0,0,0,0.18)', flexShrink: 0 } as React.CSSProperties}>
                   <Icon name="plus" size={17} color="#fff" />
                 </button>
               </div>
@@ -300,7 +372,7 @@ export default function TitleDetailPage() {
           </div>
 
           {/* ── Info card — overlaps hero ── */}
-          <div style={{ margin: '16px 12px 0', background: T.card, borderRadius: 20, padding: '18px 18px 20px', position: 'relative', boxShadow: '0 -2px 24px rgba(0,0,0,0.08)' }}>
+          <div style={{ margin: '16px 12px 0', background: isDark ? 'var(--c-card-deep)' : '#fff', borderRadius: 20, padding: '18px 18px 20px', position: 'relative', boxShadow: '0 -2px 24px rgba(0,0,0,0.08)' }}>
             {/* Chips: nota do app · genre · runtime */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {/* Nota média do app */}
@@ -332,7 +404,7 @@ export default function TitleDetailPage() {
               <>
                 <div style={{ position: 'relative', overflow: 'hidden', maxHeight: '4.8em' }}>
                   <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block' }}>{overview}</Txt>
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2em', background: `linear-gradient(to bottom, transparent, ${T.card})`, pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2em', background: isDark ? 'linear-gradient(to bottom, transparent, var(--c-card-deep))' : 'linear-gradient(to bottom, transparent, #fff)', pointerEvents: 'none' }} />
                 </div>
                 <button onClick={() => setExpanded(true)} style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                   <Txt size={13} weight={700} color={T.t2}>Ler mais</Txt>
@@ -357,12 +429,12 @@ export default function TitleDetailPage() {
                 ? new Date(nextEp.air_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
                 : null;
               return (
-                <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 14, background: 'linear-gradient(135deg, rgba(192,105,255,0.12) 0%, rgba(107,16,160,0.10) 100%)', border: '1px solid rgba(192,105,255,0.22)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: 3, background: T.pink, flexShrink: 0, animation: 'none' }} />
-                    <Txt size={10} weight={800} color={T.pink} style={{ textTransform: 'uppercase', letterSpacing: 1 }}>Próximo episódio</Txt>
+                <div style={{ marginTop: 16, padding: '18px 18px 16px', borderRadius: 16, background: 'linear-gradient(145deg, rgba(255,255,255,0.10) 0%, rgba(0,0,0,0.18) 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.09)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <Txt size={10} weight={800} color={T.t3} style={{ textTransform: 'uppercase', letterSpacing: 1.2 }}>Próximo episódio</Txt>
+                    <div style={{ width: 8, height: 8, borderRadius: 4, background: '#22c55e', flexShrink: 0 }} />
                   </div>
-                  <Txt size={14} weight={700} style={{ display: 'block', lineHeight: 1.3, marginBottom: 4 }}>
+                  <Txt size={26} weight={800} style={{ display: 'block', lineHeight: 1.15, marginBottom: 6, letterSpacing: -0.5 }}>
                     {nextEp.name || `Episódio ${nextEp.episode_number}`}
                   </Txt>
                   <Txt size={12} color={T.t3} style={{ display: 'block' }}>
@@ -380,36 +452,31 @@ export default function TitleDetailPage() {
             <div style={{ display: 'flex', gap: 8, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
               {tabs.map((t) => {
                 const isActive = tab === t;
-                if (t === 'episódios' && isTV) {
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => setTab('episódios')}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '9px 22px', borderRadius: 24, flexShrink: 0,
-                        background: isActive ? T.t1 : 'transparent',
-                        border: isActive ? 'none' : `1px solid ${T.dim}`,
-                        color: isActive ? T.bg : T.t2,
-                        fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                        fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
-                        whiteSpace: 'nowrap',
-                      }}>
-                      Episódios
-                    </button>
-                  );
-                }
+                const label = t === 'episódios' ? 'Episódios' : t.charAt(0).toUpperCase() + t.slice(1);
+                const tabBg     = isActive
+                  ? (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(10,10,12,0.88)')
+                  : (isDark ? 'rgba(255,255,255,0.06)' : '#fff');
+                const tabBorder = isActive
+                  ? (isDark ? '1px solid rgba(255,255,255,0.24)' : 'none')
+                  : (isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.11)');
+                const tabColor  = isActive
+                  ? '#fff'
+                  : (isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)');
                 return (
-                  <button key={t} onClick={() => setTab(t)} style={{
-                    padding: '9px 22px', borderRadius: 24, flexShrink: 0,
-                    background: isActive ? T.t1 : 'transparent',
-                    border: isActive ? 'none' : `1px solid ${T.dim}`,
-                    color: isActive ? T.bg : T.t2,
-                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
-                    textTransform: 'capitalize',
-                  }}>
-                    {t}
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '10px 22px', borderRadius: 999, flexShrink: 0,
+                      background: tabBg,
+                      border: tabBorder,
+                      color: tabColor,
+                      fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                      fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
+                      whiteSpace: 'nowrap',
+                    }}>
+                    {label}
                   </button>
                 );
               })}
@@ -433,7 +500,7 @@ export default function TitleDetailPage() {
                   </div>
                 )}
                 <EpisodeList
-                  tvId={id} seasonNum={activeSeason}
+                  tvId={id} seasonNum={activeSeason} refreshKey={epWatchedRefresh}
                   showName={title} network={(detail as any).networks?.[0]?.name || ''}
                   onEpisode={(ep: any) => {
                     const p = new URLSearchParams({
@@ -460,15 +527,9 @@ export default function TitleDetailPage() {
               <MovieReviewsTab
                 reviews={reviews}
                 avgRating={avgRating}
-                showForm={showForm}
-                setShowForm={setShowForm}
-                reviewRating={reviewRating}
-                setReviewRating={setReviewRating}
-                reviewText={reviewText}
-                setReviewText={setReviewText}
-                onSubmit={submitReview}
+                onAddReview={() => setShowForm(true)}
+                onViewComments={() => router.push(`/comments?key=${encodeURIComponent(itemKey)}&title=${encodeURIComponent(title)}&showName=${encodeURIComponent(title)}`)}
                 onLike={toggleLike}
-                user={user}
               />
             )}
 
@@ -478,18 +539,17 @@ export default function TitleDetailPage() {
                 {cast.length > 0 && (
                   <div>
                     <Txt size={17} weight={800} style={{ display: 'block', marginBottom: 14 }}>Elenco</Txt>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {cast.map((c: any, idx: number) => (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {cast.map((c: any) => (
                         <button key={c.id} onClick={() => router.push(`/actor/${c.id}`)}
-                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', background: 'none', border: 'none', borderBottom: idx < cast.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', textAlign: 'left' }}>
-                          <div style={{ width: 52, height: 52, borderRadius: 26, overflow: 'hidden', flexShrink: 0, border: `1.5px solid ${T.border}` }}>
-                            <TMDBPersonPhoto path={c.profile_path} size={52} name={c.name} />
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '16px 12px', background: 'var(--c-card)', border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'center' }}>
+                          <div style={{ width: 60, height: 60, borderRadius: 30, overflow: 'hidden', flexShrink: 0, border: `1.5px solid ${T.border}` }}>
+                            <TMDBPersonPhoto path={c.profile_path} size={60} name={c.name} />
                           </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <Txt size={14} weight={700} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</Txt>
-                            <Txt size={12} color={T.t3} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.character}</Txt>
+                          <div style={{ width: '100%' }}>
+                            <Txt size={13} weight={700} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</Txt>
+                            <Txt size={11} color={T.t3} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>{c.character}</Txt>
                           </div>
-                          <Icon name="chevronR" size={14} color={T.t4} />
                         </button>
                       ))}
                     </div>
@@ -509,6 +569,130 @@ export default function TitleDetailPage() {
         </div>
 
         <Toast msg={toast} visible={!!toast} />
+
+        {/* ── Modal de avaliação (filmes) ── */}
+        {showForm && !isTV && (
+          <>
+            <div onClick={() => { setShowForm(false); setShowGif(false); setShowEmoji(false); }}
+              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
+              {/* handle + title */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
+                <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
+                <Txt size={15} weight={700}>Avaliar filme</Txt>
+                <button onClick={() => { setShowForm(false); setShowGif(false); setShowEmoji(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                  <Icon name="close" size={18} color={T.t3} />
+                </button>
+              </div>
+
+              <div style={{ overflowY: 'auto', padding: '16px 16px 0', flex: 1 }}>
+                {/* Star rating */}
+                <div style={{ marginBottom: 16, textAlign: 'center' }}>
+                  <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>Sua nota</Txt>
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <Stars value={reviewRating} max={5} size={36} onChange={setReviewRating} />
+                  </div>
+                  {reviewRating > 0 && (
+                    <Txt size={13} weight={700} color={T.pink} style={{ display: 'block', marginTop: 6 }}>
+                      {['', 'Ruim', 'Regular', 'Bom', 'Ótimo', 'Obra-prima'][reviewRating]}
+                    </Txt>
+                  )}
+                </div>
+
+                {/* GIF preview */}
+                {selectedGif && (
+                  <div style={{ position: 'relative', marginBottom: 12 }}>
+                    <img src={selectedGif.images.fixed_height_small.url} alt={selectedGif.title}
+                      style={{ width: '100%', borderRadius: 10, display: 'block', maxHeight: 140, objectFit: 'cover' }} />
+                    <button onClick={() => setSelectedGif(null)}
+                      style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="close" size={12} color={T.white} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Textarea */}
+                <textarea
+                  ref={reviewTextareaRef}
+                  value={reviewText}
+                  onChange={e => setReviewText(e.target.value)}
+                  placeholder="Escreva sua crítica..."
+                  maxLength={500}
+                  rows={4}
+                  style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, color: T.white, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", padding: '12px 14px', outline: 'none', resize: 'none', boxSizing: 'border-box', marginBottom: 4 }}
+                />
+                <Txt size={10} color={T.t4} style={{ display: 'block', textAlign: 'right', marginBottom: 12 }}>{reviewText.length}/500</Txt>
+
+                {/* Emoji + GIF buttons */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <button onClick={() => { setShowEmoji(s => !s); setShowGif(false); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: showEmoji ? T.pink : T.surface2, border: showEmoji ? 'none' : `1px solid ${T.border}`, cursor: 'pointer' }}>
+                    <span style={{ fontSize: 14 }}>😀</span>
+                    <Txt size={12} weight={700} color={showEmoji ? '#fff' : T.t2}>Emoji</Txt>
+                  </button>
+                  <button onClick={() => { setShowGif(s => !s); setShowEmoji(false); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: showGif ? T.pink : T.surface2, border: showGif ? 'none' : `1px solid ${T.border}`, cursor: 'pointer' }}>
+                    <Txt size={12} weight={700} color={showGif ? '#fff' : T.t2}>GIF</Txt>
+                  </button>
+                </div>
+
+                {/* Emoji picker */}
+                {showEmoji && (
+                  <div style={{ background: T.surface2, borderRadius: 14, border: `1px solid ${T.border}`, padding: 12, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                      {EMOJI_GROUPS.map((g, i) => (
+                        <button key={i} onClick={() => setEmojiTab(i)}
+                          style={{ fontSize: 18, padding: '4px 8px', borderRadius: 8, background: emojiTab === i ? T.pink : 'transparent', border: 'none', cursor: 'pointer' }}>
+                          {g.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {EMOJI_GROUPS[emojiTab].emojis.map(e => (
+                        <button key={e} onClick={() => { setReviewText(t => t + e); setShowEmoji(false); reviewTextareaRef.current?.focus(); }}
+                          style={{ fontSize: 22, padding: 6, borderRadius: 8, background: 'none', border: 'none', cursor: 'pointer' }}>
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* GIF picker */}
+                {showGif && (
+                  <div style={{ background: T.surface2, borderRadius: 14, border: `1px solid ${T.border}`, padding: 10, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <input value={gifSearch} onChange={e => setGifSearch(e.target.value)} placeholder="Buscar GIF..."
+                        style={{ flex: 1, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 20, color: T.white, fontSize: 13, fontFamily: "'Area','Inter',sans-serif", padding: '8px 14px', outline: 'none' }} />
+                      <span style={{ fontSize: 11, color: T.t4, fontWeight: 700, letterSpacing: 0.5 }}>GIPHY</span>
+                    </div>
+                    {gifLoading ? (
+                      <div style={{ textAlign: 'center', padding: '20px 0' }}><Txt size={12} color={T.t3}>Carregando...</Txt></div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, maxHeight: 340, overflowY: 'auto' }}>
+                        {gifResults.map(gif => (
+                          <button key={gif.id} onClick={() => { setSelectedGif(gif); setShowGif(false); }}
+                            style={{ padding: 0, border: 'none', cursor: 'pointer', borderRadius: 6, overflow: 'hidden', height: 110, background: T.surface }}>
+                            <img src={gif.images.fixed_height_small.url} alt={gif.title}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ padding: '12px 16px 28px', borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
+                <button onClick={submitReview}
+                  style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}` }}>
+                  <Txt size={15} weight={700} color="#fff">Publicar avaliação</Txt>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
         <BottomSheet visible={listSheet} onClose={() => setListSheet(false)} title={listStatus ? 'Minha lista' : 'Adicionar à lista'}>
           {([
             { key: 'want',     label: 'Quero assistir', icon: 'bookmark' as const, action: 'want'     as const },
@@ -525,16 +709,30 @@ export default function TitleDetailPage() {
               setListStatus(key);
               setListSheet(false);
               showToast(`${label} ✓`);
+              // Mark all episodes as watched when setting as Finalizado
+              if (key === 'watched' && isTV) {
+                const seasonData: Record<string, number[]> = {};
+                (detail.seasons || []).forEach((s: any) => {
+                  if (s.season_number > 0 && s.episode_count > 0) {
+                    seasonData[String(s.season_number)] = Array.from({ length: s.episode_count }, (_, i) => i + 1);
+                  }
+                });
+                epWatchedStore.setShow(detail.id, seasonData);
+                setEpWatchedRefresh(v => v + 1);
+              }
               if (firebaseConfigured && user) {
                 const db = getDB();
                 try {
                   await Promise.all(others.map((l) => dbListStore.remove(db, user.uid, l, detail.id)));
                   await dbListStore.add(db, user.uid, key, item);
-                  const displayName  = user.displayName || user.email?.split('@')[0] || 'Usuário';
-                  const profile      = profileStore.get();
+                  if (key === 'watched' && isTV) {
+                    await dbEpWatchedStore.set(db, user.uid, epWatchedStore.getAll());
+                  }
+                  const prof2        = profileStore.get(user.uid);
+                  const displayName  = prof2.username || prof2.name || user.displayName || user.email?.split('@')[0] || 'Usuário';
                   await dbActivityStore.add(db, {
                     uid: user.uid, username: displayName, avatar: displayName[0]?.toUpperCase() || 'U',
-                    photoUrl: user.photoURL || profile.avatarImage || '',
+                    photoUrl: user.photoURL || prof2.avatarImage || '',
                     titleKey: `${isTV ? 'tv' : 'movie'}_${detail.id}`, titleName: title,
                     poster: detail.poster_path ?? null, action, rating: 0, text: '',
                     createdAt: new Date().toISOString(),
@@ -582,18 +780,12 @@ export default function TitleDetailPage() {
 }
 
 /* ── Movie reviews tab ── */
-function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRating, setReviewRating, reviewText, setReviewText, onSubmit, onLike, user }: {
+function MovieReviewsTab({ reviews, avgRating, onAddReview, onViewComments, onLike }: {
   reviews: Review[];
   avgRating: string | null;
-  showForm: boolean;
-  setShowForm: (v: boolean) => void;
-  reviewRating: number;
-  setReviewRating: (v: number) => void;
-  reviewText: string;
-  setReviewText: (v: string) => void;
-  onSubmit: () => void;
+  onAddReview: () => void;
+  onViewComments: () => void;
   onLike: (id: string) => void;
-  user: any;
 }) {
   const [sort, setSort] = useState<'recentes' | 'melhores' | 'piores'>('recentes');
 
@@ -609,6 +801,7 @@ function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRati
     } catch { return dateStr; }
   }
 
+  const ratedReviews = reviews.filter(r => r.rating > 0);
   const sorted = [...reviews].sort((a, b) => {
     if (sort === 'melhores') return b.rating - a.rating;
     if (sort === 'piores')   return a.rating - b.rating;
@@ -633,7 +826,7 @@ function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRati
           <div style={{ width: 1, height: 40, background: 'rgba(26,20,0,0.15)' }} />
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1400', fontFamily: "'Area',sans-serif" }}>
-              {reviews.length} {reviews.length === 1 ? 'avaliação' : 'avaliações'}
+              {ratedReviews.length} {ratedReviews.length === 1 ? 'avaliação' : 'avaliações'}
             </div>
             <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
               {[1,2,3,4,5].map(i => (
@@ -665,7 +858,7 @@ function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRati
         </div>
       )}
 
-      {/* ── Lista ── */}
+      {/* ── Lista de avaliações ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
         {sorted.map(rev => {
           const liked = !!(rev as any).liked;
@@ -686,6 +879,9 @@ function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRati
                   </div>
                 )}
               </div>
+              {rev.gifUrl && (
+                <img src={rev.gifUrl} alt="" style={{ width: '100%', borderRadius: 10, display: 'block', marginBottom: 10, maxHeight: 160, objectFit: 'cover' }} />
+              )}
               {rev.text ? (
                 <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 10 }}>{rev.text}</Txt>
               ) : null}
@@ -699,45 +895,18 @@ function MovieReviewsTab({ reviews, avgRating, showForm, setShowForm, reviewRati
         })}
       </div>
 
-      {/* ── Botão + modal de avaliação ── */}
-      {!showForm ? (
-        <button onClick={() => setShowForm(true)}
-          style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}`, marginBottom: 8 }}>
-          <Txt size={15} weight={700} color="#fff">+ Adicionar avaliação</Txt>
-        </button>
-      ) : (
-        <div style={{ background: T.card, borderRadius: 16, border: `1px solid ${T.border}`, padding: '16px', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <Txt size={15} weight={700}>Sua avaliação</Txt>
-            <button onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-              <Icon name="close" size={18} color={T.t3} />
-            </button>
-          </div>
-          <div style={{ marginBottom: 14, textAlign: 'center' }}>
-            <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>Sua nota</Txt>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <Stars value={reviewRating} max={5} size={36} onChange={setReviewRating} />
-            </div>
-            {reviewRating > 0 && (
-              <Txt size={13} weight={700} color={T.pink} style={{ display: 'block', marginTop: 6 }}>
-                {['', 'Ruim', 'Regular', 'Bom', 'Ótimo', 'Obra-prima'][reviewRating]}
-              </Txt>
-            )}
-          </div>
-          <textarea
-            value={reviewText}
-            onChange={e => setReviewText(e.target.value)}
-            placeholder="Escreva seu comentário..."
-            rows={3}
-            maxLength={500}
-            style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, color: T.white, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", padding: '12px 14px', outline: 'none', resize: 'none', boxSizing: 'border-box', marginBottom: 12 }}
-          />
-          <button onClick={onSubmit}
-            style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}` }}>
-            <Txt size={15} weight={700} color="#fff">Publicar avaliação</Txt>
-          </button>
+      {/* ── Botões de ação ── */}
+      <button onClick={onAddReview}
+        style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}`, marginBottom: 10 }}>
+        <Txt size={15} weight={700} color="#fff">+ Adicionar avaliação</Txt>
+      </button>
+      <button onClick={onViewComments}
+        style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.card, border: `1px solid ${T.border}`, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Icon name="message" size={16} color={T.t2} />
+          <Txt size={15} weight={700} color={T.t1}>Ver comentários</Txt>
         </div>
-      )}
+      </button>
     </div>
   );
 }
@@ -854,7 +1023,7 @@ function InformationsTab({ detail, crew, similar, isTV, onCrew, onSimilar }: {
           <Txt size={17} weight={800} style={{ display: 'block', marginBottom: 14 }}>Você também pode gostar</Txt>
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', marginLeft: -16, paddingLeft: 16, paddingRight: 16 } as React.CSSProperties}>
             {similar.map((s: any) => (
-              <TMDBPosterCard key={s.id} item={s} size="sm" onClick={() => onSimilar(s)} />
+              <TMDBPosterCard key={s.id} item={s} size="lg" onClick={() => onSimilar(s)} />
             ))}
           </div>
         </div>
@@ -917,11 +1086,11 @@ function SeasonDropdown({ seasons, active, onSelect }: { seasons: number[]; acti
   );
 }
 
-function EpisodeList({ tvId, seasonNum, showName, network, onEpisode }: { tvId: string; seasonNum: number; showName: string; network: string; onEpisode: (ep: any) => void }) {
+function EpisodeList({ tvId, seasonNum, showName, network, onEpisode, refreshKey }: { tvId: string; seasonNum: number; showName: string; network: string; onEpisode: (ep: any) => void; refreshKey?: number }) {
   const { data, loading } = useTMDB(() => tmdb.season(tvId, seasonNum), [tvId, seasonNum]);
   const episodes = data?.episodes || [];
   const [watchedMap, setWatchedMap] = useState<Record<string, number[]>>({});
-  useEffect(() => { setWatchedMap(epWatchedStore.getShow(tvId)); }, [tvId, seasonNum]);
+  useEffect(() => { setWatchedMap(epWatchedStore.getShow(tvId)); }, [tvId, seasonNum, refreshKey]);
   const isWatched = (epNum: number) => (watchedMap[String(seasonNum)] ?? []).includes(epNum);
 
   if (loading) return (

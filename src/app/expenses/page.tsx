@@ -1,10 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, AppBar, Btn, BottomSheet, Txt } from '@/components/primitives';
+import { Screen, ScrollArea, GlassHeader, Btn, BottomSheet, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
+import { useTheme } from '@/context/ThemeContext';
 
 type Plan = { label: string; price: number };
 type Stream = { id: string; name: string; color: string; plans: Plan[] };
@@ -26,11 +27,26 @@ type Sub = { id: string; streamId: string; name: string; color: string; plan: st
 
 export default function ExpensesPage() {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [subs, setSubs] = useState<Sub[]>([]);
   const [addSheet, setAddSheet] = useState(false);
   const [selStream, setSelStream] = useState<Stream | null>(null);
   const [selPlan, setSelPlan] = useState(0);
   const [customPrice, setCustomPrice] = useState('');
+  const [showNavTitle, setShowNavTitle] = useState(false);
+  const titleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setShowNavTitle(!entry.isIntersecting),
+      { rootMargin: '-56px 0px 0px 0px', threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     try { setSubs(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch {}
@@ -61,31 +77,70 @@ export default function ExpensesPage() {
   return (
     <Frame>
       <Screen>
-        <AppBar title="Gastos de Streaming" left={
-          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>
-        } />
-
         <ScrollArea>
-          <div style={{ margin: '16px 16px 0', padding: 20, background: `linear-gradient(135deg,rgba(192,105,255,0.15),rgba(192,105,255,0.05))`, borderRadius: T.radius, border: `1px solid rgba(192,105,255,0.2)` }}>
-            <Txt size={11} color={T.t3} weight={700} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Gasto total ativo</Txt>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
-              <Txt size={38} weight={800} color={T.pink}>R$ {monthly.toFixed(2).replace('.', ',')}</Txt>
-              <Txt size={14} color={T.t3}>/mês</Txt>
+          <GlassHeader
+            navTitle="Gastos de Streaming"
+            showNavTitle={showNavTitle}
+            left={
+              <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="chevronL" size={18} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
+              </button>
+            }
+            right={
+              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
+              </button>
+            }
+          />
+
+          <div ref={titleRef} style={{ padding: '20px 16px 4px' }}>
+            <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.5px' }}>
+              Gastos de Streaming
+            </Txt>
+          </div>
+
+          {/* ── Hero card ── */}
+          <div style={{
+            margin: '16px 16px 0', padding: '20px 20px 18px',
+            background: 'linear-gradient(145deg, #181022 0%, #0e0c14 100%)',
+            borderRadius: 22, border: '1px solid rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+            position: 'relative', overflow: 'hidden',
+          } as React.CSSProperties}>
+
+            {/* Glow blob */}
+            <div style={{ position: 'absolute', top: -50, right: -50, width: 180, height: 180, borderRadius: 90, background: 'rgba(192,105,255,0.10)', filter: 'blur(48px)', pointerEvents: 'none' }} />
+
+            {/* Label + dot */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <Txt size={10} weight={700} color="rgba(255,255,255,0.38)" style={{ textTransform: 'uppercase', letterSpacing: 1.2 }}>
+                GASTO MENSAL ATIVO
+              </Txt>
+              <div style={{ width: 8, height: 8, borderRadius: 4, background: activeSubs.length > 0 ? '#22c55e' : 'rgba(255,255,255,0.2)', boxShadow: activeSubs.length > 0 ? '0 0 8px rgba(34,197,94,0.8)' : 'none' }} />
             </div>
-            <Txt size={14} color={T.t2} style={{ display: 'block', marginBottom: 16 }}>R$ {annual.toFixed(2).replace('.', ',')} por ano</Txt>
+
+            {/* Main value */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+              <Txt size={40} weight={900} color="#fff" style={{ lineHeight: 1, letterSpacing: '-1px' }}>
+                R$ {monthly.toFixed(2).replace('.', ',')}
+              </Txt>
+              <Txt size={14} weight={400} color="rgba(255,255,255,0.32)">/mês</Txt>
+            </div>
+
+            {/* Annual + mini stats */}
+            <Txt size={12} color="rgba(255,255,255,0.38)" style={{ display: 'block', marginBottom: 16 }}>
+              R$ {annual.toFixed(2).replace('.', ',')} por ano · {activeSubs.length} ativa{activeSubs.length !== 1 ? 's' : ''}
+              {subs.length - activeSubs.length > 0 && `, ${subs.length - activeSubs.length} pausada${subs.length - activeSubs.length !== 1 ? 's' : ''}`}
+            </Txt>
+
+            {/* Buttons */}
             <div style={{ display: 'flex', gap: 10 }}>
-              <div style={{ flex: 1, padding: 10, background: 'var(--c-input-bg)', borderRadius: T.radiusSm, textAlign: 'center' }}>
-                <Txt size={18} weight={800} style={{ display: 'block' }}>{activeSubs.length}</Txt>
-                <Txt size={10} color={T.t3}>Ativas</Txt>
-              </div>
-              <div style={{ flex: 1, padding: 10, background: 'var(--c-input-bg)', borderRadius: T.radiusSm, textAlign: 'center' }}>
-                <Txt size={18} weight={800} color={T.t2} style={{ display: 'block' }}>{subs.length - activeSubs.length}</Txt>
-                <Txt size={10} color={T.t3}>Pausadas</Txt>
-              </div>
-              <div style={{ flex: 1, padding: 10, background: 'var(--c-input-bg)', borderRadius: T.radiusSm, textAlign: 'center' }}>
-                <Txt size={18} weight={800} color={T.gold} style={{ display: 'block' }}>R$ {allMonthly.toFixed(0)}</Txt>
-                <Txt size={10} color={T.t3}>Total (c/ pausadas)</Txt>
-              </div>
+              <button onClick={() => setAddSheet(true)} style={{ flex: 1, padding: '12px 0', borderRadius: 50, background: 'rgba(255,255,255,0.92)', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#0e0c14', fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.1px' }}>
+                + Adicionar
+              </button>
+              <button onClick={() => {}} style={{ flex: 1, padding: '12px 0', borderRadius: 50, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.72)', fontFamily: "'Area','Inter',sans-serif" }}>
+                Ver Distribuição
+              </button>
             </div>
           </div>
 

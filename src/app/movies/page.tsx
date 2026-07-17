@@ -8,6 +8,7 @@ import { MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { listStore, revStore } from '@/lib/store';
+import { useTheme } from '@/context/ThemeContext';
 
 type MoviesTab = 'minha_lista' | 'em_cartaz' | 'no_streaming' | 'avaliados';
 
@@ -17,6 +18,8 @@ type ListMovie = {
 
 export default function MoviesPage() {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [tab, setTab] = useState<MoviesTab>('minha_lista');
   const [wantList,     setWantList]     = useState<ListMovie[]>([]);
   const [favList,      setFavList]      = useState<ListMovie[]>([]);
@@ -86,9 +89,11 @@ export default function MoviesPage() {
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
+            navTitle="Filmes"
+            showNavTitle={scrolled}
             right={
-              <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="search" size={16} color="#fff" />
+              <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="search" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
               </button>
             }
           />
@@ -111,9 +116,15 @@ export default function MoviesPage() {
               <button key={id} onClick={() => setTab(id)} style={{
                 padding: scrolled ? '4.5px 13px' : '7px 16px',
                 borderRadius: 24, flexShrink: 0,
-                background: tab === id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.12)',
-                border: tab === id ? 'none' : '1px solid rgba(255,255,255,0.20)',
-                color: tab === id ? '#C069FF' : 'rgba(255,255,255,0.80)',
+                background: tab === id
+                  ? (isDark ? 'rgba(255,255,255,0.95)' : 'rgba(10,10,12,0.88)')
+                  : (isDark ? 'rgba(255,255,255,0.12)' : '#fff'),
+                border: tab === id
+                  ? 'none'
+                  : (isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.11)'),
+                color: tab === id
+                  ? (isDark ? '#C069FF' : '#fff')
+                  : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
                 backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',

@@ -17,7 +17,7 @@ export const prefsStore = {
 
 export type Review = {
   id: string; user: string; avatar: string; photoUrl?: string; rating: number; text: string;
-  date: string; likes?: number; likedBy?: string[];
+  gifUrl?: string; date: string; likes?: number; likedBy?: string[];
   replies?: Array<{ id: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
 };
 
@@ -135,12 +135,16 @@ export type Profile = {
   following: number;
 };
 
-const PROFILE_KEY = 'sec_profile_v1';
+export const PROFILE_KEY_BASE = 'sec_profile_v1';
+export function profileKey(uid?: string | null) {
+  return uid ? `${PROFILE_KEY_BASE}_${uid}` : PROFILE_KEY_BASE;
+}
+
 const PROFILE_DEFAULT: Profile = {
-  name: 'Lucas Tales',
-  username: 'lucastales',
+  name: '',
+  username: '',
   bio: '',
-  avatarLetter: 'L',
+  avatarLetter: '',
   avatarGradient: 'linear-gradient(135deg,#C069FF,#c030a0)',
   avatarImage: '',
   coverImage: '',
@@ -152,13 +156,19 @@ const PROFILE_DEFAULT: Profile = {
 };
 
 export const profileStore = {
-  get(): Profile {
+  get(uid?: string | null): Profile {
     if (typeof window === 'undefined') return PROFILE_DEFAULT;
-    try { return { ...PROFILE_DEFAULT, ...JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}') }; } catch { return PROFILE_DEFAULT; }
+    const key = profileKey(uid);
+    try { return { ...PROFILE_DEFAULT, ...JSON.parse(localStorage.getItem(key) || '{}') }; } catch { return PROFILE_DEFAULT; }
   },
-  set(p: Partial<Profile>) {
+  set(p: Partial<Profile>, uid?: string | null) {
     if (typeof window === 'undefined') return;
-    try { localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...profileStore.get(), ...p })); } catch {}
+    const key = profileKey(uid);
+    try { localStorage.setItem(key, JSON.stringify({ ...profileStore.get(uid), ...p })); } catch {}
+  },
+  clear(uid?: string | null) {
+    if (typeof window === 'undefined') return;
+    try { localStorage.removeItem(profileKey(uid)); } catch {}
   },
 };
 

@@ -4,6 +4,7 @@ import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { Txt, Skeleton } from './primitives';
 import { tmdbImg, normalize, type TMDBItem } from '@/lib/tmdb';
+import { useTheme } from '@/context/ThemeContext';
 
 const POSTER_GRADIENTS = [
   'linear-gradient(160deg,#c8b8a0,#a09080)',
@@ -188,6 +189,9 @@ export const TMDBGridCard = ({
   onClick?: () => void;
   tag?: { label: string; color: string; bg: string };
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
   const [imgLoaded,    setImgLoaded]    = useState(false);
   const [imgErr,       setImgErr]       = useState(false);
   const [textlessSrc,  setTextlessSrc]  = useState<string | null>(null);
@@ -236,6 +240,122 @@ export const TMDBGridCard = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, apiType]);
 
+  /* ── Light mode: full-image card com cor puxada da própria imagem ── */
+  if (!isDark) {
+    return (
+      <div
+        onClick={onClick}
+        style={{
+          width: '100%',
+          borderRadius: 16,
+          overflow: 'hidden',
+          cursor: 'pointer',
+          position: 'relative',
+          aspectRatio: '5 / 6.6',
+          boxShadow: '0 2px 16px rgba(0,0,0,0.13), 0 0 0 1px rgba(0,0,0,0.06)',
+          WebkitTransform: 'translateZ(0)',
+          transform: 'translateZ(0)',
+          isolation: 'isolate',
+          background: 'var(--c-surface2)',
+        } as React.CSSProperties}
+      >
+        {/* Skeleton */}
+        {(!fetchDone || (src && !imgLoaded && !imgErr)) && (
+          <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />
+        )}
+
+        {src && !imgErr && (
+          <>
+            {/* Poster principal — preenche o card inteiro */}
+            <img
+              key={src}
+              src={src}
+              alt={n.title}
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgErr(true)}
+              style={{
+                position: 'absolute', inset: 0,
+                width: '100%', height: '100%',
+                objectFit: 'cover', display: 'block',
+                opacity: imgLoaded ? 1 : 0,
+                transition: 'opacity 0.35s',
+              }}
+            />
+
+            {/* Faixa inferior: cópia borrada da mesma imagem como "cor puxada do poster" */}
+            {imgLoaded && (
+              <div style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                height: '52%',
+                overflow: 'hidden',
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 34%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 34%)',
+                pointerEvents: 'none',
+              } as React.CSSProperties}>
+                <img
+                  src={src}
+                  alt=""
+                  aria-hidden
+                  style={{
+                    position: 'absolute', inset: 0,
+                    width: '100%', height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: 'bottom center',
+                    filter: 'blur(22px) saturate(2.2) brightness(0.68)',
+                    transform: 'scale(1.18)',
+                    display: 'block',
+                  }}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Tag badge */}
+        {tag && (
+          <div style={{
+            position: 'absolute', top: 8, left: 8, zIndex: 3,
+            padding: '3px 7px', borderRadius: 6,
+            background: tag.bg,
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          } as React.CSSProperties}>
+            <span style={{
+              fontSize: 9, fontWeight: 800,
+              color: tag.color,
+              fontFamily: "'Area','Inter',sans-serif",
+              letterSpacing: 0.4,
+            }}>{tag.label}</span>
+          </div>
+        )}
+
+        {/* Texto branco sobreposto na parte inferior */}
+        {fetchDone && (
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            padding: '10px 11px 13px',
+            zIndex: 2,
+            pointerEvents: 'none',
+          }}>
+            <div style={{
+              fontSize: 14, fontWeight: 700,
+              color: '#fff',
+              fontFamily: "'Area','Inter',sans-serif",
+              lineHeight: 1.4, marginBottom: 3,
+              textShadow: '0 1px 4px rgba(0,0,0,0.55)',
+            }}>{n.title}</div>
+            <div style={{
+              fontSize: 11,
+              color: 'rgba(255,255,255,0.72)',
+              fontFamily: "'Area','Inter',sans-serif",
+              lineHeight: 1.4,
+            }}>{subtitle}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       onClick={onClick}
@@ -246,14 +366,18 @@ export const TMDBGridCard = ({
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
-        background: '#0a0a0c',
-        border: '1px solid rgba(255,255,255,0.10)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 2px 12px rgba(0,0,0,0.45)',
-      }}
+        background: 'var(--c-card)',
+        border: '1px solid var(--c-border)',
+        WebkitTransform: 'translateZ(0)',
+        transform: 'translateZ(0)',
+        isolation: 'isolate',
+      } as React.CSSProperties}
     >
-      {/* ── Imagem com aspecto fixo + gradiente que dissolve no fundo ── */}
-      <div style={{ position: 'relative', aspectRatio: '5 / 6.6', overflow: 'hidden', flexShrink: 0 }}>
-        {/* Skeleton shimmer enquanto a imagem não carregou */}
+      {/* ── Imagem com aspecto fixo + scroll edge effect ── */}
+      <div style={{
+        position: 'relative', aspectRatio: '5 / 6.6', overflow: 'hidden', flexShrink: 0,
+        borderRadius: '16px 16px 0 0',
+      }}>
         {(!fetchDone || (src && !imgLoaded && !imgErr)) && (
           <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />
         )}
@@ -269,15 +393,25 @@ export const TMDBGridCard = ({
               objectFit: 'cover', display: 'block',
               opacity: imgLoaded ? 1 : 0,
               transition: 'opacity 0.35s',
-              transform: 'scale(1.10)',
             }}
           />
         )}
 
-        {/* Gradiente: dissolve para o mesmo fundo escuro do texto abaixo */}
+        {/* Blur com fade (scroll edge effect) */}
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          height: '40%',
+          backdropFilter: 'blur(5px)',
+          WebkitBackdropFilter: 'blur(5px)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 60%)',
+          maskImage: 'linear-gradient(to bottom, transparent 0%, black 60%)',
+          pointerEvents: 'none',
+        } as React.CSSProperties} />
+
+        {/* Gradiente dissolve para o fundo do card */}
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'linear-gradient(to bottom, transparent 42%, #0a0a0c 100%)',
+          background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.45) 80%, var(--c-card) 100%)',
           pointerEvents: 'none',
         }} />
 
@@ -300,20 +434,20 @@ export const TMDBGridCard = ({
         )}
       </div>
 
-      {/* ── Texto abaixo — mesmo fundo do gradiente, altura livre ── */}
-      <div style={{ padding: '2px 11px 13px', background: '#0a0a0c' }}>
+      {/* ── Texto abaixo com altura dinâmica ── */}
+      <div style={{ padding: '8px 11px 12px', background: 'var(--c-card)' }}>
         <div style={{
           fontSize: 14, fontWeight: 700,
-          color: 'rgba(255,255,255,0.95)',
+          color: 'var(--c-t1)',
           fontFamily: "'Area','Inter',sans-serif",
-          lineHeight: 1.5,
-          marginBottom: 4,
+          lineHeight: 1.4,
+          marginBottom: 3,
         }}>{n.title}</div>
         <div style={{
           fontSize: 11,
-          color: 'rgba(255,255,255,0.50)',
+          color: 'var(--c-t3)',
           fontFamily: "'Area','Inter',sans-serif",
-          lineHeight: 1.5,
+          lineHeight: 1.4,
         }}>{subtitle}</div>
       </div>
     </div>
@@ -342,10 +476,14 @@ export const MasonryGrid2 = ({
     </div>
   );
 
+  const unique = items.filter((item, idx, arr) =>
+    arr.findIndex((x) => x.id === item.id && (x.media_type ?? (x as any).type) === (item.media_type ?? (item as any).type)) === idx
+  );
+
   return (
     <div className="masonry-cols" style={{ padding }}>
-      {items.map((item) => (
-        <div key={item.id} className="masonry-item">
+      {unique.map((item) => (
+        <div key={`${item.media_type ?? (item as any).type ?? ''}-${item.id}`} className="masonry-item">
           <TMDBGridCard item={item} onClick={() => onItem(item)} tag={getTag?.(item)} />
         </div>
       ))}

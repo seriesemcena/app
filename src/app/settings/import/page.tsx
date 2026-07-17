@@ -8,7 +8,7 @@ import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbListStore, dbRevStore } from '@/lib/db';
+import { dbListStore, dbRevStore, dbEpWatchedStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 
 /* ─────────────────────────────────────────────────────────────
@@ -382,16 +382,19 @@ export default function ImportPage() {
     // ── Save reviews ──────────────────────────────────────────
     let savedReviews = 0;
     if (parsedReviews.length > 0) {
-      const profile = profileStore.get();
+      const profile = profileStore.get(user?.uid);
+      const displayName = profile.name || profile.username || user?.displayName || user?.email?.split('@')[0] || 'eu';
+      const avatarLetter = profile.avatarLetter || displayName[0]?.toUpperCase() || '?';
+      const photoUrl = profile.avatarImage || user?.photoURL || '';
       for (const pr of parsedReviews) {
         const resolved = resolveTmdbId(pr.showName, pr.mediaType);
         if (!resolved) continue;
         const titleKey = `${resolved.mediaType === 'movie' ? 'movie' : 'tv'}_${resolved.tmdbId}`;
         const review: Review = {
           id: `tvtime_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          user: profile.username || profile.name || 'eu',
-          avatar: profile.avatarLetter || '?',
-          photoUrl: profile.avatarImage || '',
+          user: displayName,
+          avatar: avatarLetter,
+          photoUrl,
           rating: pr.rating,
           text: pr.text,
           date: pr.date,
@@ -418,6 +421,9 @@ export default function ImportPage() {
         if (!bySeasonMap[s].includes(ep)) bySeasonMap[s].push(ep);
       }
       epWatchedStore.setShow(resolved.tmdbId, bySeasonMap);
+    }
+    if (firebaseConfigured && user) {
+      try { await dbEpWatchedStore.set(getDB(), user.uid, epWatchedStore.getAll()); } catch {}
     }
 
     setResults(out);

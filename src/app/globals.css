@@ -79,10 +79,11 @@
 /* ── CSS custom properties — dark theme (default) ── */
 :root {
   --tab-h: 90px;   /* altura reservada para a pill TabBar */
-  --c-bg:        #1A1A1A;
-  --c-card:      #252525;
-  --c-surface:   #2E2E2E;
-  --c-surface2:  #383838;
+  --c-bg:        #0D0D0F;
+  --c-card:      #222228;
+  --c-card-deep: #16161A;
+  --c-surface:   #2A2A32;
+  --c-surface2:  #34343E;
   --c-t1:        rgba(255,255,255,0.95);
   --c-t2:        rgba(255,255,255,0.60);
   --c-t3:        rgba(255,255,255,0.38);
@@ -91,7 +92,7 @@
   --c-dim:       rgba(255,255,255,0.16);
   --c-input-bg:  rgba(255,255,255,0.06);
   --c-glass-bg:  rgba(255,255,255,0.10);
-  --c-outer:     #111111;
+  --c-outer:     #080809;
   --c-body-text: #fff;
   /* Dark: bright pink → deep purple → transparent → dark bg */
   --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #C069FF 0%, #6B10A0 44%, transparent 72%);
@@ -101,6 +102,7 @@
 [data-theme="light"] {
   --c-bg:        #F2F2F7;
   --c-card:      #FFFFFF;
+  --c-card-deep: #EAEAF0;
   --c-surface:   #FFFFFF;
   --c-surface2:  #E5E5EA;
   --c-t1:        rgba(0,0,0,0.88);
@@ -149,8 +151,6 @@ button:focus, input:focus, textarea:focus { outline: none; }
   flex-direction: column;
   overflow: hidden;
   width: 100%;
-  /* Safe area for notch / home indicator */
-  padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
 
@@ -218,6 +218,9 @@ h3, h4, h5, h6, p {
   animation: img-shimmer 1.4s infinite linear;
 }
 
+/* ── News: mobile mostra mobile-layout, desktop mostra grid ── */
+.news-desktop { display: none; }
+
 /* ── Responsive masonry grid ── */
 .masonry-cols { columns: 2; column-gap: 13px; }
 .masonry-item { break-inside: avoid; margin-bottom: 13px; }
@@ -229,6 +232,43 @@ h3, h4, h5, h6, p {
 
   /* Lists page: 2 columns instead of 4 */
   .masonry-2col .masonry-cols { grid-template-columns: repeat(2, 1fr); }
+
+  /* Home: cards de streaming maiores */
+  .stream-card    { width: 210px !important; height: 148px !important; border-radius: 22px !important; padding: 16px 20px !important; }
+  .stream-initial { font-size: 52px !important; }
+  .stream-name    { font-size: 18px !important; }
+  .stream-sub     { font-size: 13px !important; margin-top: 5px !important; }
+
+  /* Home: Fique por dentro — grid desktop 2×3 */
+  .news-mobile  { display: none !important; }
+  .news-desktop {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .news-desktop-card { display: flex; flex-direction: column; gap: 0; }
+  .news-desktop-img  {
+    aspect-ratio: 16/9;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--c-surface2);
+    flex-shrink: 0;
+  }
+  .news-desktop-title {
+    margin: 10px 0 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-t1);
+    font-family: 'Area','Inter',sans-serif;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Home: Minha lista — 2 colunas lado a lado */
+  .home-watching-list { display: grid !important; grid-template-columns: 1fr 1fr; flex-direction: unset !important; }
 
   /* GlassHeader: hide centered logo (sidebar already shows it) */
   .glass-header-logo { display: none !important; }

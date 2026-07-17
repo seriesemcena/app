@@ -52,42 +52,30 @@ export default function EditProfilePage() {
   const coverInputRef  = useRef<HTMLInputElement>(null);
 
   // Wait for Firebase auth to resolve, then build the editable profile.
-  // Priority rules (so saved edits are never overwritten by Firebase defaults):
-  //   name     → local if already customised, else Firebase displayName
-  //   username → local unless it's still the factory default 'lucastales'
-  //   avatar   → local custom image first (data-URL), then Firebase photoURL
   useEffect(() => {
     if (loading) return;
-    const local = profileStore.get();
+    const local = profileStore.get(user?.uid);
 
     const buildProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
       const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
       if (!user) return merged;
-      const FACTORY_USERNAME = 'lucastales';
-      const FACTORY_NAME     = 'Lucas Tales';
-      const resolvedName = (merged.name && merged.name !== FACTORY_NAME)
-        ? merged.name
-        : (user.displayName || merged.name || 'Usuário');
+      const resolvedName = merged.name || user.displayName || 'Usuário';
       return {
         ...merged,
-        name: resolvedName,
-        username: (merged.username && merged.username !== FACTORY_USERNAME)
-          ? merged.username
-          : (user.email?.split('@')[0] || merged.username || 'usuario'),
-        avatarImage: merged.avatarImage || user.photoURL || '',
+        name:         resolvedName,
+        username:     merged.username || user.email?.split('@')[0] || 'usuario',
+        avatarImage:  merged.avatarImage || user.photoURL || '',
         avatarLetter: resolvedName[0]?.toUpperCase() || 'U',
       };
     };
 
-    // Show local data immediately
     setProfile(buildProfile(local));
 
-    // Pull Firestore profile for cross-device data (bio, username, social, etc.)
     if (user && firebaseConfigured) {
       dbProfileStore.get(getDB(), user.uid).then(cloud => {
         if (cloud && (cloud.name || cloud.username || cloud.bio)) {
           const merged = buildProfile(local, cloud);
-          profileStore.set(merged);
+          profileStore.set(merged, user.uid);
           setProfile(merged);
         }
       }).catch(() => {});
@@ -114,7 +102,7 @@ export default function EditProfilePage() {
   const save = async () => {
     if (!profile) return;
     // 1. Persist to localStorage immediately
-    profileStore.set(profile);
+    profileStore.set(profile, user?.uid);
     setToast('Perfil salvo!');
     setTimeout(() => router.back(), 1200);
 

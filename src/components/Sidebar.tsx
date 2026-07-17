@@ -9,8 +9,9 @@ const NAV: Array<{ id: string; icon: IconName; href: string; label: string }> = 
   { id: 'home',    icon: 'home',    href: '/home',    label: 'Home'   },
   { id: 'series',  icon: 'tv',      href: '/series',  label: 'Séries' },
   { id: 'movies',  icon: 'film',    href: '/movies',  label: 'Filmes' },
-  { id: 'feed',    icon: 'message', href: '/feed',    label: 'Feed'   },
-  { id: 'profile', icon: 'user',    href: '/profile', label: 'Perfil' },
+  { id: 'feed',      icon: 'message', href: '/feed',      label: 'Atividade'   },
+  { id: 'curadoria', icon: 'award',   href: '/curadoria', label: 'Curadoria IA' },
+  { id: 'profile',   icon: 'user',    href: '/profile',   label: 'Perfil'       },
 ];
 
 export function Sidebar() {

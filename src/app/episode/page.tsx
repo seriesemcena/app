@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Stars, StreamBadge, Toast, Txt } from '@/components/primitives';
+import { Screen, ScrollArea, Stars, StreamBadge, Toast, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
@@ -17,14 +17,14 @@ const EMOJI_GROUPS = [
   { label: '👍', emojis: ['👍','👎','🤌','💪','🙏','👀','🫣','🤦','🤷','💁','🫡','🫶','🤟','✌️','🤞'] },
 ];
 
-const FAKE_GIFS = [
-  { id: 'g1', label: 'Mind blown',      emoji: '🤯' },
-  { id: 'g2', label: 'Standing ovation',emoji: '👏' },
-  { id: 'g3', label: 'Crying',          emoji: '😭' },
-  { id: 'g4', label: "Chef's kiss",     emoji: '🤌' },
-  { id: 'g5', label: 'Fire',            emoji: '🔥' },
-  { id: 'g6', label: 'Amazing',         emoji: '✨' },
-];
+type GiphyGif = {
+  id: string;
+  title: string;
+  images: {
+    fixed_height_small: { url: string; width: string; height: string };
+    downsized_small:     { mp4: string };
+  };
+};
 
 function EpisodePageInner() {
   const router = useRouter();
@@ -71,14 +71,29 @@ function EpisodePageInner() {
   const [modalOpen, setModalOpen]     = useState(false);
   const [modalRating, setModalRating] = useState(0);
   const [comment, setComment]         = useState('');
-  const [selectedGif, setSelectedGif] = useState<typeof FAKE_GIFS[0] | null>(null);
+  const [selectedGif, setSelectedGif] = useState<GiphyGif | null>(null);
   const [emojiTab, setEmojiTab]       = useState(0);
   const [showEmoji, setShowEmoji]     = useState(false);
   const [showGif, setShowGif]         = useState(false);
   const [gifSearch, setGifSearch]     = useState('');
+  const [gifResults, setGifResults]   = useState<GiphyGif[]>([]);
+  const [gifLoading, setGifLoading]   = useState(false);
   const [replyOpen, setReplyOpen]     = useState<string | null>(null);
   const [replyText, setReplyText]     = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showNavTitle, setShowNavTitle] = useState(false);
+  const epTitleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = epTitleRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setShowNavTitle(!entry.isIntersecting),
+      { rootMargin: '-56px 0px 0px 0px', threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   /* ── Load watched + reviews from localStorage, then sync Firestore ── */
   useEffect(() => {
@@ -106,6 +121,22 @@ function EpisodePageInner() {
     }).catch(() => {});
   }, [storageKey]);
 
+  /* ── Giphy: fetch trending on open, search on type ── */
+  useEffect(() => {
+    if (!showGif) return;
+    const delay = gifSearch ? 400 : 0;
+    const timer = setTimeout(async () => {
+      setGifLoading(true);
+      try {
+        const res  = await fetch(`/api/giphy?q=${encodeURIComponent(gifSearch)}&limit=15`);
+        const data = await res.json();
+        setGifResults(data.data || []);
+      } catch {}
+      setGifLoading(false);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [gifSearch, showGif]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(false), 2000);
@@ -130,8 +161,9 @@ function EpisodePageInner() {
       user: displayName,
       avatar: avatarLetter,
       photoUrl,
-      rating: modalRating * 2,   /* 1-5 stars → 2-10 scale */
+      rating: modalRating * 2,
       text: comment.trim(),
+      gifUrl: selectedGif?.images?.fixed_height_small?.url || '',
       date: new Date().toISOString(),
       likes: 0,
     };
@@ -206,22 +238,26 @@ function EpisodePageInner() {
     } catch { return dateStr; }
   }
 
-  const filteredGifs = FAKE_GIFS.filter(
-    g => !gifSearch || g.label.toLowerCase().includes(gifSearch.toLowerCase())
-  );
-
   return (
     <Frame>
       <Screen>
-        {/* Back button */}
-        <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 20 }}>
-          <button onClick={() => router.back()}
-            style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-            <Icon name="chevronL" size={18} color={T.white} />
-          </button>
-        </div>
-
         <ScrollArea>
+          <GlassHeader
+            left={
+              <button onClick={() => router.back()}
+                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                <Icon name="chevronL" size={16} color={T.white} />
+              </button>
+            }
+            right={
+              <button onClick={() => router.push('/notifications')}
+                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                <Icon name="bell" size={16} color={T.white} />
+              </button>
+            }
+            navTitle={`Ep. ${epNum}${epName ? `: ${epName}` : ''}`}
+            showNavTitle={showNavTitle}
+          />
           {/* ── Backdrop / still ── */}
           <div style={{ height: 210, position: 'relative', overflow: 'hidden', background: still ? 'transparent' : 'var(--c-surface2)' }}>
             {still && (
@@ -246,9 +282,11 @@ function EpisodePageInner() {
                   </Txt>
                 ) : null}
                 {/* Episódio N: Título */}
-                <Txt size={20} weight={800} style={{ display: 'block', marginBottom: 6, lineHeight: 1.25 }}>
-                  {`Episódio ${epNum}`}{epName ? `: ${epName}` : ''}
-                </Txt>
+                <div ref={epTitleRef}>
+                  <Txt size={20} weight={800} style={{ display: 'block', marginBottom: 6, lineHeight: 1.25 }}>
+                    {`Episódio ${epNum}`}{epName ? `: ${epName}` : ''}
+                  </Txt>
+                </div>
                 {/* Air date · Duration */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   {formattedAirDate && (
@@ -375,10 +413,11 @@ function EpisodePageInner() {
                 {/* GIF preview */}
                 {selectedGif && (
                   <div style={{ position: 'relative', marginBottom: 12 }}>
-                    <div style={{ height: 80, borderRadius: 10, background: 'var(--c-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${T.border}` }}>
-                      <span style={{ fontSize: 36 }}>{selectedGif.emoji}</span>
-                      <Txt size={12} color={T.t3} style={{ marginLeft: 8 }}>{selectedGif.label}</Txt>
-                    </div>
+                    <img
+                      src={selectedGif.images.fixed_height_small.url}
+                      alt={selectedGif.title}
+                      style={{ width: '100%', borderRadius: 10, display: 'block', maxHeight: 140, objectFit: 'cover' }}
+                    />
                     <button onClick={() => setSelectedGif(null)}
                       style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name="close" size={12} color={T.white} />
@@ -438,19 +477,40 @@ function EpisodePageInner() {
                 {/* GIF picker */}
                 {showGif && (
                   <div style={{ background: T.surface2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 12, overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}` }}>
-                      <input value={gifSearch} onChange={e => setGifSearch(e.target.value)} placeholder="Buscar GIF..."
-                        style={{ width: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.t1, fontSize: 13, fontFamily: "'Area','Inter',sans-serif", padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }} />
+                    <div style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        value={gifSearch}
+                        onChange={e => setGifSearch(e.target.value)}
+                        placeholder="Buscar GIF..."
+                        style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.t1, fontSize: 13, fontFamily: "'Area','Inter',sans-serif", padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
+                      />
+                      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Giphy-logo.svg/200px-Giphy-logo.svg.png" alt="GIPHY" style={{ height: 16, opacity: 0.5 }} />
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, padding: 8 }}>
-                      {filteredGifs.map(g => (
-                        <button key={g.id} onClick={() => { setSelectedGif(g); setShowGif(false); }}
-                          style={{ height: 64, borderRadius: 8, background: 'var(--c-surface)', border: selectedGif?.id === g.id ? `2px solid ${T.pink}` : `2px solid ${T.border}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-                          <span style={{ fontSize: 24 }}>{g.emoji}</span>
-                          <Txt size={9} color={T.t3}>{g.label}</Txt>
-                        </button>
-                      ))}
-                    </div>
+                    {gifLoading ? (
+                      <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
+                        <Txt size={12} color={T.t3}>Carregando...</Txt>
+                      </div>
+                    ) : gifResults.length === 0 ? (
+                      <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
+                        <Txt size={12} color={T.t3}>Nenhum GIF encontrado</Txt>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 3, padding: 8, maxHeight: 340, overflowY: 'auto' }}>
+                        {gifResults.map(g => (
+                          <button
+                            key={g.id}
+                            onClick={() => { setSelectedGif(g); setShowGif(false); }}
+                            style={{ position: 'relative', overflow: 'hidden', borderRadius: 8, border: selectedGif?.id === g.id ? `2px solid ${T.pink}` : '2px solid transparent', cursor: 'pointer', padding: 0, height: 110, background: T.surface }}
+                          >
+                            <img
+                              src={g.images.fixed_height_small.url}
+                              alt={g.title}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -471,8 +531,8 @@ function EpisodePageInner() {
 }
 
 /* ── Review card ── */
-function ReviewCard({ rev, timeAgo, onLike, replyOpen, onToggleReply, replyText, onReplyChange, onSubmitReply, gifData }: {
-  rev: Review & { liked?: boolean };
+function ReviewCard({ rev, timeAgo, onLike, replyOpen, onToggleReply, replyText, onReplyChange, onSubmitReply }: {
+  rev: Review & { liked?: boolean; gifUrl?: string };
   timeAgo: (d: string) => string;
   onLike: () => void;
   replyOpen: boolean;
@@ -480,10 +540,9 @@ function ReviewCard({ rev, timeAgo, onLike, replyOpen, onToggleReply, replyText,
   replyText: string;
   onReplyChange: (v: string) => void;
   onSubmitReply: () => void;
-  gifData: typeof FAKE_GIFS;
 }) {
   const [showReplies, setShowReplies] = useState(false);
-  const gif = gifData.find(g => g.id === (rev as any).gif);
+  const gifUrl = rev.gifUrl;
 
   return (
     <div style={{ padding: 14, background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 10 }}>
@@ -506,16 +565,18 @@ function ReviewCard({ rev, timeAgo, onLike, replyOpen, onToggleReply, replyText,
       </div>
 
       {rev.text && (
-        <Txt size={13} color={T.t2} style={{ lineHeight: 1.65, display: 'block', marginBottom: gif ? 10 : 12 }}>
+        <Txt size={13} color={T.t2} style={{ lineHeight: 1.65, display: 'block', marginBottom: rev.gifUrl ? 10 : 12 }}>
           {rev.text}
         </Txt>
       )}
 
-      {gif && (
-        <div style={{ height: 64, borderRadius: 8, background: 'var(--c-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12, border: `1px solid ${T.border}` }}>
-          <span style={{ fontSize: 28 }}>{gif.emoji}</span>
-          <Txt size={11} color={T.t3}>{gif.label}</Txt>
-        </div>
+      {rev.gifUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={rev.gifUrl}
+          alt="GIF"
+          style={{ width: '100%', borderRadius: 8, display: 'block', marginBottom: 12 }}
+        />
       )}
 
       {/* Actions */}

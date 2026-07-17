@@ -3,6 +3,7 @@ import { CSSProperties, ReactNode, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
+import { useTheme } from '@/context/ThemeContext';
 
 // size >= 20 → Greed (H1/H2 level); size < 20 → Area (H3/H4/body)
 // size >= 20 → Greed (H1/H2); size < 20 → Area (H3/H4/body)
@@ -14,13 +15,13 @@ export const Txt = ({
 }: {
   size?: number; weight?: number; color?: string; lineH?: number; style?: CSSProperties; children?: ReactNode;
 } & React.HTMLAttributes<HTMLSpanElement>) => (
-  <span style={{ fontSize: size, fontWeight: weight, color: color || T.t1, lineHeight: lineH || 1.4, fontFamily: fontFor(size), ...style }} {...rest}>{children}</span>
+  <span style={{ fontSize: `calc(${size}px * var(--font-scale, 1))`, fontWeight: weight, color: color || T.t1, lineHeight: lineH || 1.4, fontFamily: fontFor(size), ...style }} {...rest}>{children}</span>
 );
 
 export const Logo = ({ height = 22, style = {} }: { height?: number; style?: CSSProperties }) => (
   <>
-    <img src="/logo_dark.png"  alt="Maratonou" className="logo-dark"  style={{ height, width: 'auto', display: 'block', ...style }} />
-    <img src="/logo_light.png" alt="Maratonou" className="logo-light" style={{ height, width: 'auto', display: 'none',  ...style }} />
+    <img src="/logo_dark.png" alt="Maratonou" className="logo-dark"  style={{ height, width: 'auto', ...style }} />
+    <img src="/logo_light.png" alt="Maratonou" className="logo-light" style={{ height, width: 'auto', ...style }} />
   </>
 );
 
@@ -46,57 +47,91 @@ export const AppBar = ({
    GlassHeader — header sticky com logo centralizado,
    blur glass por trás, ação à esquerda e/ou direita
    ───────────────────────────────────────────────────────── */
-export const GlassHeader = ({
-  left, right, children,
+export function GlassHeader({
+  left, right, children, navTitle, showNavTitle,
 }: {
   left?: ReactNode;
   right?: ReactNode;
   children?: ReactNode;
-}) => (
-  <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 56, overflow: 'visible' } as CSSProperties}>
-    {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
-    {[
-      { blur: 22, end: 35 },
-      { blur: 14, end: 55 },
-      { blur: 7,  end: 75 },
-      { blur: 3,  end: 90 },
-    ].map(({ blur, end }, i) => (
-      <div key={i} style={{
+  navTitle?: string;
+  showNavTitle?: boolean;
+}) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
+  const tint = isDark
+    ? 'linear-gradient(to bottom, rgba(13,13,15,0.82) 0%, rgba(13,13,15,0.30) 70%, transparent 100%)'
+    : 'linear-gradient(to bottom, rgba(242,242,247,0.94) 0%, rgba(242,242,247,0.60) 70%, transparent 100%)';
+  const navTitleColor = isDark ? '#fff' : 'rgba(0,0,0,0.85)';
+
+  return (
+    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(56px + env(safe-area-inset-top, 0px))', overflow: 'visible' } as CSSProperties}>
+      {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
+      {[
+        { blur: 22, end: 35 },
+        { blur: 14, end: 55 },
+        { blur: 7,  end: 75 },
+        { blur: 3,  end: 90 },
+      ].map(({ blur, end }, i) => (
+        <div key={i} style={{
+          position: 'absolute', inset: 0,
+          backdropFilter: `blur(${blur}px)`,
+          WebkitBackdropFilter: `blur(${blur}px)`,
+          maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+          WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+          pointerEvents: 'none',
+        } as CSSProperties} />
+      ))}
+
+      {/* Tint em degradê — escuro no dark mode, cinza claro no light mode */}
+      <div style={{
         position: 'absolute', inset: 0,
-        backdropFilter: `blur(${blur}px)`,
-        WebkitBackdropFilter: `blur(${blur}px)`,
-        maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
-        WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+        background: tint,
         pointerEvents: 'none',
-      } as CSSProperties} />
-    ))}
+      }} />
 
-    {/* Tint escuro em degradê — opaco no topo, transparente embaixo */}
-    <div style={{
-      position: 'absolute', inset: 0,
-      background: 'linear-gradient(to bottom, rgba(13,13,15,0.82) 0%, rgba(13,13,15,0.30) 70%, transparent 100%)',
-      pointerEvents: 'none',
-    }} />
+      {/* Conteúdo — logo + botões */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        height: 56, marginTop: 'env(safe-area-inset-top, 0px)',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', padding: '0 12px',
+      }}>
+        <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
 
-    {/* Conteúdo — logo + botões */}
-    <div style={{
-      position: 'relative', zIndex: 2,
-      height: '100%', display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between', padding: '0 12px',
-    }}>
-      <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
+        <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {/* Logo — some quando navTitle ativo */}
+          <div style={{
+            opacity: navTitle && showNavTitle ? 0 : 1,
+            transform: navTitle && showNavTitle ? 'translateY(-4px) scale(0.92)' : 'translateY(0) scale(1)',
+            transition: 'opacity 0.22s ease, transform 0.22s ease',
+          } as CSSProperties}>
+            {children ?? <Logo height={22} />}
+          </div>
 
-      <div className="glass-header-logo" style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        {children ?? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <Logo height={22} />
-        )}
+          {/* Nav title — aparece ao rolar */}
+          {navTitle && (
+            <div style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: showNavTitle ? 1 : 0,
+              transform: showNavTitle ? 'translateY(0)' : 'translateY(6px)',
+              transition: 'opacity 0.22s ease, transform 0.22s ease',
+              pointerEvents: 'none',
+            } as CSSProperties}>
+              <span style={{
+                fontSize: 15, fontWeight: 800, color: navTitleColor,
+                fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.2px',
+              }}>{navTitle}</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>{right}</div>
       </div>
-
-      <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>{right}</div>
     </div>
-  </div>
-);
+  );
+}
 
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'gold' | 'pink' | 'danger';
 export const Btn = ({

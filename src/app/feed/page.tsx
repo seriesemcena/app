@@ -1,22 +1,27 @@
 'use client';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { listStore, profileStore, notifInboxStore } from '@/lib/store';
+import { useTheme } from '@/context/ThemeContext';
+import { profileStore, notifInboxStore } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { dbActivityStore } from '@/lib/db';
+import { dbActivityStore, dbRevStore, dbReportStore } from '@/lib/db';
 
 type FeedTab = 'para_voce' | 'seguindo';
 
 type ActivityItem = {
   id: string;
-  titleKey: string;       // e.g. "tv_1396", "movie_550", "ep_1396_s4_e1"
-  displayTitle: string;   // human-readable fallback
+  uid?: string;              // Firebase UID do autor
+  firestoreDocId?: string;   // ID do doc em activity/{id}
+  reviewId?: string;         // ID dentro do array reviews/{titleKey}.items
+  reviewTitleKey?: string;   // titleKey para reviews
+  titleKey: string;
+  displayTitle: string;
   user: string;
   avatar: string;
   color: string;
@@ -25,7 +30,9 @@ type ActivityItem = {
   rating: number;
   text: string;
   time: string;
+  rawDate: string;
   posterColor: string;
+  mediaUrl?: string;
   isMe?: boolean;
 };
 
@@ -114,6 +121,8 @@ async function fetchCardData(titleKey: string, fallback: string): Promise<{ labe
 export default function FeedPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [feedTab, setFeedTab]         = useState<FeedTab>('para_voce');
   const [globalFeed, setGlobalFeed]   = useState<ActivityItem[]>([]);
   const [loadingFeed, setLoadingFeed] = useState(true);
@@ -123,35 +132,7 @@ export default function FeedPage() {
 
   useEffect(() => { setUnreadNotifs(notifInboxStore.unreadCount()); }, []);
 
-  const displayName  = user?.displayName || user?.email?.split('@')[0] || 'Você';
-  const avatarLetter = displayName[0]?.toUpperCase() || 'U';
-  const myPhotoUrl   = user?.photoURL || profileStore.get().avatarImage || '';
-
-  /* ── My real activities from local lists ── */
-  const myActivities = useMemo<ActivityItem[]>(() => {
-    const watched = listStore.get('watched');
-    const want    = listStore.get('want');
-    return [
-      ...watched.slice(0, 3).map((item, i) => ({
-        id: `me_watched_${i}`,
-        titleKey: `${item.type}_${item.id}`,
-        displayTitle: item.title,
-        user: displayName, avatar: avatarLetter, color: '#C069FF', photoUrl: myPhotoUrl,
-        action: 'terminou', rating: 0, text: '',
-        time: 'recentemente', posterColor: POSTER_COLORS[i % POSTER_COLORS.length], isMe: true,
-      })),
-      ...want.slice(0, 2).map((item, i) => ({
-        id: `me_want_${i}`,
-        titleKey: `${item.type}_${item.id}`,
-        displayTitle: item.title,
-        user: displayName, avatar: avatarLetter, color: '#C069FF', photoUrl: myPhotoUrl,
-        action: 'adicionou', rating: 0, text: '',
-        time: 'recentemente', posterColor: POSTER_COLORS[(i + 3) % POSTER_COLORS.length], isMe: true,
-      })),
-    ];
-  }, [displayName, avatarLetter, myPhotoUrl]);
-
-  /* ── Global feed: activity collection + reviews collection ── */
+  /* ── Only reviews/comments from Firestore ── */
   useEffect(() => {
     async function loadFeed() {
       setLoadingFeed(true);
@@ -160,54 +141,61 @@ export default function FeedPage() {
         const db    = getDB();
         const items: ActivityItem[] = [];
 
-        // 1. Activity items (watched/watching/want actions)
+        // 1. Activity docs — apenas avaliações (action === 'reviewed')
         const activityDocs = await dbActivityStore.getRecent(db, 60);
         activityDocs.forEach((a) => {
-          const actionLabel =
-            a.action === 'watched'  ? 'finalizou' :
-            a.action === 'watching' ? 'está assistindo' :
-            a.action === 'want'     ? 'adicionou à lista' : 'avaliou';
+          if (a.action !== 'reviewed') return;
           items.push({
-            id:           `act_${a.uid}_${a.titleKey}_${a.createdAt}`,
-            titleKey:     a.titleKey,
-            displayTitle: a.titleName,
-            user:         a.username,
-            avatar:       a.avatar,
-            color:        '#C069FF',
-            photoUrl:     a.photoUrl,
-            action:       actionLabel,
-            rating:       a.rating,
-            text:         a.text,
-            time:         timeAgo(a.createdAt),
-            posterColor:  POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
+            id:             `act_${a.docId}`,
+            uid:            a.uid,
+            firestoreDocId: a.docId,
+            titleKey:       a.titleKey,
+            displayTitle:   a.titleName,
+            user:           a.username,
+            avatar:         a.avatar,
+            color:          '#C069FF',
+            photoUrl:       a.photoUrl,
+            action:         a.rating > 0 ? 'avaliou' : 'comentou',
+            rating:         a.rating,
+            text:           a.text,
+            time:           timeAgo(a.createdAt),
+            rawDate:        a.createdAt,
+            posterColor:    POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
           });
         });
 
-        // 2. Reviews
+        // 2. Reviews collection
         const snap = await getDocs(collection(db, 'reviews'));
         snap.forEach((doc) => {
           const titleKey = doc.id;
           const reviews: any[] = doc.data()?.items ?? [];
-          reviews.slice(0, 2).forEach((rev: any) => {
+          const sorted = [...reviews].sort((a: any, b: any) =>
+            new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+          );
+          sorted.slice(0, 2).forEach((rev: any) => {
+            if (!rev.text && !rev.gifUrl) return;
             items.push({
-              id:           `rev_${titleKey}_${rev.id}`,
+              id:             `rev_${titleKey}_${rev.id}`,
+              reviewId:       rev.id,
+              reviewTitleKey: titleKey,
               titleKey,
-              displayTitle: titleKey,
-              user:         rev.user || 'Usuário',
-              avatar:       rev.avatar || rev.user?.[0]?.toUpperCase() || 'U',
-              color:        '#6366f1',
-              photoUrl:     rev.photoUrl || '',
-              action:       'avaliou',
-              rating:       rev.rating || 0,
-              text:         rev.text || '',
-              time:         rev.date ? timeAgo(rev.date) : rev.date || '',
-              posterColor:  POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
+              displayTitle:   titleKey,
+              user:           rev.user || 'Usuário',
+              avatar:         rev.avatar || rev.user?.[0]?.toUpperCase() || 'U',
+              color:          '#6366f1',
+              photoUrl:       rev.photoUrl || '',
+              action:         (rev.rating || 0) > 0 ? 'avaliou' : 'comentou',
+              rating:         rev.rating || 0,
+              text:           rev.text || '',
+              mediaUrl:       rev.gifUrl || '',
+              time:           rev.date ? timeAgo(rev.date) : '',
+              rawDate:        rev.date || '',
+              posterColor:    POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
             });
           });
         });
 
-        // Sort combined list by recency (activity docs have ISO createdAt, reviews have date)
-        items.sort((a, b) => (b.time > a.time ? 1 : -1));
+        items.sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
         setGlobalFeed(items);
       } catch { /* ignore */ }
       setLoadingFeed(false);
@@ -215,8 +203,10 @@ export default function FeedPage() {
     loadFeed();
   }, []);
 
-  const feedItems: ActivityItem[] =
-    feedTab === 'para_voce' ? [...myActivities, ...globalFeed] : globalFeed;
+  const handleDeleteItem = (id: string) =>
+    setGlobalFeed(prev => prev.filter(i => i.id !== id));
+
+  const feedItems: ActivityItem[] = globalFeed;
 
   const isEmpty = !loadingFeed && feedItems.length === 0;
 
@@ -232,8 +222,8 @@ export default function FeedPage() {
           {/* ── Header glass sticky ── */}
           <GlassHeader
             right={
-              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                <Icon name="bell" size={16} color="#fff" />
+              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
                 {unreadNotifs > 0 && (
                   <div style={{ position: 'absolute', top: 5, right: 5, width: 8, height: 8, borderRadius: 4, background: T.pink, border: '1.5px solid rgba(0,0,0,0.4)' }} />
                 )}
@@ -254,9 +244,15 @@ export default function FeedPage() {
               <button key={id} onClick={() => setFeedTab(id)} style={{
                 padding: scrolled ? '4.5px 13px' : '7px 16px',
                 borderRadius: 24, flexShrink: 0,
-                background: feedTab === id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.12)',
-                border: feedTab === id ? 'none' : '1px solid rgba(255,255,255,0.20)',
-                color: feedTab === id ? '#C069FF' : 'rgba(255,255,255,0.80)',
+                background: feedTab === id
+                  ? (isDark ? 'rgba(255,255,255,0.95)' : 'rgba(10,10,12,0.88)')
+                  : (isDark ? 'rgba(255,255,255,0.12)' : '#fff'),
+                border: feedTab === id
+                  ? 'none'
+                  : (isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.11)'),
+                color: feedTab === id
+                  ? (isDark ? '#C069FF' : '#fff')
+                  : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
                 backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
@@ -302,7 +298,7 @@ export default function FeedPage() {
             {/* Feed items */}
             {!loadingFeed && feedItems.length > 0 && (
               <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {feedItems.map((item) => <FeedCard key={item.id} item={item} />)}
+                {feedItems.map((item) => <FeedCard key={item.id} item={item} onDelete={handleDeleteItem} />)}
               </div>
             )}
           </div>
@@ -313,66 +309,135 @@ export default function FeedPage() {
 }
 
 /* ──────────────────────────────────────────────── */
-function FeedCard({ item }: { item: ActivityItem }) {
+function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: string) => void }) {
   const router      = useRouter();
+  const { user }    = useAuth();
   const actionColor = ACTION_COLOR[item.action] || T.t2;
   const actionIcon  = ACTION_ICON[item.action]  || 'star';
 
+  const myName   = user?.displayName || user?.email?.split('@')[0] || '';
+  const isMyPost = !!user && (
+    (item.uid ? item.uid === user.uid : false) ||
+    (!!myName && item.user === myName)
+  );
+
   const goToProfile = () => router.push(`/user/${encodeURIComponent(item.user)}`);
 
-  /* ── TMDB resolved data ── */
-  const [cardData, setCardData] = useState<{ label: string; imageUrl: string | null } | null>(null);
+  /* ── TMDB label ── */
+  const [displayLabel, setDisplayLabel] = useState(item.displayTitle);
   useEffect(() => {
-    fetchCardData(item.titleKey, item.displayTitle).then(setCardData);
+    fetchCardData(item.titleKey, item.displayTitle).then(d => setDisplayLabel(d.label));
   }, [item.titleKey, item.displayTitle]);
 
-  const displayLabel = cardData?.label ?? item.displayTitle;
-  const imageUrl     = cardData?.imageUrl ?? null;
-
   /* ── Emoji reactions ── */
-  const [reactions, setReactions]   = useState<Record<string, number>>({});
-  const [myReaction, setMyReaction] = useState<string | null>(null);
-  const [showEmojis, setShowEmojis] = useState(false);
+  const [reactions, setReactions]       = useState<Record<string, number>>({});
+  const [myReaction, setMyReaction]     = useState<string | null>(null);
+  const [showEmojis, setShowEmojis]     = useState(false);
+  const [showReactors, setShowReactors] = useState(false);
 
   const react = (emoji: string) => {
     setReactions(prev => {
       const next = { ...prev };
       if (myReaction) next[myReaction] = Math.max(0, (next[myReaction] || 0) - 1);
-      if (myReaction !== emoji) {
-        next[emoji] = (next[emoji] || 0) + 1;
-        setMyReaction(emoji);
-      } else {
-        setMyReaction(null);
-      }
+      if (myReaction !== emoji) { next[emoji] = (next[emoji] || 0) + 1; setMyReaction(emoji); }
+      else { setMyReaction(null); }
       return next;
     });
     setShowEmojis(false);
   };
 
-  const totalReactions = Object.values(reactions).reduce((a, b) => a + b, 0);
+  const totalReactions  = Object.values(reactions).reduce((a, b) => a + b, 0);
+  const reactionEntries = Object.entries(reactions).filter(([, c]) => c > 0);
 
-  /* ── Reply box ── */
-  const [showReply, setShowReply]   = useState(false);
-  const [replyText, setReplyText]   = useState('');
-  const [replies, setReplies]       = useState<string[]>([]);
-  const replyRef = useRef<HTMLTextAreaElement>(null);
+  /* ── Three-dot menu ── */
+  const [showMenu,   setShowMenu]   = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
+  const [toast,      setToast]      = useState<string | null>(null);
 
-  const sendReply = () => {
-    if (!replyText.trim()) return;
-    setReplies(prev => [...prev, replyText.trim()]);
-    setReplyText('');
-    setShowReply(false);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2800);
   };
 
-  useEffect(() => {
-    if (showReply) replyRef.current?.focus();
-  }, [showReply]);
+  const handleDelete = async () => {
+    setShowMenu(false);
+    if (!firebaseConfigured) return;
+    setDeleting(true);
+    try {
+      const db = getDB();
+      if (item.firestoreDocId) {
+        await dbActivityStore.delete(db, item.firestoreDocId);
+      } else if (item.reviewId && item.reviewTitleKey) {
+        await dbRevStore.remove(db, item.reviewTitleKey, item.reviewId);
+      }
+      onDelete(item.id);
+    } catch {
+      setDeleting(false);
+      showToast('Erro ao excluir. Tente novamente.');
+    }
+  };
+
+  const handleReport = async () => {
+    setShowMenu(false);
+    if (!firebaseConfigured || !user) {
+      showToast('Faça login para denunciar.');
+      return;
+    }
+    try {
+      const db = getDB();
+      await dbReportStore.add(db, {
+        itemId:       item.id,
+        reportedUser: item.user,
+        content:      item.text,
+        reportedBy:   user.uid,
+        reportedAt:   new Date().toISOString(),
+      });
+      showToast('Denúncia enviada. Obrigado!');
+    } catch {
+      showToast('Erro ao enviar denúncia.');
+    }
+  };
+
+  const menuOptions = [
+    { label: 'Denunciar',  icon: 'flag'  as const, color: T.red ?? '#ff4444', action: handleReport },
+    ...(!isMyPost ? [{ label: 'Ocultar conteúdo deste usuário', icon: 'eye' as const, color: T.t2, action: () => { setShowMenu(false); showToast('Conteúdo ocultado.'); } }] : []),
+    ...(isMyPost  ? [{ label: 'Excluir comentário', icon: 'close' as const, color: T.red ?? '#ff4444', action: handleDelete }] : []),
+  ];
 
   return (
-    <div style={{ background: T.card, borderRadius: 20, padding: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: T.card, borderRadius: 20, padding: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', position: 'relative', opacity: deleting ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+
+      {/* Toast feedback */}
+      {toast && (
+        <div style={{ position: 'absolute', bottom: 12, left: 16, right: 16, zIndex: 50, background: 'rgba(30,30,34,0.96)', border: `1px solid ${T.border}`, borderRadius: 12, padding: '10px 14px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } as React.CSSProperties}>
+          <Txt size={13} weight={600} color={T.t1}>{toast}</Txt>
+        </div>
+      )}
+
+      {/* ── Three-dot menu — topo direito ── */}
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}>
+        <button
+          onClick={() => setShowMenu(v => !v)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 16, color: T.t4, letterSpacing: 1, lineHeight: 1, fontWeight: 700 }}>···</span>
+        </button>
+        {showMenu && (
+          <>
+            <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
+            <div style={{ position: 'absolute', top: 32, right: 0, zIndex: 30, background: T.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 230 }}>
+              {menuOptions.map(({ label, icon, color, action }, idx) => (
+                <button key={label} onClick={action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: idx < menuOptions.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', textAlign: 'left' }}>
+                  <Icon name={icon} size={16} color={color} />
+                  <Txt size={13} weight={600} color={color}>{label}</Txt>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* ── User row ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, paddingRight: 28 }}>
         <button onClick={goToProfile} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
           {item.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -393,143 +458,106 @@ function FeedCard({ item }: { item: ActivityItem }) {
               <Txt size={12} weight={600} color={actionColor}>{item.action}</Txt>
             </div>
           </div>
-          {/* Formatted title: "Show Name · S4E01" */}
-          <Txt size={12} weight={600} color={T.t2} style={{ display: 'block', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {displayLabel}
-          </Txt>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, minWidth: 0 }}>
+            <Txt size={12} weight={600} color={T.t2} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+              {displayLabel}
+            </Txt>
+            {item.rating > 0 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 7, background: '#FFEB13', flexShrink: 0 }}>
+                <Icon name="star" size={9} color="#1a1400" />
+                <Txt size={11} weight={700} color="#1a1400">{item.rating}/10</Txt>
+              </div>
+            )}
+          </div>
           <Txt size={11} color={T.t4} style={{ display: 'block', marginTop: 1 }}>{item.time}</Txt>
         </div>
       </div>
 
-      {/* ── Review text — sem background ── */}
+      {/* ── Review text ── */}
       {item.text ? (
-        <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 12, fontStyle: 'italic' }}>
-          "{item.text}"
+        <Txt size={15} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 12 }}>
+          {item.text}
         </Txt>
       ) : null}
 
-      {/* ── Poster / still image ── */}
-      <div style={{ width: '100%', height: 200, borderRadius: 14, background: imageUrl ? 'transparent' : item.posterColor, overflow: 'hidden', position: 'relative', marginBottom: 14 }}>
-        {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={displayLabel}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
-          />
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Txt size={13} weight={600} color="rgba(255,255,255,0.5)">{displayLabel}</Txt>
-          </div>
-        )}
-      </div>
-
-      {/* ── Replies ── */}
-      {replies.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          {replies.map((r, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
-              <div style={{ width: 28, height: 28, borderRadius: 14, background: T.pink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Txt size={11} weight={800} color="#fff">V</Txt>
-              </div>
-              <div style={{ flex: 1, background: T.surface2, borderRadius: 10, padding: '7px 10px' }}>
-                <Txt size={12} color={T.t1}>{r}</Txt>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Reply input box ── */}
-      {showReply && (
-        <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          <textarea
-            ref={replyRef}
-            value={replyText}
-            onChange={e => setReplyText(e.target.value)}
-            placeholder="Escreva uma resposta..."
-            rows={2}
-            style={{
-              flex: 1, padding: '10px 12px',
-              background: T.surface2,
-              border: `1.5px solid ${T.pink}`,
-              borderRadius: 12, resize: 'none',
-              color: T.t1, fontSize: 13,
-              fontFamily: "'Area','Inter',sans-serif",
-              outline: 'none', lineHeight: 1.5,
-            }}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
-          />
-          <button
-            onClick={sendReply}
-            style={{ width: 36, height: 36, borderRadius: 18, background: T.pink, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Icon name="chevronR" size={16} color="#fff" />
-          </button>
-        </div>
+      {/* ── Imagem/GIF — apenas se o usuário escolheu durante a avaliação ── */}
+      {item.mediaUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.mediaUrl}
+          alt=""
+          style={{ width: '100%', borderRadius: 14, display: 'block', marginBottom: 12, maxHeight: 320, objectFit: 'cover' }}
+        />
       )}
 
       {/* ── Actions bar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, paddingTop: 10, borderTop: `1px solid ${T.border}`, position: 'relative' }}>
 
-        {/* Emoji reactions trigger */}
-        <div style={{ position: 'relative' }}>
+        {/* Reacts: emoji picker trigger + count que abre popup de quem reagiu */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 0 }}>
+          {/* Emoji trigger — ícone coração por padrão */}
           <button
             onClick={() => setShowEmojis(v => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, background: myReaction ? 'rgba(192,105,255,0.10)' : 'none', border: 'none', borderRadius: 16, padding: '5px 8px', cursor: 'pointer' }}>
-            <span style={{ fontSize: 16 }}>{myReaction || '🙂'}</span>
-            {totalReactions > 0 && <Txt size={12} color={T.t2} weight={600}>{totalReactions}</Txt>}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, background: myReaction ? 'rgba(192,105,255,0.10)' : 'none', border: 'none', borderRadius: 14, padding: '5px 8px 5px 6px', cursor: 'pointer' }}>
+            {myReaction
+              ? <span style={{ fontSize: 18, lineHeight: 1 }}>{myReaction}</span>
+              : <Icon name={myReaction ? 'heart' : 'heartO'} size={18} color={T.t3} />
+            }
+          </button>
+
+          {/* Count — abre popup de quem reagiu */}
+          <button
+            onClick={() => totalReactions > 0 ? setShowReactors(true) : setShowEmojis(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px 4px' }}>
+            <Txt size={13} weight={600} color={totalReactions > 0 ? T.t1 : T.t3}>{totalReactions}</Txt>
           </button>
 
           {/* Emoji picker */}
           {showEmojis && (
             <>
               <div onClick={() => setShowEmojis(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
-              <div style={{
-                position: 'absolute', bottom: 40, left: 0, zIndex: 20,
-                background: T.card, borderRadius: 20, padding: '8px 12px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-                border: `1px solid ${T.border}`,
-                display: 'flex', gap: 4,
-              }}>
+              <div style={{ position: 'absolute', bottom: 40, left: 0, zIndex: 20, background: T.card, borderRadius: 20, padding: '8px 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.20)', border: `1px solid ${T.border}`, display: 'flex', gap: 4 }}>
                 {EMOJIS.map(e => (
-                  <button
-                    key={e}
-                    onClick={() => react(e)}
-                    style={{
-                      fontSize: 22, background: myReaction === e ? 'rgba(192,105,255,0.12)' : 'transparent',
-                      border: 'none', borderRadius: 10, padding: '4px 6px', cursor: 'pointer',
-                      transform: myReaction === e ? 'scale(1.2)' : 'scale(1)',
-                      transition: 'transform 0.15s',
-                    }}
-                  >{e}</button>
+                  <button key={e} onClick={() => react(e)} style={{ fontSize: 22, background: myReaction === e ? 'rgba(192,105,255,0.12)' : 'transparent', border: 'none', borderRadius: 10, padding: '4px 6px', cursor: 'pointer', transform: myReaction === e ? 'scale(1.2)' : 'scale(1)', transition: 'transform 0.15s' }}>{e}</button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Reactors popup */}
+          {showReactors && (
+            <>
+              <div onClick={() => setShowReactors(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
+              <div style={{ position: 'absolute', bottom: 44, left: 0, zIndex: 30, background: T.card, borderRadius: 16, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 200 }}>
+                <Txt size={12} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Reações</Txt>
+                {reactionEntries.map(([emoji, count]) => (
+                  <div key={emoji} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 18 }}>{emoji}</span>
+                    <Txt size={13} color={T.t2}>{count} pessoa{count !== 1 ? 's' : ''}</Txt>
+                  </div>
                 ))}
               </div>
             </>
           )}
         </div>
 
-        {/* Reaction summary row */}
-        {Object.entries(reactions).filter(([, c]) => c > 0).map(([emoji, count]) => (
-          <div key={emoji} style={{ display: 'flex', alignItems: 'center', gap: 2, background: T.surface2, borderRadius: 12, padding: '3px 8px' }}>
-            <span style={{ fontSize: 13 }}>{emoji}</span>
-            <Txt size={11} weight={600} color={T.t3}>{count}</Txt>
-          </div>
-        ))}
+        <div style={{ width: 1, height: 18, background: T.border, margin: '0 8px' }} />
+
+        {/* Respostas — navega para página de comentários */}
+        <button
+          onClick={() => router.push(`/comments?key=${encodeURIComponent(item.titleKey)}&title=${encodeURIComponent(displayLabel)}`)}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 12 }}>
+          <Icon name="message" size={15} color={T.t3} />
+          <Txt size={13} weight={600} color={T.t3}>0</Txt>
+        </button>
 
         <div style={{ flex: 1 }} />
 
-        {/* Reply button */}
+        {/* Compartilhar */}
         <button
-          onClick={() => setShowReply(v => !v)}
+          onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ url: window.location.href }).catch(() => {}); }}
           style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 12 }}>
-          <Icon name="message" size={15} color={showReply ? T.pink : T.t3} />
-          <Txt size={12} color={showReply ? T.pink : T.t3} weight={showReply ? 700 : 400}>Responder</Txt>
-        </button>
-
-        {/* Share button */}
-        <button style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 12 }}>
           <Icon name="share" size={15} color={T.t3} />
-          <Txt size={12} color={T.t3}>Compartilhar</Txt>
         </button>
       </div>
     </div>

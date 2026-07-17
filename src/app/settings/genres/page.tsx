@@ -37,14 +37,14 @@ export default function GenresPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => { setSelected(profileStore.get().genres); }, []);
+  useEffect(() => { setSelected(profileStore.get(user?.uid).genres); }, [user]);
 
   const toggle = (id: string) => {
     setSelected(prev => prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id]);
   };
 
   const save = async () => {
-    profileStore.set({ genres: selected });
+    profileStore.set({ genres: selected }, user?.uid);
     if (firebaseConfigured && user) {
       try { await dbProfileStore.set(getDB(), user.uid, { genres: selected }); } catch {}
     }

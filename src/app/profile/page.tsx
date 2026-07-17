@@ -11,6 +11,7 @@ import { type TMDBItem } from '@/lib/tmdb';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbProfileStore } from '@/lib/db';
+import { useTheme } from '@/context/ThemeContext';
 
 function tmdbImg(poster_path: string | null | undefined, size: string): string | null {
   if (!poster_path) return null;
@@ -28,10 +29,29 @@ const COLLAGE_SLOTS: Array<{ left?: number; right?: number; top: number; rotate:
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const { user, loading } = useAuth();
   const [stats, setStats] = useState({ watched: 0, watching: 0, want: 0, reviews: 0 });
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [socialSheet, setSocialSheet] = useState<'followers' | 'following' | null>(null);
+  const [socialSheet,      setSocialSheet]      = useState<'followers' | 'following' | null>(null);
+  const [followingNames,   setFollowingNames]   = useState<string[]>([]);
+  const [realFollowers,    setRealFollowers]     = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
+      setFollowingNames(list);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!profile) return;
+    const uname = profile.username || profile.name || '';
+    if (!uname) return;
+    const count = Number(localStorage.getItem(`sec_followers_${uname}`) || '0');
+    setRealFollowers(count > 0 ? count : null);
+  }, [profile]);
 
   useEffect(() => {
     if (loading) return;
@@ -46,18 +66,12 @@ export default function ProfilePage() {
     const applyProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
       const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
       if (user) {
-        const FACTORY_USERNAME = 'lucastales';
-        const FACTORY_NAME     = 'Lucas Tales';
-        const resolvedName = (merged.name && merged.name !== FACTORY_NAME)
-          ? merged.name
-          : (user.displayName || merged.name || 'Usuário');
+        const resolvedName = merged.name || user.displayName || 'Usuário';
         setProfile({
           ...merged,
-          name: resolvedName,
-          username: (merged.username && merged.username !== FACTORY_USERNAME)
-            ? merged.username
-            : (user.email?.split('@')[0] || merged.username || 'usuario'),
-          avatarImage:  merged.avatarImage  || user.photoURL || '',
+          name:         resolvedName,
+          username:     merged.username || user.email?.split('@')[0] || 'usuario',
+          avatarImage:  merged.avatarImage || user.photoURL || '',
           avatarLetter: resolvedName[0]?.toUpperCase() || 'U',
         });
       } else {
@@ -65,13 +79,13 @@ export default function ProfilePage() {
       }
     };
 
-    const local = profileStore.get();
+    const local = profileStore.get(user?.uid);
     applyProfile(local);
 
     if (user && firebaseConfigured) {
       dbProfileStore.get(getDB(), user.uid).then(cloud => {
         if (cloud && (cloud.name || cloud.username || cloud.bio)) {
-          profileStore.set({ ...local, ...cloud });
+          profileStore.set({ ...local, ...cloud }, user.uid);
           applyProfile(local, cloud);
         }
       }).catch(() => {});
@@ -197,7 +211,7 @@ export default function ProfilePage() {
 
           {/* ── Capa com collage ── */}
           <div style={{ position: 'relative' }}>
-            <div style={{ position: 'relative', height: 221, overflow: 'hidden', background: 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
+            <div style={{ position: 'relative', height: 180, overflow: 'hidden', background: 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
               {collagePosterItems.map((item, idx) => {
                 const slot = COLLAGE_SLOTS[idx];
                 if (!slot || !item.poster_path) return null;
@@ -218,7 +232,7 @@ export default function ProfilePage() {
                   </div>
                 );
               })}
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 60%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.50) 65%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
               <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 8, zIndex: 10 }}>
                 <button title="Reportar usuário" style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                   <Icon name="flag" size={16} color="#fff" />
@@ -229,69 +243,79 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Avatar */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: -52, position: 'relative', zIndex: 20 }}>
+            {/* ── Avatar + Nome — sobreposição na capa ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, padding: '0 16px 8px', marginTop: isDark ? -48 : -20, position: 'relative', zIndex: 20 }}>
+              {/* Avatar */}
               <div style={{
-                width: 100, height: 100, borderRadius: 50,
-                background: profile.avatarImage ? `url(${profile.avatarImage}) center/cover no-repeat` : profile.avatarGradient,
+                width: 88, height: 88, borderRadius: 44, flexShrink: 0,
+                background: profile.avatarImage ? `url(${profile.avatarImage}) center/cover no-repeat` : (profile.avatarGradient || 'linear-gradient(135deg,#C069FF,#6B10A0)'),
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '3.5px solid #C069FF',
-                boxShadow: '0 0 0 4px rgba(192,105,255,0.20), 0 8px 32px rgba(0,0,0,0.7)',
-                overflow: 'hidden', flexShrink: 0,
+                border: '3px solid var(--c-bg)',
+                boxShadow: '0 0 0 2px #C069FF, 0 8px 28px rgba(0,0,0,0.7)',
+                overflow: 'hidden',
               }}>
-                {!profile.avatarImage && <Txt size={36} weight={900} color={T.white}>{profile.name?.[0]?.toUpperCase() || 'U'}</Txt>}
+                {!profile.avatarImage && <Txt size={32} weight={900} color={T.white}>{profile.name?.[0]?.toUpperCase() || 'U'}</Txt>}
+              </div>
+
+              {/* Nome + username */}
+              <div style={{ paddingBottom: 6, flex: 1, minWidth: 0 }}>
+                <Txt size={24} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {profile.name}
+                </Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block' }}>
+                  @{profile.username}
+                </Txt>
               </div>
             </div>
           </div>
 
-          {/* ── Info ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 16px 0', gap: 5 }}>
-            <Txt size={28} weight={900} color={T.white} style={{ display: 'block', textAlign: 'center', letterSpacing: '-0.5px' }}>
-              {profile.name}
-            </Txt>
-            <Txt size={13} color="rgba(255,255,255,0.45)" style={{ display: 'block', textAlign: 'center' }}>
-              @{profile.username}
-            </Txt>
-            {profile.bio && (
-              <Txt size={13} color="rgba(255,255,255,0.55)" style={{ display: 'block', textAlign: 'center', maxWidth: 280, lineHeight: 1.45, marginTop: 2 }}>
+          {/* ── Bio ── */}
+          {profile.bio && (
+            <div style={{ padding: '18px 16px 0' }}>
+              <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.6 }}>
                 {profile.bio}
               </Txt>
-            )}
-
-            {/* ── Seguidores / Seguindo — fora do box, clicáveis ── */}
-            <div style={{ display: 'flex', gap: 28, marginTop: 16, justifyContent: 'center' }}>
-              {[
-                { value: profile.followers ?? 0, label: 'seguidores', key: 'followers' },
-                { value: profile.following ?? 0, label: 'seguindo',   key: 'following' },
-              ].map(({ value, label, key }) => (
-                <button key={key} onClick={() => setSocialSheet(key as 'followers' | 'following')}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: 0 }}>
-                  <Txt size={17} weight={800} color={T.white}>{String(value)}</Txt>
-                  <Txt size={11} weight={500} color="rgba(255,255,255,0.50)">{label}</Txt>
-                </button>
-              ))}
             </div>
+          )}
 
-            {/* ── h assistidas + avaliações + ranking — em box ── */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'center' }}>
-              {[
-                { value: realStats?.totalHours ?? 0, label: 'h assistidas' },
-                { value: stats.reviews,              label: 'avaliações'   },
-                ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: 'ranking' }] : []),
-              ].map(({ value, label }) => (
-                <div key={label} style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '8px 18px', borderRadius: 24,
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.13)',
-                  minWidth: 80,
-                }}>
-                  <Txt size={15} weight={800} color={T.white}>{String(value)}</Txt>
-                  <Txt size={10} weight={600} color="rgba(255,255,255,0.50)">{label}</Txt>
-                </div>
-              ))}
-            </div>
+          {/* ── Seguindo / Seguidores ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '28px 16px 0' }}>
+            <button
+              onClick={() => setSocialSheet('following')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
+              <Txt size={14} weight={900} color={T.t1}>{followingNames.length}</Txt>
+              <Txt size={11} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>Seguindo</Txt>
+            </button>
+            <div style={{ width: 1, height: 14, background: T.border, margin: '0 6px' }} />
+            <button
+              onClick={() => setSocialSheet('followers')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
+              <Txt size={14} weight={900} color={T.t1}>{realFollowers ?? profile.followers ?? 0}</Txt>
+              <Txt size={11} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>Seguidores</Txt>
+            </button>
+          </div>
 
+          {/* ── Boxes de stats ── */}
+          <div style={{ display: 'flex', gap: 12, padding: '28px 16px 0' }}>
+            {[
+              { value: `${realStats?.totalHours ?? 0}h`, label: 'assistidas', icon: 'clock' as const },
+              { value: String(stats.reviews),              label: 'avaliações',   icon: 'star'  as const },
+              ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: 'ranking', icon: 'award' as const }] : []),
+            ].map(({ value, label, icon }) => (
+              <div key={label} style={{
+                flex: 1,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                padding: '14px 8px',
+                borderRadius: T.radius,
+                background: 'var(--c-card)',
+                border: '1px solid var(--c-border)',
+                gap: 4,
+              }}>
+                <Icon name={icon} size={16} color={T.pink} />
+                <Txt size={18} weight={900} color={T.t1}>{value}</Txt>
+                <Txt size={10} weight={600} color={T.t3} style={{ textAlign: 'center' }}>{label}</Txt>
+              </div>
+            ))}
           </div>
 
           {/* ── Favoritos ── */}
@@ -339,55 +363,124 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* ── Banner Estatísticas ── */}
-          <div style={{ margin: '16px 16px 0' }}>
-            <button onClick={() => router.push('/stats')} style={{
-              width: '100%', padding: 0, border: 'none', cursor: 'pointer', borderRadius: 18, overflow: 'hidden',
-              background: 'linear-gradient(135deg, #1a0d2e 0%, #0d1a2e 100%)',
-              display: 'flex', flexDirection: 'column',
-            }}>
-              {/* Top row — headline */}
-              <div style={{ padding: '16px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(192,105,255,0.20)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="star" size={16} color={T.pink} />
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <Txt size={14} weight={800} color={T.white} style={{ display: 'block' }}>Estatísticas</Txt>
-                    <Txt size={11} color="rgba(255,255,255,0.40)">Seu histórico detalhado</Txt>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Txt size={11} weight={700} color={T.pink}>Ver tudo</Txt>
-                  <Icon name="chevronR" size={13} color={T.pink} />
-                </div>
-              </div>
-              {/* Bottom row — key numbers */}
-              <div style={{ display: 'flex', padding: '12px 16px 16px', gap: 0 }}>
-                {[
-                  { value: realStats?.totalHours ?? 0, label: 'h assistidas',    color: T.pink   },
-                  { value: realStats?.moviesCount ?? 0, label: 'filmes',          color: '#60a5fa' },
-                  { value: realStats?.tvCount     ?? 0, label: 'séries',          color: '#a78bfa' },
-                  { value: stats.reviews,               label: 'avaliações',      color: '#4ade80' },
-                ].map(({ value, label, color }, i, arr) => (
-                  <div key={label} style={{ flex: 1, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>
-                    <Txt size={20} weight={800} color={color} style={{ display: 'block' }}>{String(value)}</Txt>
-                    <Txt size={9}  weight={600} color="rgba(255,255,255,0.40)">{label}</Txt>
-                  </div>
-                ))}
-              </div>
-            </button>
-          </div>
+          {/* ── Grid 2 colunas: Estatísticas + Streaming ── */}
+          {(() => {
+            const PLATFORM_COLORS: Record<string, string> = {
+              'Netflix': '#E50914', 'Disney+': '#113CCF', 'Max': '#002BE7',
+              'Prime Video': '#00A8E0', 'Globoplay': '#E8441C', 'Paramount+': '#0064FF',
+              'Apple TV+': '#555', 'Crunchyroll': '#FF6600',
+            };
+            type Sub = { name: string; color: string; price: number; active: boolean };
+            const activeSubs: Sub[] = (() => {
+              try { return (JSON.parse(localStorage.getItem('sec_expenses_v1') || '[]') as Sub[]).filter(s => s.active !== false); }
+              catch { return []; }
+            })();
+            const userPlatforms = activeSubs.slice(0, 6);
+            const genres = realStats?.genres ?? [];
+            const totalItems = (realStats?.moviesCount ?? 0) + (realStats?.tvCount ?? 0);
 
-          {/* CTA gastos */}
-          <div onClick={() => router.push('/expenses')} style={{ margin: '16px 16px 0', padding: 16, background: T.card, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Icon name="play" size={22} color={T.pink} />
-            <div style={{ flex: 1 }}>
-              <Txt size={14} weight={700} style={{ display: 'block' }}>Gastos de streaming</Txt>
-              <Txt size={11} color={T.t3}>Calcule quanto você gasta por mês</Txt>
-            </div>
-            <Icon name="chevronR" size={16} color={T.t3} />
-          </div>
+            return (
+              <div style={{ margin: '16px 16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+                {/* Bloco 1 — Estatísticas */}
+                <button
+                  onClick={() => router.push('/stats')}
+                  style={{ background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left', minHeight: 170, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+
+                  <div>
+                    <Txt size={14} weight={800} color="#fff" style={{ display: 'block' }}>Estatísticas</Txt>
+                    <Txt size={11} color="rgba(255,255,255,0.38)">
+                      {realStats ? `${realStats.totalHours}h · ${totalItems} títulos` : '—'}
+                    </Txt>
+                  </div>
+
+                  {/* Donut séries vs filmes */}
+                  {(() => {
+                    const tv  = realStats?.tvCount    ?? 0;
+                    const mv  = realStats?.moviesCount ?? 0;
+                    const total = tv + mv || 1;
+                    const tvPct = tv / total;
+                    const r = 26, cx = 34, cy = 34, circ = 2 * Math.PI * r;
+                    const tvLen = circ * tvPct;
+                    const mvLen = circ * (1 - tvPct);
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                        <svg width={68} height={68} viewBox="0 0 68 68" style={{ flexShrink: 0 }}>
+                          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={9} />
+                          {tv > 0 && (
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#C069FF" strokeWidth={9}
+                              strokeDasharray={`${tvLen} ${circ}`} strokeDashoffset={circ / 4}
+                              style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
+                          )}
+                          {mv > 0 && (
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FF6B2B" strokeWidth={9}
+                              strokeDasharray={`${mvLen} ${circ}`} strokeDashoffset={circ / 4 - tvLen}
+                              style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
+                          )}
+                          <text x={cx} y={cy + 4} textAnchor="middle" fill="#fff" fontSize={11} fontWeight={800} fontFamily="'Area','Inter',sans-serif">{total}</text>
+                        </svg>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: 2, background: '#C069FF', flexShrink: 0 }} />
+                            <Txt size={10} color="rgba(255,255,255,0.55)">{tv} séries</Txt>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: 2, background: '#FF6B2B', flexShrink: 0 }} />
+                            <Txt size={10} color="rgba(255,255,255,0.55)">{mv} filmes</Txt>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <Txt size={11} weight={700} color={T.pink}>Ver mais</Txt>
+                    <Icon name="chevronR" size={11} color={T.pink} />
+                  </div>
+                </button>
+
+                {/* Bloco 2 — Gastos de streaming */}
+                <button
+                  onClick={() => router.push('/expenses')}
+                  style={{ background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left', minHeight: 170, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+
+                  <div>
+                    <Txt size={14} weight={800} color="#fff" style={{ display: 'block' }}>Streaming</Txt>
+                    <Txt size={11} color="rgba(255,255,255,0.38)">Gastos mensais</Txt>
+                  </div>
+
+                  {/* Ícones das plataformas */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                    {userPlatforms.length > 0
+                      ? userPlatforms.map((p) => (
+                          <div key={p.name} style={{ width: 30, height: 30, borderRadius: 9, background: p.color ?? 'rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Txt size={10} weight={800} color="#fff">{p.name.slice(0, 1)}</Txt>
+                          </div>
+                        ))
+                      : <Txt size={11} color="rgba(255,255,255,0.28)">Nenhum gasto adicionado</Txt>
+                    }
+                  </div>
+
+                  {/* Barra segmentada por plataforma */}
+                  <div style={{ height: 6, borderRadius: 4, overflow: 'hidden', display: 'flex', gap: 2 }}>
+                    {userPlatforms.length > 0
+                      ? userPlatforms.map((p) => (
+                          <div key={p.name} style={{ height: '100%', flex: 1, background: p.color ?? 'rgba(255,255,255,0.15)' }} />
+                        ))
+                      : <div style={{ height: '100%', width: '100%', background: 'rgba(255,255,255,0.08)', borderRadius: 4 }} />
+                    }
+                  </div>
+
+                  <div style={{ flex: 1 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <Txt size={11} weight={700} color={T.pink}>Ver tudo</Txt>
+                    <Icon name="chevronR" size={11} color={T.pink} />
+                  </div>
+                </button>
+
+              </div>
+            );
+          })()}
 
           <div style={{ height: 90 }} />
         </ScrollArea>
@@ -398,9 +491,9 @@ export default function ProfilePage() {
             <div onClick={() => setSocialSheet(null)}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.60)', zIndex: 40 }} />
             <div style={{
-              position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50,
+              position: 'absolute', left: 0, right: 0, bottom: 'var(--tab-h, 84px)', zIndex: 50,
               background: T.surface, borderRadius: '20px 20px 0 0',
-              maxHeight: '70%', display: 'flex', flexDirection: 'column',
+              maxHeight: 'calc(85% - var(--tab-h, 84px))', display: 'flex', flexDirection: 'column',
             }}>
               {/* Handle + header */}
               <div style={{ padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
@@ -424,24 +517,45 @@ export default function ProfilePage() {
                     fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     fontFamily: "'Area','Inter',sans-serif",
                   }}>
-                    {tab === 'followers' ? `Seguidores · ${profile?.followers ?? 0}` : `Seguindo · ${profile?.following ?? 0}`}
+                    {tab === 'followers' ? `Seguidores · ${realFollowers ?? profile?.followers ?? 0}` : `Seguindo · ${followingNames.length}`}
                   </button>
                 ))}
               </div>
 
-              {/* Empty state */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
-                <div style={{ width: 56, height: 56, borderRadius: 28, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                  <Icon name="user" size={24} color={T.t4} />
-                </div>
-                <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginBottom: 6 }}>
-                  {socialSheet === 'followers' ? 'Nenhum seguidor ainda' : 'Você não está seguindo ninguém'}
-                </Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>
-                  {socialSheet === 'followers'
-                    ? 'Quando alguém te seguir, aparecerá aqui.'
-                    : 'Explore perfis e comece a seguir pessoas.'}
-                </Txt>
+              {/* Conteúdo */}
+              <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+                {socialSheet === 'following' && followingNames.length > 0 ? (
+                  followingNames.map((name, i) => (
+                    <div
+                      key={name}
+                      onClick={() => { setSocialSheet(null); router.push(`/user/${encodeURIComponent(name)}`); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followingNames.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}
+                    >
+                      <div style={{ width: 44, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Txt size={16} weight={800} color="#fff">{name[0]?.toUpperCase() || '?'}</Txt>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Txt size={14} weight={700} color={T.t1} style={{ display: 'block' }}>{name}</Txt>
+                        <Txt size={12} color={T.t3}>@{name}</Txt>
+                      </div>
+                      <Icon name="chevronR" size={14} color={T.t4} />
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
+                    <div style={{ width: 56, height: 56, borderRadius: 28, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                      <Icon name="user" size={24} color={T.t4} />
+                    </div>
+                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginBottom: 6 }}>
+                      {socialSheet === 'followers' ? 'Nenhum seguidor ainda' : 'Você não está seguindo ninguém'}
+                    </Txt>
+                    <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>
+                      {socialSheet === 'followers'
+                        ? 'Quando alguém te seguir, aparecerá aqui.'
+                        : 'Explore perfis e comece a seguir pessoas.'}
+                    </Txt>
+                  </div>
+                )}
               </div>
               <div style={{ height: 28 }} />
             </div>
@@ -510,7 +624,7 @@ function ListSection({ label, icon, items, onItem, last }: {
             <div key={x.id} onClick={() => onItem(x)} style={{ flexShrink: 0, cursor: 'pointer' }}>
               <ImgWithSkeleton
                 src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
-                alt={x.title} width={60} height={90} radius={8}
+                alt={x.title} width={84} height={126} radius={10}
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               />
             </div>

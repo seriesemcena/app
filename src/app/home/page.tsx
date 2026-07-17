@@ -2,13 +2,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, Btn, Logo } from '@/components/primitives';
+import { Screen, Txt, Btn, Logo, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { TMDBBackdrop, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { listStore, sliderStore, type SliderItem, type SliderCategory } from '@/lib/store';
 import { checkUpcomingReleases } from '@/lib/releaseNotifier';
+import { useTheme } from '@/context/ThemeContext';
 
 type HomeTab = 'para_voce' | 'em_alta' | 'novidades';
 
@@ -27,16 +28,58 @@ type WatchingItem = {
 };
 
 const PLATFORMS = [
-  { id: 8,    name: 'Netflix',      color: '#E50914' },
-  { id: 337,  name: 'Disney+',      color: '#113CCF' },
-  { id: 1899, name: 'Max',          color: '#002BE7' },
-  { id: 119,  name: 'Prime Video',  color: '#00A8E0' },
-  { id: 307,  name: 'Globoplay',    color: '#E8441C' },
-  { id: 531,  name: 'Paramount+',   color: '#0064FF' },
+  { id: 8,    name: 'Netflix',      logo: 'netflix'       },
+  { id: 337,  name: 'Disney+',      logo: 'dineyplus'     },
+  { id: 1899, name: 'HBO Max',       logo: 'hbomax'        },
+  { id: 119,  name: 'Prime Video',  logo: 'primevideo'    },
+  { id: 307,  name: 'Globoplay',    logo: 'globoplay'     },
+  { id: 531,  name: 'Paramount+',   logo: 'paramountplus' },
+  { id: 350,  name: 'Apple TV+',    logo: 'appletv'       },
+  { id: 34,   name: 'MGM+',         logo: 'mgm'           },
 ];
+
+const STREAM_NOISE = `url("data:image/svg+xml,%3Csvg xmlns%3D'http://www.w3.org/2000/svg'%3E%3Cfilter id%3D'n'%3E%3CfeTurbulence type%3D'fractalNoise' baseFrequency%3D'.75' numOctaves%3D'4'/%3E%3C/filter%3E%3Crect width%3D'100%25' height%3D'100%25' filter%3D'url(%23n)'/%3E%3C/svg%3E")`;
 
 export default function HomePage() {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
+  /* ── Streaming card: liquid glass por tema ── */
+  const scBg     = isDark ? 'rgba(18, 18, 22, 0.76)' : 'rgba(255, 255, 255, 0.72)';
+  const scBorder = isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(0,0,0,0.08)';
+  const scShadow = isDark
+    ? [
+        '0 8px 32px rgba(0,0,0,0.52)',
+        '0 2px 8px rgba(0,0,0,0.30)',
+        'inset 0 1.5px 0 rgba(255,255,255,0.22)',
+        'inset 0 -1px 0 rgba(0,0,0,0.40)',
+        'inset 1px 0 0 rgba(255,255,255,0.06)',
+        'inset -1px 0 0 rgba(255,255,255,0.03)',
+      ].join(', ')
+    : [
+        '0 4px 20px rgba(0,0,0,0.10)',
+        '0 1px 4px rgba(0,0,0,0.07)',
+        'inset 0 1.5px 0 rgba(255,255,255,0.90)',
+        'inset 0 -1px 0 rgba(0,0,0,0.06)',
+        'inset 1px 0 0 rgba(255,255,255,0.50)',
+        'inset -1px 0 0 rgba(255,255,255,0.30)',
+      ].join(', ');
+  const scNameColor = isDark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.82)';
+  const scSubColor  = isDark ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.40)';
+  const scInitialColor = isDark ? 'rgba(255,255,255,0.11)' : 'rgba(0,0,0,0.07)';
+  const scSpecular = isDark
+    ? [
+        'radial-gradient(ellipse 90% 52% at 50% -10%, rgba(255,255,255,0.13) 0%, transparent 54%)',
+        'radial-gradient(ellipse 48% 36% at 96% -2%, rgba(255,255,255,0.08) 0%, transparent 50%)',
+        'radial-gradient(ellipse 60% 44% at 50% 112%, rgba(255,255,255,0.025) 0%, transparent 60%)',
+      ].join(', ')
+    : [
+        'radial-gradient(ellipse 90% 52% at 50% -10%, rgba(255,255,255,0.70) 0%, transparent 54%)',
+        'radial-gradient(ellipse 48% 36% at 96% -2%, rgba(255,255,255,0.45) 0%, transparent 50%)',
+        'radial-gradient(ellipse 60% 44% at 50% 112%, rgba(0,0,0,0.03) 0%, transparent 60%)',
+      ].join(', ');
+
   const [homeTab, setHomeTab]           = useState<HomeTab>('para_voce');
   const [heroIdx, setHeroIdx]           = useState(0);
   const [newsItems, setNewsItems]       = useState<NewsPost[]>([]);
@@ -48,7 +91,17 @@ export default function HomePage() {
   const [novLimit, setNovLimit]         = useState(10);
 
   const heroScrollRef = useRef<HTMLDivElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const [scrollRatio, setScrollRatio] = useState(0);
   const [textlessPosters, setTextlessPosters] = useState<Record<number, string | null>>({});
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    setIsDesktop(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   /* ── init: custom slider + upcoming releases ── */
   useEffect(() => {
@@ -205,13 +258,67 @@ export default function HomePage() {
   return (
     <Frame>
       <Screen style={{ background: 'var(--c-bg)' }}>
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'var(--tab-h, 90px)' } as React.CSSProperties}>
+        <div
+          ref={mainScrollRef}
+          onScroll={() => {
+            const el = mainScrollRef.current;
+            if (!el) return;
+            setScrollRatio(Math.min(el.scrollTop / 80, 1));
+          }}
+          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'var(--tab-h, 90px)' } as React.CSSProperties}>
+
+          {/* ── Sticky header + tabs ── */}
+          {(() => {
+            const pV  = 6  - scrollRatio * 2;   // padding vertical: 6 → 4px
+            const pH  = 14 - scrollRatio * 4;   // padding horizontal: 14 → 10px
+            const fs  = 12 - scrollRatio * 1;   // font-size: 12 → 11px
+            const pbRow = 10 - scrollRatio * 4; // row bottom padding: 10 → 6px
+            return (
+              <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, overflow: 'visible', paddingTop: 'env(safe-area-inset-top, 0px)' } as React.CSSProperties}>
+                {[{ blur: 22, end: 35 }, { blur: 14, end: 60 }, { blur: 7, end: 80 }, { blur: 3, end: 95 }].map(({ blur, end }, i) => (
+                  <div key={i} style={{ position: 'absolute', inset: 0, backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)`, maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, pointerEvents: 'none' } as React.CSSProperties} />
+                ))}
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(13,13,15,0.85) 0%, rgba(13,13,15,0.40) 70%, transparent 100%)', pointerEvents: 'none' }} />
+                {/* Logo row */}
+                <div style={{ position: 'relative', zIndex: 2, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px' }}>
+                  <div style={{ width: 76 }} />
+                  <img src="/logo_dark.png" alt="Maratonou" style={{ height: 22, width: 'auto' }} />
+                  <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => router.push('/search')}
+                      style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                      <Icon name="search" size={16} color="#fff" />
+                    </button>
+                    <button onClick={() => router.push('/notifications')}
+                      style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                      <Icon name="bell" size={16} color="#fff" />
+                    </button>
+                  </div>
+                </div>
+                {/* Tabs row — encolhe ao rolar */}
+                <div style={{ position: 'relative', zIndex: 2, padding: `0 16px ${pbRow}px`, display: 'flex', gap: 6 }}>
+                  {([['para_voce','Para você'],['em_alta','Em alta'],['novidades','Novidades']] as const).map(([id, label]) => (
+                    <button key={id} onClick={() => setHomeTab(id)} style={{
+                      padding: `${pV}px ${pH}px`, borderRadius: 20, flexShrink: 0,
+                      background: homeTab === id ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.12)',
+                      border: homeTab === id ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.22)',
+                      color: homeTab === id ? '#C069FF' : '#fff',
+                      fontSize: fs, fontWeight: 700, cursor: 'pointer',
+                      fontFamily: "'Area','Inter',sans-serif",
+                      backdropFilter: 'blur(24px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+                      boxShadow: homeTab === id ? '0 2px 12px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,1)' : '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
+                    } as React.CSSProperties}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── Hero Section — slider só em Para você ── */}
           {homeTab === 'para_voce' ? (() => {
-            const CARD_H = 460;
+            const CARD_H = isDesktop ? 580 : 460;
             return (
-              <div style={{ position: 'relative', height: CARD_H }}>
+              <div className="hero-slider-wrap" style={{ position: 'relative', height: CARD_H, marginTop: -100, borderRadius: isDark ? 0 : '0 0 28px 28px', overflow: isDark ? 'visible' : 'hidden' }}>
 
                 {/* Slider scroll — preenche o hero inteiro */}
                 <div
@@ -228,29 +335,30 @@ export default function HomePage() {
                         <div key={i} style={{ width: '100%', flexShrink: 0, height: '100%', background: T.surface2, scrollSnapAlign: 'start' }} />
                       ))
                     : heroes.map((item) => {
-                        // undefined = fetch still pending → show nothing (prevents glitch)
-                        // null     = fetch done, no textless found → fall back to standard poster
-                        // string   = textless poster url → use it
+                        // Desktop: usa backdrop diretamente (sem textless)
+                        // Mobile: textless poster com fallback para poster padrão
                         const textless = textlessPosters[item.id];
                         const fetchDone = textless !== undefined;
-                        const imgUrl = fetchDone
-                          ? (textless ?? tmdbImg(item.poster_path, 'w780') ?? tmdbImg(item.backdrop_path, 'w780'))
-                          : null;
+                        const imgUrl = isDesktop
+                          ? (tmdbImg(item.backdrop_path, 'original') ?? tmdbImg(item.poster_path, 'w780'))
+                          : fetchDone
+                            ? (textless ?? tmdbImg(item.poster_path, 'w780') ?? tmdbImg(item.backdrop_path, 'w780'))
+                            : null;
                         return (
                           <div
-                            key={item.id}
+                            key={`${item.type}-${item.id}`}
                             onClick={() => router.push(`/title/${item.type}/${item.id}`)}
                             style={{ width: '100%', flexShrink: 0, height: '100%', overflow: 'hidden', position: 'relative', cursor: 'pointer', scrollSnapAlign: 'start', background: '#0a0a0c' }}
                           >
                             {/* Background image — só aparece após fetch concluir, com fade-in */}
                             {imgUrl && (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={imgUrl} alt={item.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block', animation: 'heroFadeIn 0.4s ease forwards' }} />
+                              <img src={imgUrl} alt={item.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: isDesktop ? 'center center' : 'center top', display: 'block', animation: 'heroFadeIn 0.4s ease forwards' }} />
                             )}
                             {/* Gradient escuro de baixo para cima */}
                             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 50%, transparent 80%)', zIndex: 1 }} />
-                            {/* Fade cor da página — atrás do conteúdo */}
-                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 150, background: 'linear-gradient(to bottom, transparent 0%, var(--c-bg) 100%)', pointerEvents: 'none', zIndex: 2 }} />
+                            {/* Fade cor da página — apenas no dark mode */}
+                            {isDark && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 150, background: 'linear-gradient(to bottom, transparent 0%, var(--c-bg) 100%)', pointerEvents: 'none', zIndex: 2 }} />}
                             {/* Título + botões */}
                             <div style={{ position: 'absolute', bottom: 52, left: 16, right: 16, zIndex: 3 }}>
                               <Txt size={32} weight={900} color="#fff"
@@ -295,83 +403,9 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* Header — centralizado, sobreposto */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, height: 74, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ width: 76 }} />
-                  <div className="home-logo"><Logo height={20} /></div>
-                  <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button className="home-icon-btn" onClick={() => router.push('/search')}
-                      style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                      <Icon name="search" size={16} color="#fff" />
-                    </button>
-                    <button className="home-icon-btn" onClick={() => router.push('/notifications')}
-                      style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                      <Icon name="bell" size={16} color="#fff" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Tabs — sobreposto, Liquid Glass */}
-                <div style={{ position: 'absolute', top: 74, left: 0, right: 0, zIndex: 10, padding: '0 16px', display: 'flex', gap: 6 }}>
-                  {([
-                    ['para_voce', 'Para você'],
-                    ['em_alta',   'Em alta'],
-                    ['novidades', 'Novidades'],
-                  ] as const).map(([id, label]) => (
-                    <button key={id} className="home-tab-btn" onClick={() => setHomeTab(id)} style={{
-                      padding: '6px 14px', borderRadius: 20, flexShrink: 0,
-                      background: homeTab === id ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.12)',
-                      border: homeTab === id ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.22)',
-                      color: homeTab === id ? '#C069FF' : '#fff',
-                      fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                      fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
-                      backdropFilter: 'blur(24px) saturate(180%)',
-                      WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-                      boxShadow: homeTab === id
-                        ? '0 2px 12px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,1)'
-                        : '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
-                    } as React.CSSProperties}>{label}</button>
-                  ))}
-                </div>
               </div>
             );
-          })() : (
-            /* ── Header simples para Em alta / Novidades ── */
-            <div style={{ position: 'relative' }}>
-              <div style={{ height: 74, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ width: 76 }} />
-                <div className="home-logo"><Logo height={20} /></div>
-                <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <button className="home-icon-btn" onClick={() => router.push('/search')}
-                    style={{ width: 34, height: 34, borderRadius: 17, background: 'var(--c-glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--c-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' } as React.CSSProperties}>
-                    <Icon name="search" size={16} color="var(--c-t1)" />
-                  </button>
-                  <button className="home-icon-btn" onClick={() => router.push('/notifications')}
-                    style={{ width: 34, height: 34, borderRadius: 17, background: 'var(--c-glass-bg)', backdropFilter: 'blur(20px)', border: '1px solid var(--c-border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' } as React.CSSProperties}>
-                    <Icon name="bell" size={16} color="var(--c-t1)" />
-                  </button>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, padding: '0 16px 16px' }}>
-                {([
-                  ['para_voce', 'Para você'],
-                  ['em_alta',   'Em alta'],
-                  ['novidades', 'Novidades'],
-                ] as const).map(([id, label]) => (
-                  <button key={id} className="home-tab-btn" onClick={() => setHomeTab(id)} style={{
-                    padding: '6px 14px', borderRadius: 20, flexShrink: 0,
-                    background: homeTab === id ? 'var(--c-t1)' : 'var(--c-glass-bg)',
-                    border: `1px solid ${homeTab === id ? 'transparent' : 'var(--c-border)'}`,
-                    color: homeTab === id ? 'var(--c-bg)' : 'var(--c-t2)',
-                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
-                    backdropFilter: 'blur(20px)',
-                    boxShadow: homeTab === id ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.1)',
-                  } as React.CSSProperties}>{label}</button>
-                ))}
-              </div>
-            </div>
-          )}
+          })() : null}
 
           {/* ══════════════════════════════════════════════
               TAB: Para você
@@ -380,6 +414,7 @@ export default function HomePage() {
             <>
               {/* ── Content below hero ── */}
               <div style={{ background: 'var(--c-bg)', paddingTop: 12 }}>
+
 
               {/* ── Minha lista (watching series) ── */}
               <div style={{ margin: '0 16px 28px' }}>
@@ -406,8 +441,52 @@ export default function HomePage() {
                       <Txt size={13} weight={700} color="#fff">Explorar séries</Txt>
                     </button>
                   </div>
+                ) : isDesktop ? (
+                  /* ── Desktop: horizontal scroll row with large backdrop cards ── */
+                  <div style={{ display: 'flex', gap: 14, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4, scrollSnapType: 'x mandatory' } as React.CSSProperties}>
+                    {watchingItems.map((item) => {
+                      const thumbUrl = tmdbImg(item.backdrop_path, 'w780') ?? tmdbImg(item.poster_path, 'w342') ?? undefined;
+                      const tagStyles: Record<WatchingTag, { bg: string; color: string; label: string }> = {
+                        em_breve:      { bg: '#D92FFF',  color: '#fff', label: 'EM BREVE' },
+                        novo:          { bg: '#CCFF84',  color: '#000', label: 'NOVO' },
+                        nao_assistido: { bg: '#FB772D',  color: '#fff', label: 'NÃO ASSISTIDO' },
+                        atrasado:      { bg: '#e0352b',  color: '#fff', label: 'ATRASADO' },
+                      };
+                      const epLabel = item.tag === 'em_breve' && item.nextSeason && item.nextEpisode
+                        ? `T${item.nextSeason} · Ep ${item.nextEpisode}`
+                        : item.lastSeason && item.lastEpisode
+                          ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
+                          : 'Assistindo';
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => router.push(`/title/${item.type}/${item.id}`)}
+                          style={{ flexShrink: 0, width: 280, background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, cursor: 'pointer', textAlign: 'left', padding: 0, overflow: 'hidden', scrollSnapAlign: 'start' }}>
+                          {/* Backdrop image */}
+                          <div style={{ width: '100%', height: 157, background: T.surface2, position: 'relative', overflow: 'hidden' }}>
+                            {thumbUrl
+                              ? <img src={thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={32} color={T.t4} /></div>
+                            }
+                            {/* Tag overlay */}
+                            {item.tag && (
+                              <span style={{ position: 'absolute', top: 10, left: 10, display: 'inline-flex', alignItems: 'center', padding: '4px 9px', borderRadius: 7, background: tagStyles[item.tag].bg }}>
+                                <Txt size={10} weight={800} color={tagStyles[item.tag].color} style={{ letterSpacing: '0.4px', lineHeight: 1 }}>{tagStyles[item.tag].label}</Txt>
+                              </span>
+                            )}
+                          </div>
+                          {/* Info */}
+                          <div style={{ padding: '12px 14px 14px' }}>
+                            <Txt size={15} weight={800} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 5 }}>{item.title}</Txt>
+                            <Txt size={13} color={T.t3}>{epLabel}</Txt>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  /* ── Mobile: vertical list ── */
+                  <div className="home-watching-list" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {watchingItems.map((item) => {
                       const thumbUrl = tmdbImg(item.backdrop_path, 'w342') ?? tmdbImg(item.poster_path, 'w342') ?? undefined;
                       return (
@@ -482,33 +561,61 @@ export default function HomePage() {
                     <button
                       key={p.id}
                       onClick={() => router.push(`/streaming/${p.id}`)}
+                      className="stream-card"
                       style={{
                         flexShrink: 0, scrollSnapAlign: 'start',
                         width: 150, height: 106,
                         borderRadius: 18, cursor: 'pointer',
                         position: 'relative', overflow: 'hidden',
-                        background: `linear-gradient(135deg, ${p.color}dd 0%, ${p.color}88 100%)`,
-                        border: `1px solid ${p.color}55`,
-                        boxShadow: `0 4px 20px ${p.color}33`,
+                        background: scBg,
+                        backdropFilter: 'blur(28px) saturate(180%)',
+                        WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+                        border: scBorder,
+                        boxShadow: scShadow,
                         display: 'flex', flexDirection: 'column',
                         alignItems: 'flex-start', justifyContent: 'flex-end',
                         padding: '12px 14px',
                         textAlign: 'left',
                       } as React.CSSProperties}
                     >
-                      {/* Inicial da plataforma no canto superior */}
-                      <span style={{
-                        position: 'absolute', top: 10, right: 14,
-                        fontSize: 32, fontWeight: 900, color: 'rgba(255,255,255,0.15)',
-                        fontFamily: "'Greed','Area',sans-serif", lineHeight: 1,
-                      }}>{p.name[0]}</span>
+                      {/* Reflexo especular */}
+                      <div style={{
+                        position: 'absolute', inset: 0, pointerEvents: 'none',
+                        background: scSpecular,
+                      }} />
+                      {/* Textura granulada */}
+                      <div style={{
+                        position: 'absolute', inset: 0, pointerEvents: 'none',
+                        opacity: 0.05, mixBlendMode: 'overlay',
+                        backgroundImage: STREAM_NOISE, backgroundSize: '160px 160px',
+                      } as React.CSSProperties} />
+                      {/* Logo da plataforma */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={isDark ? `/${p.logo}_logo.png` : `/${p.logo}_logo_black.png`}
+                        alt={p.name}
+                        style={{
+                          position: 'absolute', top: 12, right: 14, zIndex: 1,
+                          height: 26, width: 'auto', maxWidth: 64,
+                          objectFit: 'contain', objectPosition: 'right center',
+                        }}
+                      />
                       {/* Nome */}
-                      <span style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontFamily: "'Area',sans-serif", lineHeight: 1.2, display: 'block' }}>
+                      <span className="stream-name" style={{
+                        fontSize: 14, fontWeight: 800, color: scNameColor,
+                        fontFamily: "'Area',sans-serif", lineHeight: 1.2,
+                        display: 'block', position: 'relative', zIndex: 1,
+                      }}>
                         {p.name}
                       </span>
                       {/* Sub */}
-                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.60)', fontFamily: "'Area',sans-serif", marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
-                        Em alta <Icon name="chevronR" size={9} color="rgba(255,255,255,0.50)" />
+                      <span className="stream-sub" style={{
+                        fontSize: 10, color: scSubColor,
+                        fontFamily: "'Area',sans-serif", marginTop: 3,
+                        display: 'flex', alignItems: 'center', gap: 3,
+                        position: 'relative', zIndex: 1,
+                      }}>
+                        Em alta <Icon name="chevronR" size={9} color={scSubColor} />
                       </span>
                     </button>
                   ))}
@@ -530,43 +637,58 @@ export default function HomePage() {
                     />
                   </div>
 
-                  {/* Featured card — first news item */}
-                  {newsItems[0] && (
-                    <a href={newsItems[0].link} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'block', position: 'relative', borderRadius: 16, overflow: 'hidden', aspectRatio: '16/9', background: T.surface2, textDecoration: 'none', marginBottom: 12 }}>
-                      {newsItems[0].image && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={newsItems[0].image} alt={newsItems[0].title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                      )}
-                      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 25%, rgba(0,0,0,0.88) 100%)' }} />
-                      <div style={{ position: 'absolute', bottom: 14, left: 14, right: 14 }}>
-                        <Txt size={15} weight={800} color="#fff"
-                          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.35 } as React.CSSProperties}>
-                          {newsItems[0].title}
-                        </Txt>
-                      </div>
-                    </a>
-                  )}
-
-                  {/* List — next 4 news items (no wrapper card) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                    {newsItems.slice(1, 5).map((post, idx) => (
-                      <div key={post.id}>
-                        {idx > 0 && <div style={{ height: 1, background: T.border, marginLeft: 92 }} />}
-                        <a href={post.link} target="_blank" rel="noopener noreferrer"
-                          style={{ display: 'flex', gap: 12, alignItems: 'center', textDecoration: 'none', padding: '12px 0' }}>
-                          <div style={{ width: 80, height: 54, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
-                            {post.image && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={post.image} alt={post.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            )}
-                          </div>
-                          <Txt size={13} weight={600} color={T.t1}
-                            style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.4, flex: 1 } as React.CSSProperties}>
-                            {post.title}
+                  {/* ── Mobile layout (featured + lista) ── */}
+                  <div className="news-mobile">
+                    {newsItems[0] && (
+                      <a href={newsItems[0].link} target="_blank" rel="noopener noreferrer"
+                        style={{ display: 'block', position: 'relative', borderRadius: 16, overflow: 'hidden', aspectRatio: '16/9', background: T.surface2, textDecoration: 'none', marginBottom: 12 }}>
+                        {newsItems[0].image && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={newsItems[0].image} alt={newsItems[0].title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        )}
+                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 25%, rgba(0,0,0,0.88) 100%)' }} />
+                        <div style={{ position: 'absolute', bottom: 14, left: 14, right: 14 }}>
+                          <Txt size={15} weight={800} color="#fff"
+                            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.35 } as React.CSSProperties}>
+                            {newsItems[0].title}
                           </Txt>
-                        </a>
-                      </div>
+                        </div>
+                      </a>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                      {newsItems.slice(1, 5).map((post, idx) => (
+                        <div key={post.id}>
+                          {idx > 0 && <div style={{ height: 1, background: T.border, marginLeft: 92 }} />}
+                          <a href={post.link} target="_blank" rel="noopener noreferrer"
+                            style={{ display: 'flex', gap: 12, alignItems: 'center', textDecoration: 'none', padding: '12px 0' }}>
+                            <div style={{ width: 80, height: 54, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
+                              {post.image && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={post.image} alt={post.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              )}
+                            </div>
+                            <Txt size={13} weight={600} color={T.t1}
+                              style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.4, flex: 1 } as React.CSSProperties}>
+                              {post.title}
+                            </Txt>
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── Desktop layout: grid 2 colunas × 3 linhas ── */}
+                  <div className="news-desktop">
+                    {newsItems.slice(0, 6).map((post) => (
+                      <a key={post.id} href={post.link} target="_blank" rel="noopener noreferrer" className="news-desktop-card" style={{ textDecoration: 'none' }}>
+                        <div className="news-desktop-img">
+                          {post.image && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={post.image} alt={post.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          )}
+                        </div>
+                        <p className="news-desktop-title">{post.title}</p>
+                      </a>
                     ))}
                   </div>
 
@@ -593,9 +715,13 @@ export default function HomePage() {
                 {(['series', 'movies'] as const).map((f) => (
                   <button key={f} className="home-filter-btn" onClick={() => { setTrendFilter(f); setTrendLimit(10); }} style={{
                     padding: '8px 20px', borderRadius: 24, flexShrink: 0,
-                    background: trendFilter === f ? T.pink : T.surface2,
-                    border: trendFilter === f ? 'none' : `1px solid ${T.border}`,
-                    color: trendFilter === f ? '#fff' : T.t2,
+                    background: trendFilter === f
+                      ? (isDark ? T.pink : 'rgba(10,10,12,0.88)')
+                      : (isDark ? T.surface2 : '#fff'),
+                    border: trendFilter === f
+                      ? 'none'
+                      : (isDark ? `1px solid ${T.border}` : '1px solid rgba(0,0,0,0.11)'),
+                    color: trendFilter === f ? '#fff' : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
                     fontSize: 13, fontWeight: 700,
                     fontFamily: "'Area','Inter',sans-serif",
                     cursor: 'pointer', transition: 'all 0.2s',
@@ -620,9 +746,13 @@ export default function HomePage() {
                 {(['series', 'movies'] as const).map((f) => (
                   <button key={f} className="home-filter-btn" onClick={() => { setNovFilter(f); setNovLimit(10); }} style={{
                     padding: '8px 20px', borderRadius: 24, flexShrink: 0,
-                    background: novFilter === f ? T.pink : T.surface2,
-                    border: novFilter === f ? 'none' : `1px solid ${T.border}`,
-                    color: novFilter === f ? '#fff' : T.t2,
+                    background: novFilter === f
+                      ? (isDark ? T.pink : 'rgba(10,10,12,0.88)')
+                      : (isDark ? T.surface2 : '#fff'),
+                    border: novFilter === f
+                      ? 'none'
+                      : (isDark ? `1px solid ${T.border}` : '1px solid rgba(0,0,0,0.11)'),
+                    color: novFilter === f ? '#fff' : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
                     fontSize: 13, fontWeight: 700,
                     fontFamily: "'Area','Inter',sans-serif",
                     cursor: 'pointer', transition: 'all 0.2s',

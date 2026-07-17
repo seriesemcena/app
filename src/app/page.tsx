@@ -20,7 +20,7 @@ export default function SplashPage() {
 
     if (!user) {
       // Not logged in — show splash briefly then welcome
-      const t = setTimeout(() => router.replace('/welcome'), 1600);
+      const t = setTimeout(() => router.replace('/auth'), 1600);
       return () => clearTimeout(t);
     }
 

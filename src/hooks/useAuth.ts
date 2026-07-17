@@ -61,6 +61,8 @@ export function useAuth() {
   const signOut = async () => {
     if (!firebaseConfigured) return;
     const { signOut: fbSignOut } = await import('firebase/auth');
+    // Clear legacy unscoped profile key so the next user starts clean
+    try { localStorage.removeItem('sec_profile_v1'); } catch {}
     await fbSignOut(getFirebaseAuth());
     router.push('/auth');
   };

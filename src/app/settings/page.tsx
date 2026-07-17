@@ -20,6 +20,20 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const isVip = !!user;
 
+  const [showNavTitle, setShowNavTitle] = useState(false);
+  const titleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setShowNavTitle(!entry.isIntersecting),
+      { rootMargin: '-56px 0px 0px 0px', threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
   const sections: Array<{ title: string; items: Item[] }> = [
     {
       title: 'Minha conta', items: [
@@ -78,6 +92,8 @@ export default function SettingsPage() {
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
+            navTitle="Configurações"
+            showNavTitle={showNavTitle}
             right={
               <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="bell" size={16} color="#fff" />
@@ -89,9 +105,11 @@ export default function SettingsPage() {
           <div style={{ minHeight: 500, padding: '0 16px 32px' }}>
 
             {/* Título */}
-            <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', paddingTop: 16, marginBottom: 20, letterSpacing: '-0.5px' }}>
-              Configurações
-            </Txt>
+            <div ref={titleRef}>
+              <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', paddingTop: 16, marginBottom: 20, letterSpacing: '-0.5px' }}>
+                Configurações
+              </Txt>
+            </div>
 
             {/* ══ Banner VIP ══ */}
             {!isVip ? (

@@ -2,15 +2,14 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Txt } from '@/components/primitives';
+import { Screen, ScrollArea, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { ImgWithSkeleton } from '@/components/posters';
-import { listStore, revStore, profileStore, prefsStore, type Profile } from '@/lib/store';
+import { listStore, revStore, profileStore, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore } from '@/lib/db';
-
+import { dbProfileStore, dbFollowStore } from '@/lib/db';
 
 const COLLAGE_SLOTS: Array<{ left?: number; right?: number; top: number; rotate: number; width: number }> = [
   { left:  -18, top:  8,  rotate: -20, width: 115 },
@@ -27,59 +26,59 @@ function UserProfileInner() {
   const { user, loading } = useAuth();
 
   const username     = decodeURIComponent((params.username as string) || '');
-  const avatarLetter = username[0]?.toUpperCase() || '?';
+  const currentUserName = user?.displayName || user?.email?.split('@')[0] || '';
+  const isMe            = !!user && (username === currentUserName || username === user.email?.split('@')[0]);
 
-  const currentUserName = user?.displayName || user?.email?.split('@')[0] || 'Você';
-  const isMe            = username === currentUserName;
+  const [profile,      setProfile]      = useState<Profile | null>(null);
+  const [stats,        setStats]        = useState({ watched: 0, watching: 0, want: 0, reviews: 0 });
+  const [totalHours,   setTotalHours]   = useState(0);
+  const [socialSheet,  setSocialSheet]  = useState<'followers' | 'following' | null>(null);
 
-  /* ── Own-user data (from localStorage) ── */
-  const [profile,  setProfile]  = useState<Profile | null>(null);
-  const [stats,    setStats]    = useState({ watched: 0, watching: 0, want: 0, reviews: 0 });
-  const [totalHours, setTotalHours] = useState(0);
+  /* ── Follow state ── */
+  const [isFollowing,    setIsFollowing]    = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingNames, setFollowingNames] = useState<string[]>([]);
 
-  const favoritos  = useMemo(() => isMe ? listStore.get('favorites') : [], [isMe]);
-  const wantList   = useMemo(() => isMe ? listStore.get('want')      : [], [isMe]);
-  const watchingList = useMemo(() => isMe ? listStore.get('watching'): [], [isMe]);
-  const watchedList  = useMemo(() => isMe ? listStore.get('watched') : [], [isMe]);
-
-  /* ── Follow state (localStorage-based) ── */
-  const [isFollowing,       setIsFollowing]       = useState(false);
-  const [followersCount,    setFollowersCount]    = useState(0);
-  const [publicFollowing,   setPublicFollowing]   = useState(0);
-  const [mounted,           setMounted]           = useState(false);
+  const favoritos    = useMemo(() => isMe ? listStore.get('favorites') : [], [isMe]);
+  const watchingList = useMemo(() => isMe ? listStore.get('watching')  : [], [isMe]);
+  const wantList     = useMemo(() => isMe ? listStore.get('want')      : [], [isMe]);
+  const watchedList  = useMemo(() => isMe ? listStore.get('watched')   : [], [isMe]);
 
   useEffect(() => {
-    setMounted(true);
-    if (!username || isMe) return;
     try {
-      const followingList: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-      setIsFollowing(followingList.includes(username));
-      const count = Number(localStorage.getItem(`sec_followers_${username}`) || '0');
-      setFollowersCount(count);
-      // We don't track other users' following lists — keep at 0
-      setPublicFollowing(0);
+      const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
+      if (isMe) {
+        setFollowingNames(list);
+      } else {
+        setIsFollowing(list.includes(username));
+        const count = Number(localStorage.getItem(`sec_followers_${username}`) || '0');
+        setFollowersCount(count);
+      }
     } catch {}
   }, [username, isMe]);
 
-  const toggleFollow = () => {
+  const toggleFollow = async () => {
     try {
       const following: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-      let newCount = followersCount;
+      let updated: string[];
       if (isFollowing) {
-        const updated = following.filter(u => u !== username);
-        localStorage.setItem('sec_following', JSON.stringify(updated));
-        newCount = Math.max(0, followersCount - 1);
+        updated = following.filter(u => u !== username);
+        const next = Math.max(0, followersCount - 1);
+        localStorage.setItem(`sec_followers_${username}`, String(next));
+        setFollowersCount(next);
       } else {
-        following.push(username);
-        localStorage.setItem('sec_following', JSON.stringify(following));
-        newCount = followersCount + 1;
+        updated = [...following, username];
+        const next = followersCount + 1;
+        localStorage.setItem(`sec_followers_${username}`, String(next));
+        setFollowersCount(next);
       }
-      localStorage.setItem(`sec_followers_${username}`, String(newCount));
-      setFollowersCount(newCount);
+      localStorage.setItem('sec_following', JSON.stringify(updated));
       setIsFollowing(f => !f);
+      if (firebaseConfigured && user) {
+        try { await dbFollowStore.set(getDB(), user.uid, updated); } catch {}
+      }
     } catch {}
   };
-
 
   useEffect(() => {
     if (!isMe || loading) return;
@@ -90,17 +89,16 @@ function UserProfileInner() {
       want:     listStore.get('want').length,
       reviews:  revStore.countAll(),
     });
+    setTotalHours(Math.round(listStore.get('watched').length * 1.5));
 
     const applyProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
       const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
       if (user) {
-        const resolvedName = (merged.name && merged.name !== 'Lucas Tales')
-          ? merged.name
-          : (user.displayName || merged.name || 'Usuário');
+        const resolvedName = merged.name || user.displayName || 'Usuário';
         setProfile({
           ...merged,
           name:         resolvedName,
-          username:     (merged.username && merged.username !== 'lucastales') ? merged.username : (user.email?.split('@')[0] || merged.username),
+          username:     merged.username || user.email?.split('@')[0] || 'usuario',
           avatarImage:  merged.avatarImage || user.photoURL || '',
           avatarLetter: resolvedName[0]?.toUpperCase() || 'U',
         });
@@ -109,44 +107,38 @@ function UserProfileInner() {
       }
     };
 
-    const local = profileStore.get();
+    const local = profileStore.get(user?.uid);
     applyProfile(local);
 
     if (user && firebaseConfigured) {
       dbProfileStore.get(getDB(), user.uid).then(cloud => {
         if (cloud && (cloud.name || cloud.username || cloud.bio)) {
-          profileStore.set({ ...local, ...cloud });
+          profileStore.set({ ...local, ...cloud }, user.uid);
           applyProfile(local, cloud);
         }
       }).catch(() => {});
     }
-
-    /* Quick hour estimate from watched list */
-    const watched = listStore.get('watched');
-    const hours   = Math.round(watched.length * 1.5); // rough avg
-    setTotalHours(hours);
   }, [isMe, user, loading]);
-
 
   if (loading && isMe) {
     return (
       <Frame><Screen>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 18, border: `3px solid ${T.pink}`, borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, padding: 32 }}>
+          <div style={{ width: 88, height: 88, borderRadius: 44, background: 'var(--c-glass-bg)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <div style={{ width: 140, height: 16, borderRadius: 8, background: 'var(--c-glass-bg)' }} />
         </div>
       </Screen></Frame>
     );
   }
 
-  /* resolved display values */
   const displayName     = isMe ? (profile?.name || username) : username;
   const displayUsername = isMe ? (profile?.username || username) : username;
   const displayAvatar   = isMe && profile?.avatarImage ? profile.avatarImage : '';
   const displayGradient = isMe && profile?.avatarGradient ? profile.avatarGradient : `linear-gradient(135deg,${T.pink},#8B2FFF)`;
-  const bio             = isMe ? profile?.bio : '';
-  const followers       = isMe ? (profile?.followers ?? 0) : followersCount;
-  const following       = isMe ? (profile?.following ?? 0) : publicFollowing;
-  const topPct          = mounted && isMe && stats.watched > 0 ? Math.max(1, Math.round(100 / (stats.watched + 1))) : null;
+  const bio             = isMe ? (profile?.bio || '') : '';
+  const followingCount  = isMe ? followingNames.length : 0;
+  const followersVal    = isMe ? (profile?.followers ?? 0) : followersCount;
+  const topPct          = isMe && stats.watched > 0 ? Math.max(1, Math.round(100 / (stats.watched + 1))) : null;
 
   const collageSources     = [...favoritos, ...wantList];
   const collagePosterItems = collageSources.filter(x => !!x.poster_path).slice(0, 6);
@@ -155,10 +147,30 @@ function UserProfileInner() {
     <Frame>
       <Screen>
         <ScrollArea>
+          <GlassHeader
+            left={
+              <button onClick={() => router.back()}
+                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                <Icon name="chevronL" size={16} color="#fff" />
+              </button>
+            }
+            right={
+              isMe ? (
+                <button onClick={() => router.push('/settings')}
+                  style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                  <Icon name="settings" size={16} color="#fff" />
+                </button>
+              ) : (
+                <button style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                  <Icon name="flag" size={15} color="#fff" />
+                </button>
+              )
+            }
+          />
 
-          {/* ── Cover with collage ── */}
+          {/* ── Capa com collage ── */}
           <div style={{ position: 'relative' }}>
-            <div style={{ position: 'relative', height: 260, overflow: 'hidden', background: 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
+            <div style={{ position: 'relative', height: 180, overflow: 'hidden', background: 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
               {collagePosterItems.map((item, idx) => {
                 const slot = COLLAGE_SLOTS[idx];
                 if (!slot || !item.poster_path) return null;
@@ -172,176 +184,213 @@ function UserProfileInner() {
                 if (slot.right !== undefined) posStyle.right = slot.right;
                 return (
                   <div key={item.id} style={posStyle}>
-                    <ImgWithSkeleton
-                      src={`https://image.tmdb.org/t/p/w185${item.poster_path}`}
-                      alt="" width="100%" height="auto"
-                      style={{ display: 'block', aspectRatio: '2/3' }}
-                    />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`https://image.tmdb.org/t/p/w185${item.poster_path}`} alt="" style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }} />
                   </div>
                 );
               })}
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 60%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.50) 65%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
 
-              {/* Back + actions */}
-              <div style={{ position: 'absolute', top: 14, left: 14, zIndex: 10 }}>
-                <button onClick={() => router.back()}
-                  style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                  <Icon name="chevronL" size={18} color="#fff" />
-                </button>
-              </div>
-              <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 8, zIndex: 10 }}>
-                {isMe ? (
-                  <button onClick={() => router.push('/settings')}
-                    style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <Icon name="settings" size={18} color="#fff" />
-                  </button>
-                ) : (
-                  <button style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <Icon name="flag" size={16} color="#fff" />
-                  </button>
-                )}
-              </div>
             </div>
 
-            {/* Avatar */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: -52, position: 'relative', zIndex: 20 }}>
+            {/* ── Avatar + Nome + Seguir ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, padding: '0 16px 8px', marginTop: -48, position: 'relative', zIndex: 20 }}>
               <div style={{
-                width: 100, height: 100, borderRadius: 50,
+                width: 88, height: 88, borderRadius: 44, flexShrink: 0,
                 background: displayAvatar ? `url(${displayAvatar}) center/cover no-repeat` : displayGradient,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '3.5px solid #C069FF',
-                boxShadow: '0 0 0 4px rgba(192,105,255,0.20), 0 8px 32px rgba(0,0,0,0.7)',
-                overflow: 'hidden', flexShrink: 0,
+                border: '3px solid var(--c-bg)',
+                boxShadow: '0 0 0 2px #C069FF, 0 8px 28px rgba(0,0,0,0.7)',
+                overflow: 'hidden',
               }}>
-                {!displayAvatar && <Txt size={36} weight={900} color="#fff">{displayName[0]?.toUpperCase() || avatarLetter}</Txt>}
+                {!displayAvatar && <Txt size={32} weight={900} color={T.white}>{displayName[0]?.toUpperCase() || '?'}</Txt>}
               </div>
+              <div style={{ paddingBottom: 6, flex: 1, minWidth: 0 }}>
+                <Txt size={24} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {displayName}
+                </Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block' }}>
+                  @{displayUsername}
+                </Txt>
+              </div>
+              {!isMe && (
+                <button onClick={toggleFollow} style={{
+                  flexShrink: 0, marginBottom: 6,
+                  padding: '8px 20px', borderRadius: 24,
+                  background: isFollowing ? T.surface2 : T.pink,
+                  border: isFollowing ? `1px solid ${T.border}` : 'none',
+                  cursor: 'pointer',
+                  boxShadow: isFollowing ? 'none' : `0 4px 14px ${T.pinkGlow}`,
+                }}>
+                  <Txt size={13} weight={700} color={isFollowing ? T.t2 : '#fff'}>
+                    {isFollowing ? 'Seguindo ✓' : 'Seguir'}
+                  </Txt>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* ── Name + username + bio ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 16px 0', gap: 5 }}>
-            <Txt size={28} weight={900} color={T.white} style={{ display: 'block', textAlign: 'center', letterSpacing: '-0.5px' }}>
-              {displayName}
-            </Txt>
-            <Txt size={13} color="rgba(255,255,255,0.45)" style={{ display: 'block', textAlign: 'center' }}>
-              @{displayUsername}
-            </Txt>
-            {bio && (
-              <Txt size={13} color="rgba(255,255,255,0.55)" style={{ display: 'block', textAlign: 'center', maxWidth: 280, lineHeight: 1.45, marginTop: 2 }}>
-                {bio}
-              </Txt>
-            )}
-
-            {/* ── Seguir button (outros usuários) ── */}
-            {!isMe && (
-              <button onClick={toggleFollow} style={{
-                marginTop: 16,
-                padding: '10px 36px', borderRadius: 24,
-                background: isFollowing ? T.surface2 : T.pink,
-                border: isFollowing ? `1px solid ${T.border}` : 'none',
-                cursor: 'pointer',
-                boxShadow: isFollowing ? 'none' : `0 4px 14px ${T.pinkGlow}`,
-                transition: 'all 0.2s',
-              }}>
-                <Txt size={14} weight={700} color={isFollowing ? T.t2 : '#fff'}>
-                  {isFollowing ? 'Seguindo ✓' : 'Seguir'}
-                </Txt>
-              </button>
-            )}
-
-            {/* ── Social pills ── */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {[
-                { value: followers,  label: 'seguidores'  },
-                { value: following,  label: 'seguindo'    },
-                { value: isMe ? totalHours : 0, label: 'h assistidas' },
-                ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: 'ranking' }] : []),
-              ].map(({ value, label }) => (
-                <div key={label} style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '8px 18px', borderRadius: 24,
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.13)',
-                  minWidth: 70,
-                }}>
-                  <Txt size={15} weight={800} color={T.white}>{String(value)}</Txt>
-                  <Txt size={10} weight={600} color="rgba(255,255,255,0.50)">{label}</Txt>
-                </div>
-              ))}
+          {/* ── Bio ── */}
+          {bio && (
+            <div style={{ padding: '10px 16px 0' }}>
+              <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.6 }}>{bio}</Txt>
             </div>
+          )}
 
-            {/* ── Stats grid (own user only) ── */}
-            {isMe && (
-              <div style={{ display: 'flex', gap: 0, marginTop: 16, borderRadius: T.radiusSm, overflow: 'hidden', border: `1px solid ${T.border}`, width: '100%' }}>
-                {[
-                  [stats.watched,  'Assistidos'],
-                  [stats.watching, 'Assistindo'],
-                  [stats.want,     'Quero ver' ],
-                  [stats.reviews,  'Reviews'   ],
-                ].map(([v, l], i) => (
-                  <div key={i} style={{ flex: 1, padding: '12px 4px', textAlign: 'center', background: T.card, borderRight: i < 3 ? `1px solid ${T.border}` : 'none' }}>
-                    <Txt size={18} weight={800} color={T.t1} style={{ display: 'block' }}>{String(v || 0)}</Txt>
-                    <Txt size={9}  color={T.t3}  weight={600} style={{ display: 'block', marginTop: 2, lineHeight: 1.3 }}>{String(l)}</Txt>
-                  </div>
-                ))}
+          {/* ── Seguindo / Seguidores ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px 16px 0' }}>
+            <button
+              onClick={() => setSocialSheet('following')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
+              <Txt size={17} weight={900} color={T.t1}>{followingCount}</Txt>
+              <Txt size={12} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>Seguindo</Txt>
+            </button>
+            <div style={{ width: 1, height: 16, background: T.border, margin: '0 6px' }} />
+            <button
+              onClick={() => setSocialSheet('followers')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
+              <Txt size={17} weight={900} color={T.t1}>{followersVal}</Txt>
+              <Txt size={12} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>Seguidores</Txt>
+            </button>
+          </div>
+
+          {/* ── Boxes de estatísticas ── */}
+          <div style={{ display: 'flex', gap: 12, padding: '24px 16px 0' }}>
+            {[
+              { value: isMe ? String(totalHours) : '—', label: 'h assistidas', icon: 'clock' as const },
+              { value: isMe ? String(stats.reviews) : '—', label: 'avaliações', icon: 'star' as const },
+              ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: 'ranking', icon: 'award' as const }] : [
+                { value: '—', label: 'ranking', icon: 'award' as const },
+              ]),
+            ].map(({ value, label, icon }) => (
+              <div key={label} style={{
+                flex: 1,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                padding: '14px 8px',
+                borderRadius: T.radius,
+                background: 'var(--c-card)',
+                border: '1px solid var(--c-border)',
+                gap: 4,
+              }}>
+                <Icon name={icon} size={16} color={T.pink} />
+                <Txt size={18} weight={900} color={T.t1}>{value}</Txt>
+                <Txt size={10} weight={600} color={T.t3} style={{ textAlign: 'center' }}>{label}</Txt>
               </div>
-            )}
+            ))}
           </div>
 
           {/* ── Favoritos ── */}
-          {(isMe ? favoritos : []).length > 0 && (
-            <PosterRow
-              title="Favoritos"
-              items={favoritos}
-              onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
-            />
-          )}
+          <PosterRow
+            title="Favoritos"
+            items={favoritos}
+            onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
+          />
 
-          {/* ── Minhas listas (own user) ── */}
-          {isMe && (
-            <div style={{ margin: '16px 16px 0' }}>
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px' }}>
-                  <Txt size={16} weight={800}>Minhas listas</Txt>
-                  <button onClick={() => router.push('/lists')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    <Txt size={12} color={T.pink} weight={600}>Ver tudo</Txt>
+          {/* ── Assistindo ── */}
+          <div style={{ margin: '16px 16px 0' }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px' }}>
+                <Txt size={16} weight={800}>Maratonando agora</Txt>
+              </div>
+              <ListSection
+                label="Assistindo"
+                icon="play"
+                items={watchingList}
+                onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
+              />
+              <ListSection
+                label="Quero ver"
+                icon="bookmark"
+                items={wantList}
+                onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
+              />
+              <ListSection
+                label="Concluídos"
+                icon="check"
+                items={watchedList}
+                onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
+                last
+              />
+            </div>
+          </div>
+
+          <div style={{ height: 90 }} />
+        </ScrollArea>
+
+        {/* ── Bottom sheet: seguidores / seguindo ── */}
+        {socialSheet && (
+          <>
+            <div onClick={() => setSocialSheet(null)}
+              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.60)', zIndex: 40 }} />
+            <div style={{
+              position: 'absolute', left: 0, right: 0, bottom: 'var(--tab-h, 84px)', zIndex: 50,
+              background: T.surface, borderRadius: '20px 20px 0 0',
+              maxHeight: 'calc(85% - var(--tab-h, 84px))', display: 'flex', flexDirection: 'column',
+            }}>
+              <div style={{ padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
+                <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, margin: '0 auto 12px' }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Txt size={15} weight={700}>{socialSheet === 'followers' ? 'Seguidores' : 'Seguindo'}</Txt>
+                  <button onClick={() => setSocialSheet(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                    <Icon name="close" size={18} color={T.t3} />
                   </button>
                 </div>
-                <ListSection label="Quero ver"   icon="bookmark" items={wantList}    onItem={(x) => router.push(`/title/${x.type}/${x.id}`)} />
-                <ListSection label="Assistindo"  icon="play"     items={watchingList} onItem={(x) => router.push(`/title/${x.type}/${x.id}`)} />
-                <ListSection label="Concluídos"  icon="check"    items={watchedList}  onItem={(x) => router.push(`/title/${x.type}/${x.id}`)} last />
               </div>
+              <div style={{ display: 'flex', padding: '10px 16px', gap: 8, flexShrink: 0, borderBottom: `1px solid ${T.border}` }}>
+                {(['followers', 'following'] as const).map(tab => (
+                  <button key={tab} onClick={() => setSocialSheet(tab)} style={{
+                    padding: '6px 16px', borderRadius: 20,
+                    background: socialSheet === tab ? T.pink : T.surface2,
+                    border: socialSheet === tab ? 'none' : `1px solid ${T.border}`,
+                    color: socialSheet === tab ? '#fff' : T.t2,
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    fontFamily: "'Area','Inter',sans-serif",
+                  }}>
+                    {tab === 'followers' ? `Seguidores · ${followersVal}` : `Seguindo · ${isMe ? followingNames.length : followingCount}`}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+                {socialSheet === 'following' && isMe && followingNames.length > 0 ? (
+                  followingNames.map((name, i) => (
+                    <div
+                      key={name}
+                      onClick={() => { setSocialSheet(null); router.push(`/user/${encodeURIComponent(name)}`); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followingNames.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}
+                    >
+                      <div style={{ width: 44, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Txt size={16} weight={800} color="#fff">{name[0]?.toUpperCase() || '?'}</Txt>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Txt size={14} weight={700} color={T.t1} style={{ display: 'block' }}>{name}</Txt>
+                        <Txt size={12} color={T.t3}>@{name}</Txt>
+                      </div>
+                      <Icon name="chevronR" size={14} color={T.t4} />
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
+                    <div style={{ width: 56, height: 56, borderRadius: 28, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                      <Icon name="user" size={24} color={T.t4} />
+                    </div>
+                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginBottom: 6 }}>
+                      {socialSheet === 'followers' ? 'Nenhum seguidor ainda' : 'Ninguém sendo seguido'}
+                    </Txt>
+                    <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>
+                      {socialSheet === 'followers'
+                        ? 'Quando alguém seguir este perfil, aparecerá aqui.'
+                        : 'Explore perfis e comece a seguir pessoas.'}
+                    </Txt>
+                  </div>
+                )}
+              </div>
+              <div style={{ height: 28 }} />
             </div>
-          )}
-
-          <div style={{ height: 60 }} />
-        </ScrollArea>
+          </>
+        )}
       </Screen>
     </Frame>
   );
-
-  function timeAgo(dateStr: string): string {
-    try {
-      const diff = Date.now() - new Date(dateStr).getTime();
-      const m    = Math.floor(diff / 60000);
-      if (m < 1)  return 'agora';
-      if (m < 60) return `${m}min atrás`;
-      const h = Math.floor(m / 60);
-      if (h < 24) return `${h}h atrás`;
-      const d = Math.floor(h / 24);
-      if (d < 30) return `${d}d atrás`;
-      return new Date(dateStr).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-    } catch { return dateStr; }
-  }
-
-  function labelFromKey(key: string): string {
-    if (key.startsWith('ep_')) {
-      const m = key.match(/^ep_\d+_s(\d+)_e(\d+)$/);
-      if (m) return `T${m[1]} · Ep. ${m[2]}`;
-    }
-    if (key.startsWith('movie_')) return 'Filme';
-    return key;
-  }
 }
 
 /* ── Horizontal poster row ── */
@@ -351,6 +400,9 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
   onItem: (x: { id: number; title: string; type: string; poster_path?: string | null }) => void;
   onSeeAll?: () => void;
 }) {
+  const placeholders = [{} as any, {} as any, {} as any, {} as any];
+  const list = items.length > 0 ? items.slice(0, 10) : placeholders;
+
   return (
     <div style={{ margin: '16px 16px 0' }}>
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, overflow: 'hidden' }}>
@@ -363,8 +415,8 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
           )}
         </div>
         <div style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', paddingLeft: 16, paddingRight: 16, paddingBottom: 16 } as React.CSSProperties}>
-          {items.slice(0, 10).map(x => (
-            <div key={x.id} onClick={() => onItem(x)} style={{ flexShrink: 0, cursor: 'pointer' }}>
+          {list.map((x, i) => (
+            <div key={x.id ?? i} onClick={() => x.id && onItem(x)} style={{ flexShrink: 0, cursor: x.id ? 'pointer' : 'default' }}>
               <ImgWithSkeleton
                 src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
                 alt={x.title} width={84} height={126} radius={10}
@@ -399,7 +451,7 @@ function ListSection({ label, icon, items, onItem, last }: {
             <div key={x.id} onClick={() => onItem(x)} style={{ flexShrink: 0, cursor: 'pointer' }}>
               <ImgWithSkeleton
                 src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
-                alt={x.title} width={60} height={90} radius={8}
+                alt={x.title} width={84} height={126} radius={10}
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               />
             </div>

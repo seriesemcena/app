@@ -1,457 +1,607 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Txt } from '@/components/primitives';
+import { Screen, ScrollArea, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { listStore, revStore, prefsStore } from '@/lib/store';
+import { useTheme } from '@/context/ThemeContext';
+import { listStore, revStore, prefsStore, epWatchedStore, profileStore } from '@/lib/store';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { dbActivityStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 
-/* ── Genre color map ────────────────────────────────────────── */
 const GENRE_COLORS: Record<string, string> = {
-  'Drama':               '#C069FF', 'Ação': '#FF6B2B', 'Action': '#FF6B2B',
-  'Comédia':             '#F5C518', 'Comedy': '#F5C518',
-  'Ficção científica':   '#3b82f6', 'Ficção Científica': '#3b82f6',
-  'Science Fiction':     '#3b82f6', 'Sci-Fi': '#3b82f6',
-  'Terror':              '#8b5cf6', 'Horror': '#8b5cf6',
-  'Romance':             '#ec4899', 'Thriller': '#ef4444',
-  'Documentário':        '#10b981', 'Documentary': '#10b981',
-  'Animação':            '#f97316', 'Animation': '#f97316',
-  'Crime':               '#6366f1', 'Aventura': '#06b6d4', 'Adventure': '#06b6d4',
-  'Família':             '#f59e0b', 'Family': '#f59e0b',
-  'Mistério':            '#7c3aed', 'Mystery': '#7c3aed',
-  'Western':             '#a16207', 'Guerra': '#dc2626', 'War': '#dc2626',
+  'Drama':'#C069FF','Ação':'#FF6B2B','Action':'#FF6B2B','Comédia':'#F5C518','Comedy':'#F5C518',
+  'Ficção científica':'#3b82f6','Ficção Científica':'#3b82f6','Science Fiction':'#3b82f6','Sci-Fi':'#3b82f6',
+  'Terror':'#8b5cf6','Horror':'#8b5cf6','Romance':'#ec4899','Thriller':'#ef4444',
+  'Documentário':'#10b981','Documentary':'#10b981','Animação':'#f97316','Animation':'#f97316',
+  'Crime':'#6366f1','Aventura':'#06b6d4','Adventure':'#06b6d4','Família':'#f59e0b','Family':'#f59e0b',
+  'Mistério':'#7c3aed','Mystery':'#7c3aed','Western':'#a16207','Guerra':'#dc2626','War':'#dc2626',
 };
+const DONUT_COLORS = ['#C069FF', '#FF6B2B', '#3b82f6', '#F5C518', '#10b981'];
+const MONTH_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-/* ── Mini bar used in genre chart ──────────────────────────── */
-function GenreBar({ label, pct, color, delay = 0 }: { label: string; pct: number; color: string; delay?: number }) {
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const t = setTimeout(() => setWidth(pct), 120 + delay);
-    return () => clearTimeout(t);
-  }, [pct, delay]);
+function timeParts(totalMins: number) {
+  const months = Math.floor(totalMins / (60 * 24 * 30));
+  const days   = Math.floor((totalMins % (60 * 24 * 30)) / (60 * 24));
+  const hours  = Math.floor((totalMins % (60 * 24)) / 60);
+  return { months, days, hours };
+}
 
+function last7DateLabels(): string[] {
+  const labels: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    labels.push(String(d.getDate()));
+  }
+  return labels;
+}
+
+/* ── StatCard ────────────────────────────────────────────────── */
+function StatCard({ children, style, padding }: { children: React.ReactNode; style?: React.CSSProperties; padding?: string | number }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <Txt size={12} weight={600} color={T.t2}>{label}</Txt>
-        <Txt size={12} weight={700} color={color}>{pct}%</Txt>
-      </div>
-      <div style={{ height: 7, borderRadius: 4, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-        <div style={{
-          height: '100%', borderRadius: 4,
-          background: color,
-          width: `${width}%`,
-          transition: 'width 0.7s cubic-bezier(0.16, 1, 0.3, 1)',
-          boxShadow: `0 0 8px ${color}55`,
-        }} />
+    <div style={{ background: isDark ? '#141416' : 'var(--c-card)', borderRadius: 20, border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid var(--c-border)', margin: '10px 16px 0', padding: padding ?? '18px 16px', position: 'relative', overflow: 'hidden', ...style }}>
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.04)'} 1px, transparent 1px)`, backgroundSize: '18px 18px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        {children}
       </div>
     </div>
   );
 }
 
-/* ── Donut chart (SVG) ──────────────────────────────────────── */
-function DonutChart({ moviesCount, tvCount }: { moviesCount: number; tvCount: number }) {
-  const total = moviesCount + tvCount || 1;
-  const moviePct = moviesCount / total;
-  const r = 46;
+/* ── DayBarChart ─────────────────────────────────────────────── */
+function DayBarChart({ data, labels, unit, barColor = '#22c55e', todayColor = '#C069FF', isDark = true }: {
+  data: number[]; labels: string[]; unit: string; barColor?: string; todayColor?: string; isDark?: boolean;
+}) {
+  const max = Math.max(...data, 1);
+  const [anim, setAnim] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAnim(true), 300); return () => clearTimeout(t); }, []);
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 90 }}>
+        {data.map((val, i) => {
+          const pct = val / max;
+          const isToday = i === data.length - 1;
+          const color = isToday ? todayColor : val > 0 ? barColor : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)');
+          return (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%', justifyContent: 'flex-end' }}>
+              {val > 0 && (
+                <Txt size={9} weight={700} color={isToday ? todayColor : barColor} style={{ lineHeight: 1 }}>
+                  {Number.isInteger(val) ? val : val.toFixed(1)}
+                </Txt>
+              )}
+              <div style={{ width: '100%', flex: 1, display: 'flex', alignItems: 'flex-end' }}>
+                <div style={{ width: '100%', height: anim && val > 0 ? `${Math.max(pct * 100, 6)}%` : val > 0 ? '6%' : '3%', borderRadius: 4, background: color, transition: `height 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 35}ms` }} />
+              </div>
+              <Txt size={9} weight={isToday ? 700 : 400} color={isToday ? todayColor : T.t4}>{labels[i]}</Txt>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ textAlign: 'center', marginTop: 10 }}>
+        <Txt size={9} weight={700} color={T.t4} style={{ textTransform: 'uppercase', letterSpacing: 1 }}>POR SEMANA · {unit}</Txt>
+      </div>
+    </div>
+  );
+}
+
+/* ── MultiSegmentDonut ───────────────────────────────────────── */
+function MultiSegmentDonut({ segments, centerLabel, isDark = true }: {
+  segments: Array<{ pct: number; color: string; label: string }>;
+  centerLabel: string;
+  isDark?: boolean;
+}) {
+  const r = 36, cx = 50, cy = 50;
   const circ = 2 * Math.PI * r;
-  const movieDash = circ * moviePct;
-  const tvDash = circ * (1 - moviePct);
   const [animated, setAnimated] = useState(false);
   useEffect(() => { const t = setTimeout(() => setAnimated(true), 200); return () => clearTimeout(t); }, []);
-
+  let acc = 0;
   return (
-    <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
-      <svg width={120} height={120} style={{ transform: 'rotate(-90deg)' }}>
-        {/* track */}
-        <circle cx={60} cy={60} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={14} />
-        {/* series arc */}
-        <circle
-          cx={60} cy={60} r={r} fill="none"
-          stroke="#a78bfa"
-          strokeWidth={14}
-          strokeDasharray={`${animated ? tvDash : 0} ${circ}`}
-          strokeDashoffset={0}
-          style={{ transition: 'stroke-dasharray 0.8s cubic-bezier(0.16,1,0.3,1)' }}
-        />
-        {/* movies arc */}
-        <circle
-          cx={60} cy={60} r={r} fill="none"
-          stroke="#60a5fa"
-          strokeWidth={14}
-          strokeDasharray={`${animated ? movieDash : 0} ${circ}`}
-          strokeDashoffset={`${animated ? -tvDash : 0}`}
-          style={{ transition: 'stroke-dasharray 0.8s cubic-bezier(0.16,1,0.3,1) 0.1s, stroke-dashoffset 0.8s cubic-bezier(0.16,1,0.3,1) 0.1s' }}
-        />
+    <div style={{ position: 'relative', width: 110, height: 110, flexShrink: 0 }}>
+      <svg width={110} height={110} viewBox="0 0 100 100">
+        <g style={{ transform: 'rotate(-90deg)', transformOrigin: '50px 50px' } as React.CSSProperties}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'} strokeWidth={10} />
+          {segments.map((seg, i) => {
+            const segLen = circ * seg.pct / 100;
+            const gapLen = segments.length > 1 ? 2 : 0;
+            const displayLen = animated ? Math.max(segLen - gapLen, 0) : 0;
+            const offset = circ - acc;
+            acc += segLen;
+            return (
+              <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+                stroke={seg.color} strokeWidth={10}
+                strokeDasharray={`${displayLen} ${circ}`}
+                strokeDashoffset={offset}
+                style={{ transition: `stroke-dasharray 0.7s cubic-bezier(0.16,1,0.3,1) ${i * 80}ms` }}
+              />
+            );
+          })}
+        </g>
       </svg>
-      {/* Centre label */}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <Txt size={20} weight={800} color={T.t1}>{total}</Txt>
-        <Txt size={9}  weight={600} color={T.t3}>títulos</Txt>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+        <Txt size={8} weight={700} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)'} style={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>GÊNERO Nº1</Txt>
+        <Txt size={10} weight={800} color={T.t1} style={{ textAlign: 'center', lineHeight: 1.2, marginTop: 2, maxWidth: 56 }}>{centerLabel}</Txt>
       </div>
     </div>
   );
 }
 
-/* ── Platform pill ──────────────────────────────────────────── */
-const STREAM_COLORS: Record<string, string> = {
-  Netflix: '#E50914', Prime: '#00A8E0', 'Disney+': '#113CCF',
-  HBO: '#5800A0', Apple: '#555', Globo: '#D62929', Paramount: '#0064FF',
+/* ── RatingDistribution ──────────────────────────────────────── */
+function RatingDistribution({ dist, isDark = true }: { dist: number[]; isDark?: boolean }) {
+  const max = Math.max(...dist, 1);
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAnimated(true), 250); return () => clearTimeout(t); }, []);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      {[5, 4, 3, 2, 1].map((star, i) => {
+        const count = dist[star - 1] ?? 0;
+        const pct = (count / max) * 100;
+        return (
+          <div key={star} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Txt size={11} weight={700} color={T.t2} style={{ width: 22, textAlign: 'right', flexShrink: 0 }}>{star}★</Txt>
+            <div style={{ flex: 1, height: 8, borderRadius: 4, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 4, background: 'linear-gradient(90deg, #FF6B2B, #f59e0b)', width: animated ? `${pct}%` : '0%', transition: `width 0.7s cubic-bezier(0.16,1,0.3,1) ${i * 60}ms` }} />
+            </div>
+            <Txt size={11} weight={600} color={T.t3} style={{ width: 18, flexShrink: 0 }}>{count}</Txt>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── MonthlyLineChart ────────────────────────────────────────── */
+function MonthlyLineChart({ data, isDark = true }: { data: Array<{ label: string; hours: number }>; isDark?: boolean }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+
+  if (data.length < 2) return (
+    <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Txt size={12} color={T.t3}>Assista mais para ver o histórico</Txt>
+    </div>
+  );
+
+  const W = 300, H = 90;
+  const PAD = { l: 26, r: 8, t: 18, b: 20 };
+  const cW = W - PAD.l - PAD.r;
+  const cH = H - PAD.t - PAD.b;
+
+  const rawMax = Math.max(...data.map(d => d.hours), 1);
+  const yMax   = Math.ceil(rawMax / 3) * 3 || 12;
+  const step   = yMax <= 6 ? 2 : yMax <= 12 ? 3 : Math.ceil(yMax / 4);
+  const yTicks: number[] = [];
+  for (let v = 0; v <= yMax; v += step) yTicks.push(v);
+  if (yTicks[yTicks.length - 1] !== yMax) yTicks.push(yMax);
+
+  const xOf = (i: number) => PAD.l + (i / (data.length - 1)) * cW;
+  const yOf = (h: number) => PAD.t + (1 - h / yMax) * cH;
+
+  const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xOf(i).toFixed(1)} ${yOf(d.hours).toFixed(1)}`).join(' ');
+  const areaD = `${pathD} L ${xOf(data.length - 1).toFixed(1)} ${(PAD.t + cH).toFixed(1)} L ${xOf(0).toFixed(1)} ${(PAD.t + cH).toFixed(1)} Z`;
+
+  const findClosest = (clientX: number) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const svgX = ((clientX - rect.left) / rect.width) * W;
+    let closest = 0, minDist = Infinity;
+    data.forEach((_, i) => {
+      const dist = Math.abs(xOf(i) - svgX);
+      if (dist < minDist) { minDist = dist; closest = i; }
+    });
+    setActiveIdx(closest);
+  };
+
+  const active = activeIdx !== null ? data[activeIdx] : null;
+  const ax = activeIdx !== null ? xOf(activeIdx) : 0;
+  const ay = activeIdx !== null ? yOf(data[activeIdx].hours) : 0;
+  const TIP_W = 80, TIP_H = 40;
+  const tipX = Math.min(Math.max(ax - TIP_W / 2, PAD.l), W - PAD.r - TIP_W);
+  const tipY = Math.max(ay - TIP_H - 10, 2);
+
+  return (
+    <svg
+      ref={svgRef}
+      width="100%"
+      viewBox={`0 0 ${W} ${H + 18}`}
+      style={{ display: 'block', cursor: 'crosshair', touchAction: 'none', userSelect: 'none' }}
+      onMouseMove={e => findClosest(e.clientX)}
+      onMouseLeave={() => setActiveIdx(null)}
+      onTouchStart={e => { e.preventDefault(); findClosest(e.touches[0].clientX); }}
+      onTouchMove={e => { e.preventDefault(); findClosest(e.touches[0].clientX); }}
+    >
+      <defs>
+        <linearGradient id="mlAreaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22c55e" stopOpacity={0.28} />
+          <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+
+      {/* Y grid + labels */}
+      {yTicks.map(v => {
+        const y = yOf(v);
+        return (
+          <g key={v}>
+            <line x1={PAD.l} y1={y} x2={W - PAD.r} y2={y} stroke={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'} strokeWidth={1} />
+            <text x={PAD.l - 4} y={y + 3.5} textAnchor="end" fill={isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.40)'} fontSize={7.5} fontFamily="'Area','Inter',sans-serif">{v}</text>
+          </g>
+        );
+      })}
+
+      {/* Area + line */}
+      <path d={areaD} fill="url(#mlAreaGrad)" />
+      <path d={pathD} fill="none" stroke="#22c55e" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* X labels */}
+      {data.map((d, i) => (
+        <text key={i} x={xOf(i)} y={H + 14} textAnchor="middle" fill={i === activeIdx ? (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.75)') : (isDark ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.40)')} fontSize={9} fontFamily="'Area','Inter',sans-serif" fontWeight={i === activeIdx ? 700 : 500}>{d.label}</text>
+      ))}
+
+      {/* Active indicator */}
+      {active && (
+        <g>
+          <line x1={ax} y1={PAD.t} x2={ax} y2={PAD.t + cH} stroke={isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.15)'} strokeWidth={1} strokeDasharray="3 3" />
+          <circle cx={ax} cy={ay} r={5} fill="#22c55e" stroke={isDark ? '#141416' : '#fff'} strokeWidth={2.5} />
+          <rect x={tipX} y={tipY} width={TIP_W} height={TIP_H} rx={8} fill={isDark ? 'rgba(14,14,16,0.96)' : 'rgba(250,250,252,0.96)'} stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'} strokeWidth={1} />
+          <text x={tipX + TIP_W / 2} y={tipY + 16} textAnchor="middle" fill={isDark ? '#ffffff' : '#111111'} fontSize={10} fontFamily="'Area','Inter',sans-serif" fontWeight={700}>{active.label}</text>
+          <text x={tipX + TIP_W / 2} y={tipY + 30} textAnchor="middle" fill="#22c55e" fontSize={10} fontFamily="'Area','Inter',sans-serif" fontWeight={700}>Horas: {active.hours}</text>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+/* ── Types ───────────────────────────────────────────────────── */
+type SplitStats = {
+  hoursTotal: number; minutesTotal: number;
+  watchedCount: number; watchingCount: number; wantCount: number;
+  genres: Array<{ g: string; pct: number; color: string }>;
+  platforms: string[];
+  reviewsCount: number; likesReceived: number;
+  marathons: Array<{ id: string; title: string; poster: string; eps: number }>;
+  totalEpisodes: number;
 };
 
-/* ── Main page ──────────────────────────────────────────────── */
+/* ── Main page ───────────────────────────────────────────────── */
 export default function StatsPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
+  const [tab, setTab]                 = useState<'series' | 'filmes'>('series');
   const [statsLoading, setStatsLoading] = useState(true);
-  const [realStats, setRealStats] = useState<{
-    totalHours: number;
-    totalMinutes: number;
-    moviesCount: number;
-    tvCount: number;
-    genres: Array<{ g: string; pct: number; color: string }>;
-    platforms: string[];
-    watchedCount: number;
-    watchingCount: number;
-    wantCount: number;
-  } | null>(null);
-  const [reviews, setReviews]  = useState(0);
-  const [favCount, setFavCount] = useState(0);
+  const [showNavTitle, setShowNavTitle] = useState(false);
+  const titleRef = useRef<HTMLDivElement>(null);
 
+  const [seriesStats, setSeriesStats] = useState<SplitStats | null>(null);
+  const [filmesStats, setFilmesStats] = useState<SplitStats | null>(null);
+  const [weekEpData,  setWeekEpData]  = useState<number[]>(Array(7).fill(0));
+  const [weekActData, setWeekActData] = useState<number[]>(Array(7).fill(0));
+  const [monthlyHoursData, setMonthlyHoursData] = useState<Array<{ label: string; hours: number }>>([]);
+  const [ratingDist, setRatingDist]   = useState<{ series: number[]; filmes: number[] }>({ series: [0,0,0,0,0], filmes: [0,0,0,0,0] });
+  const [avgSeriesRating, setAvgSeriesRating] = useState(0);
+  const [avgFilmRating,   setAvgFilmRating]   = useState(0);
+
+  /* ── Stats calculation ── */
   useEffect(() => {
     if (loading) return;
 
-    const watched   = listStore.get('watched');
-    const watching  = listStore.get('watching');
-    const want      = listStore.get('want');
-    const favs      = listStore.get('favorites');
+    const watched  = listStore.get('watched');
+    const watching = listStore.get('watching');
+    const want     = listStore.get('want');
+    const streams  = (prefsStore.get()?.streams ?? []).slice(0, 5);
 
-    setReviews(revStore.countAll());
-    setFavCount(favs.length);
+    const tvWatched    = watched.filter(w => w.type === 'tv');
+    const movieWatched = watched.filter(w => w.type === 'movie');
+    const tvWatching   = watching.filter(w => w.type === 'tv');
+    const mvWatching   = watching.filter(w => w.type === 'movie');
+    const tvWant       = want.filter(w => w.type === 'tv');
+    const mvWant       = want.filter(w => w.type === 'movie');
 
-    const allTracked = [...watched, ...watching];
+    const epAll = epWatchedStore.getAll();
+    const epCountMap: Record<string, number> = {};
+    let totalEpisodes = 0;
+    for (const [showId, seasons] of Object.entries(epAll)) {
+      const cnt = Object.values(seasons).reduce((s, eps) => s + eps.length, 0);
+      epCountMap[showId] = cnt;
+      totalEpisodes += cnt;
+    }
+
+    const marathons = tvWatched
+      .map(t => ({ id: String(t.id), title: t.title, poster: (t as any).poster || '', eps: epCountMap[String(t.id)] || 0 }))
+      .filter(m => m.eps > 0).sort((a,b) => b.eps - a.eps).slice(0, 5);
+
+    const profile = profileStore.get(user?.uid);
+    const myName  = profile.username || profile.name || '';
+    const myRevs  = myName ? revStore.getByUser(myName) : [];
+    const tvRevs  = myRevs.filter(r => r.itemKey?.startsWith('tv_'));
+    const mvRevs  = myRevs.filter(r => r.itemKey?.startsWith('movie_'));
+    const tvLikes = tvRevs.reduce((s, r) => s + (r.likes ?? 0), 0);
+    const mvLikes = mvRevs.reduce((s, r) => s + (r.likes ?? 0), 0);
+
+    const tvDist = [0,0,0,0,0]; const mvDist = [0,0,0,0,0];
+    tvRevs.forEach(r => { const s = Math.round((r as any).rating ?? 0); if (s >= 1 && s <= 5) tvDist[s-1]++; });
+    mvRevs.forEach(r => { const s = Math.round((r as any).rating ?? 0); if (s >= 1 && s <= 5) mvDist[s-1]++; });
+    setRatingDist({ series: tvDist, filmes: mvDist });
+
+    const tvAvg = tvRevs.length > 0 ? tvRevs.reduce((s,r) => s + ((r as any).rating ?? 0), 0) / tvRevs.length : 0;
+    const mvAvg = mvRevs.length > 0 ? mvRevs.reduce((s,r) => s + ((r as any).rating ?? 0), 0) / mvRevs.length : 0;
+    setAvgSeriesRating(Math.round(tvAvg * 10) / 10);
+    setAvgFilmRating(Math.round(mvAvg * 10) / 10);
+
+    const allTracked = [...tvWatched, ...tvWatching, ...movieWatched, ...mvWatching];
+    const tvWatchedIds  = new Set(tvWatched.map(w => w.id));
+    const mvWatchedIds  = new Set(movieWatched.map(w => w.id));
 
     if (allTracked.length === 0) {
-      setRealStats({
-        totalHours: 0, totalMinutes: 0,
-        moviesCount: 0, tvCount: 0,
-        genres: [], platforms: [],
-        watchedCount: 0, watchingCount: watching.length, wantCount: want.length,
-      });
+      const empty: SplitStats = { hoursTotal:0,minutesTotal:0,watchedCount:0,watchingCount:0,wantCount:0,genres:[],platforms:streams,reviewsCount:0,likesReceived:0,marathons:[],totalEpisodes:0 };
+      setSeriesStats({ ...empty, watchedCount:tvWatched.length, watchingCount:tvWatching.length, wantCount:tvWant.length, reviewsCount:tvRevs.length, likesReceived:tvLikes, marathons, totalEpisodes });
+      setFilmesStats({ ...empty, watchedCount:movieWatched.length, watchingCount:mvWatching.length, wantCount:mvWant.length, reviewsCount:mvRevs.length, likesReceived:mvLikes });
       setStatsLoading(false);
       return;
     }
 
-    // Fetch TMDB data for watched + watching (capped at 40)
-    const toFetch = allTracked.slice(0, 40);
-    const watchedIds = new Set(watched.map((w) => w.id));
+    Promise.all(allTracked.slice(0, 60).map(async item => {
+      try {
+        const res = await fetch(`/api/tmdb?endpoint=${item.type === 'movie' ? `/movie/${item.id}` : `/tv/${item.id}`}`);
+        return { data: await res.json(), item };
+      } catch { return null; }
+    })).then(results => {
+      let tvMins = 0; let mvMins = 0;
+      const tvGenre: Record<string,number> = {}; const mvGenre: Record<string,number> = {};
 
-    Promise.all(
-      toFetch.map(async (item) => {
-        try {
-          const ep = item.type === 'movie' ? `/movie/${item.id}` : `/tv/${item.id}`;
-          const res = await fetch(`/api/tmdb?endpoint=${ep}`);
-          return await res.json();
-        } catch { return null; }
-      })
-    ).then((results) => {
-      let totalMinutes = 0;
-      let moviesCount  = 0;
-      let tvCount      = 0;
-      const genreCount: Record<string, number> = {};
-
-      results.forEach((d, i) => {
-        if (!d) return;
-        const item     = toFetch[i];
-        const isWatched = watchedIds.has(item.id);
+      results.forEach(r => {
+        if (!r) return;
+        const { data: d, item } = r;
         (d.genres || []).forEach((g: { name: string }) => {
-          genreCount[g.name] = (genreCount[g.name] || 0) + 1;
+          if (item.type === 'tv') tvGenre[g.name] = (tvGenre[g.name] || 0) + 1;
+          else                    mvGenre[g.name] = (mvGenre[g.name] || 0) + 1;
         });
         if (item.type === 'movie') {
-          moviesCount++;
-          // Only count runtime for fully watched movies
-          if (isWatched) totalMinutes += d.runtime || 110;
+          if (mvWatchedIds.has(item.id)) mvMins += d.runtime || 110;
         } else {
-          tvCount++;
           const epRuntime = d.episode_run_time?.[0] || 45;
-          if (isWatched) {
-            // Finished: count estimated full seasons
-            totalMinutes += epRuntime * Math.min(d.number_of_episodes || 10, 24);
-          } else {
-            // Watching: count episodes aired in current/latest season as estimate
-            const lastSeason = (d.seasons || []).filter((s: { season_number: number; episode_count: number }) => s.season_number > 0).at(-1);
-            const epsWatched = lastSeason?.episode_count ?? Math.min(d.number_of_episodes || 6, 12);
-            totalMinutes += epRuntime * epsWatched;
-          }
+          if (tvWatchedIds.has(item.id)) tvMins += epRuntime * Math.min(d.number_of_episodes || 10, 24);
+          else { const last = (d.seasons||[]).filter((s:any)=>s.season_number>0).at(-1); tvMins += epRuntime*(last?.episode_count ?? Math.min(d.number_of_episodes||6,12)); }
         }
+        const idx = marathons.findIndex(m => m.id === String(item.id));
+        if (idx >= 0 && d.poster_path) marathons[idx].poster = `https://image.tmdb.org/t/p/w92${d.poster_path}`;
       });
 
-      const totalGenreCount = Math.max(Object.values(genreCount).reduce((a, b) => a + b, 0), 1);
-      const genres = Object.entries(genreCount)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 6)
-        .map(([name, count]) => ({
-          g: name,
-          pct: Math.round((count / totalGenreCount) * 100),
-          color: GENRE_COLORS[name] || '#6b7280',
-        }));
+      const toGenreList = (map: Record<string,number>) => {
+        const total = Math.max(Object.values(map).reduce((a,b)=>a+b,0), 1);
+        return Object.entries(map).sort(([,a],[,b])=>b-a).slice(0,5).map(([name,count]) => ({ g:name, pct:Math.round(count/total*100), color:GENRE_COLORS[name]||'#6b7280' }));
+      };
 
-      const userStreams = prefsStore.get()?.streams ?? [];
-      const platforms  = userStreams.slice(0, 5);
-
-      setRealStats({
-        totalHours: Math.round(totalMinutes / 60),
-        totalMinutes,
-        moviesCount, tvCount, genres, platforms,
-        watchedCount: watched.length, watchingCount: watching.length, wantCount: want.length,
-      });
+      setSeriesStats({ hoursTotal:Math.round(tvMins/60), minutesTotal:tvMins, watchedCount:tvWatched.length, watchingCount:tvWatching.length, wantCount:tvWant.length, genres:toGenreList(tvGenre), platforms:streams, reviewsCount:tvRevs.length, likesReceived:tvLikes, marathons, totalEpisodes });
+      setFilmesStats({ hoursTotal:Math.round(mvMins/60), minutesTotal:mvMins, watchedCount:movieWatched.length, watchingCount:mvWatching.length, wantCount:mvWant.length, genres:toGenreList(mvGenre), platforms:streams, reviewsCount:mvRevs.length, likesReceived:mvLikes, marathons:[], totalEpisodes:0 });
       setStatsLoading(false);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user]);
 
-  /* ── Skeleton ─── */
+  /* ── Firestore activity ── */
+  useEffect(() => {
+    if (loading || !user || !firebaseConfigured) return;
+    (async () => {
+      try {
+        const db   = getDB();
+        const acts = await dbActivityStore.getRecent(db, 500);
+        const mine = acts.filter(a => a.uid === user.uid);
+        const today = new Date();
+        const weekEp: number[]  = Array(7).fill(0);
+        const weekAct: number[] = Array(7).fill(0);
+        const months: Array<{ label: string; key: string; episodes: number }> = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+          months.push({ label: MONTH_SHORT[d.getMonth()], key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, episodes: 0 });
+        }
+        mine.forEach(a => {
+          if (!a.createdAt) return;
+          const d = new Date(a.createdAt);
+          const diff = Math.floor((today.getTime() - d.getTime()) / 86400000);
+          if (diff >= 0 && diff < 7) {
+            weekAct[6 - diff]++;
+            if (a.action === 'watched') weekEp[6 - diff]++;
+          }
+          if (a.action === 'watched') {
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            const m = months.find(m => m.key === key);
+            if (m) m.episodes++;
+          }
+        });
+        setWeekEpData(weekEp);
+        setWeekActData(weekAct);
+        setMonthlyHoursData(months.map(m => ({ label: m.label, hours: Math.round(m.episodes * 45 / 60) })));
+      } catch {}
+    })();
+  }, [loading, user]);
+
+  /* ── Nav title observer ── */
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => setShowNavTitle(!entry.isIntersecting), { rootMargin: '-56px 0px 0px 0px', threshold: 0 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [statsLoading]);
+
+  const btnStyle: React.CSSProperties = { width:34,height:34,borderRadius:17, background: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(0,0,0,0.12)', cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' };
+  const btnIcon = isDark ? '#fff' : 'rgba(0,0,0,0.70)';
+  const backBtn = (
+    <button onClick={() => router.back()} style={btnStyle}>
+      <Icon name="chevronL" size={16} color={btnIcon} />
+    </button>
+  );
+  const bellBtn = (
+    <button onClick={() => router.push('/notifications')} style={btnStyle}>
+      <Icon name="bell" size={16} color={btnIcon} />
+    </button>
+  );
+  const statLabelColor = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)';
+
   if (statsLoading) {
     return (
-      <Frame>
-        <Screen>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', padding: '52px 16px 12px', gap: 12, flexShrink: 0 }}>
-            <button
-              onClick={() => router.back()}
-              style={{
-                width: 36, height: 36, borderRadius: 18,
-                background: 'rgba(255,255,255,0.09)',
-                border: '1px solid rgba(255,255,255,0.14)',
-                backdropFilter: 'blur(24px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-                boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
-              } as React.CSSProperties}
-            >
-              <Icon name="chevronL" size={17} color={T.t1} />
-            </button>
-            <Txt size={20} weight={800} color={T.t1}>Estatísticas</Txt>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 20, border: `3px solid ${T.pink}`, borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+      <Frame><Screen>
+        <ScrollArea style={{ padding: '0 0 32px' }}>
+          <GlassHeader left={backBtn} right={bellBtn} navTitle="Estatísticas" showNavTitle={showNavTitle} />
+          <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,gap:12,minHeight:300 }}>
+            <div style={{ width:40,height:40,borderRadius:20,border:`3px solid ${T.pink}`,borderTopColor:'transparent',animation:'spin 0.8s linear infinite' }} />
             <Txt size={13} color={T.t3}>Calculando suas estatísticas...</Txt>
           </div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </Screen>
-      </Frame>
+        </ScrollArea>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </Screen></Frame>
     );
   }
 
-  const days  = realStats ? Math.round((realStats.totalMinutes || 0) / 1440) : 0;
-  const hours = realStats?.totalHours ?? 0;
-  const mins  = realStats ? Math.round((realStats.totalMinutes || 0) % 60) : 0;
+  const active   = tab === 'series' ? seriesStats : filmesStats;
+  const tp       = timeParts(active?.minutesTotal ?? 0);
+  const avgRating = tab === 'series' ? avgSeriesRating : avgFilmRating;
+  const activeRatingDist = tab === 'series' ? ratingDist.series : ratingDist.filmes;
+  const activeGenres = (active?.genres ?? []).slice(0, 5);
+  const donutTotal = activeGenres.reduce((s,g) => s + g.pct, 0);
+  const donutSegments = donutTotal > 0
+    ? activeGenres.map((g, i) => ({ pct: Math.round(g.pct / donutTotal * 100), color: DONUT_COLORS[i] ?? '#6b7280', label: g.g }))
+    : [];
+  const topGenre = activeGenres[0]?.g ?? '—';
+
+  const avgRuntime = (seriesStats?.totalEpisodes ?? 0) > 0
+    ? Math.round((seriesStats!.minutesTotal / seriesStats!.totalEpisodes) * 10) / 10
+    : 45;
+  const weekHoursData = weekEpData.map(ep => Math.round(ep * avgRuntime / 60 * 10) / 10);
+  const hours7d = Math.round(weekEpData.reduce((s,v) => s+v, 0) * avgRuntime / 60);
+  const eps7d   = weekEpData.reduce((s,v) => s+v, 0);
+  const dateLabels = last7DateLabels();
+
+  const LBL: React.CSSProperties  = { display: 'block', textTransform: 'uppercase', letterSpacing: 1.1, marginBottom: 12 } as React.CSSProperties;
 
   return (
     <Frame>
       <Screen style={{ background: T.bg }}>
-
-        {/* ── Header ── */}
-        <div style={{
-          display: 'flex', alignItems: 'center', padding: '52px 16px 12px', gap: 12, flexShrink: 0,
-          borderBottom: `1px solid ${T.border}`,
-        }}>
-          <button
-            onClick={() => router.back()}
-            style={{
-              width: 36, height: 36, borderRadius: 18,
-              background: 'rgba(255,255,255,0.09)',
-              border: '1px solid rgba(255,255,255,0.14)',
-              backdropFilter: 'blur(24px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-              boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
-            } as React.CSSProperties}
-          >
-            <Icon name="chevronL" size={17} color={T.t1} />
-          </button>
-          <div style={{ flex: 1 }}>
-            <Txt size={20} weight={800} color={T.t1}>Estatísticas</Txt>
-          </div>
-        </div>
-
         <ScrollArea style={{ padding: '0 0 32px' }}>
+          <GlassHeader left={backBtn} right={bellBtn} navTitle="Estatísticas" showNavTitle={showNavTitle} />
 
-          {/* ── Hero: time spent ── */}
-          <div style={{
-            margin: '16px 16px 0', padding: '20px 20px 22px',
-            background: 'linear-gradient(135deg, #1a0d2e 0%, #0d1a2e 100%)',
-            borderRadius: 20, overflow: 'hidden', position: 'relative',
-          }}>
-            {/* Glow */}
-            <div style={{ position: 'absolute', top: -30, right: -30, width: 120, height: 120, borderRadius: 60, background: 'rgba(192,105,255,0.15)', filter: 'blur(30px)', pointerEvents: 'none' }} />
-            <div style={{ position: 'absolute', bottom: -20, left: -20, width: 100, height: 100, borderRadius: 50, background: 'rgba(96,165,250,0.10)', filter: 'blur(24px)', pointerEvents: 'none' }} />
-
-            <Txt size={11} weight={700} color="rgba(255,255,255,0.40)" style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Tempo total assistido
-            </Txt>
-
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginBottom: 4 }}>
-              <Txt size={48} weight={900} color={T.white} style={{ lineHeight: 1 }}>{hours}</Txt>
-              <Txt size={18} weight={600} color="rgba(255,255,255,0.50)" style={{ paddingBottom: 6 }}>h {mins}min</Txt>
-            </div>
-
-            <Txt size={12} color="rgba(255,255,255,0.40)">
-              {days > 0
-                ? `Equivalente a ${days} dia${days !== 1 ? 's' : ''} completo${days !== 1 ? 's' : ''} · inclui séries em andamento`
-                : 'Adicione títulos assistidos para ver seu tempo'}
-            </Txt>
+          <div ref={titleRef} style={{ padding: '20px 16px 4px' }}>
+            <Txt size={22} weight={900} color={T.t1} style={{ display:'block', letterSpacing:'-0.4px' }}>Estatísticas</Txt>
           </div>
 
-          {/* ── 4-tile grid: key numbers ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '10px 16px 0' }}>
+          {/* ── Tabs ── */}
+          <div style={{ display:'flex', gap:8, margin:'12px 16px 0' }}>
+            {([{ id:'series', label:'Séries' },{ id:'filmes', label:'Filmes' }] as const).map(({ id, label }) => (
+              <button key={id} onClick={() => setTab(id)} style={{ padding:'8px 20px', borderRadius:24, background: tab===id ? T.pink : 'transparent', border: tab===id ? 'none' : `1px solid ${T.border}`, color: tab===id ? '#fff' : T.t2, fontSize:14, fontWeight: tab===id ? 800 : 600, fontFamily:"'Area','Inter',sans-serif", cursor:'pointer', transition:'all 0.2s' } as React.CSSProperties}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── 1. Tempo gasto ── */}
+          <StatCard>
+            <Txt size={10} weight={700} color={statLabelColor} style={LBL}>
+              Tempo gasto assistindo {tab === 'series' ? 'episódios' : 'filmes'}
+            </Txt>
+            <div style={{ display:'flex', alignItems:'flex-end', gap:12, marginBottom: 6 }}>
+              <div style={{ display:'flex', alignItems:'flex-end', gap:3 }}>
+                <Txt size={36} weight={900} color={T.white} style={{ lineHeight:1 }}>{tp.months}</Txt>
+                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>meses</Txt>
+              </div>
+              <div style={{ display:'flex', alignItems:'flex-end', gap:3 }}>
+                <Txt size={36} weight={900} color={T.white} style={{ lineHeight:1 }}>{tp.days}</Txt>
+                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>dias</Txt>
+              </div>
+              <div style={{ display:'flex', alignItems:'flex-end', gap:3 }}>
+                <Txt size={36} weight={900} color={T.white} style={{ lineHeight:1 }}>{tp.hours}</Txt>
+                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>horas</Txt>
+              </div>
+            </div>
+            {tab === 'series' && hours7d > 0 && (
+              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1, display:'block', marginBottom:14 }}>
+                {hours7d} horas nos últimos 7 dias
+              </Txt>
+            )}
+            {tab === 'series' && (
+              <DayBarChart data={weekHoursData} labels={dateLabels} unit="horas" barColor="#22c55e" todayColor={T.pink} isDark={isDark} />
+            )}
+            {tab === 'filmes' && (active?.minutesTotal ?? 0) === 0 && (
+              <Txt size={12} color="rgba(255,255,255,0.28)">Adicione filmes assistidos para ver seu tempo</Txt>
+            )}
+          </StatCard>
+
+          {/* ── 2. Total de episódios (séries) ── */}
+          {tab === 'series' && (
+            <StatCard>
+              <Txt size={10} weight={700} color={statLabelColor} style={LBL}>
+                Total de episódios assistidos
+              </Txt>
+              <Txt size={52} weight={900} color={T.white} style={{ display:'block', lineHeight:1, marginBottom:6 }}>
+                {active?.totalEpisodes ?? 0}
+              </Txt>
+              {eps7d > 0 && (
+                <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1, display:'block', marginBottom:14 }}>
+                  {eps7d} nos últimos 7 dias
+                </Txt>
+              )}
+              <DayBarChart data={weekEpData} labels={dateLabels} unit="episódios" barColor="#a78bfa" todayColor={T.pink} isDark={isDark} />
+            </StatCard>
+          )}
+
+          {/* ── 3. Mini stats row ── */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, margin:'10px 16px 0' }}>
             {[
-              { value: realStats?.watchedCount ?? 0, label: 'Títulos assistidos', color: T.pink,   icon: 'check' as const },
-              { value: realStats?.watchingCount ?? 0, label: 'Assistindo agora',   color: '#60a5fa', icon: 'play' as const  },
-              { value: reviews,                        label: 'Avaliações',          color: '#F5C518', icon: 'star' as const  },
-              { value: favCount,                       label: 'Favoritos',           color: '#FF6B2B', icon: 'heart' as const },
-            ].map(({ value, label, color, icon }) => (
-              <div key={label} style={{ padding: '16px', background: T.card, borderRadius: 16, border: `1px solid ${T.border}` }}>
-                <div style={{ width: 30, height: 30, borderRadius: 9, background: `${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-                  <Icon name={icon} size={15} color={color} />
-                </div>
-                <Txt size={26} weight={900} color={T.t1} style={{ display: 'block', lineHeight: 1, marginBottom: 2 }}>{value}</Txt>
-                <Txt size={11} weight={500} color={T.t3}>{label}</Txt>
+              { value: active?.watchedCount ?? 0, label: tab === 'series' ? 'SÉRIES VISTAS' : 'FILMES VISTOS' },
+              { value: active?.reviewsCount ?? 0, label: 'AVALIAÇÕES' },
+              { value: avgRating > 0 ? avgRating : '—', label: 'MÉDIA ★' },
+            ].map((s, i) => (
+              <div key={i} style={{ background: isDark ? '#141416' : 'var(--c-card)', borderRadius: 16, border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid var(--c-border)', padding: '14px 10px', textAlign:'center', position:'relative', overflow:'hidden' }}>
+                <div style={{ position:'absolute', inset:0, backgroundImage:`radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.04)'} 1px, transparent 1px)`, backgroundSize:'18px 18px', pointerEvents:'none' }} />
+                <Txt size={22} weight={900} color={T.t1} style={{ display:'block', lineHeight:1, position:'relative' }}>{s.value}</Txt>
+                <Txt size={8} weight={700} color={statLabelColor} style={{ display:'block', textTransform:'uppercase', letterSpacing:0.8, marginTop:6, position:'relative' }}>{s.label}</Txt>
               </div>
             ))}
           </div>
 
-          {/* ── Filmes vs Séries donut ── */}
-          <div style={{ margin: '16px 16px 0', padding: 20, background: T.card, borderRadius: 20, border: `1px solid ${T.border}` }}>
-            <Txt size={14} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 16 }}>Filmes vs Séries</Txt>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-              <DonutChart moviesCount={realStats?.moviesCount ?? 0} tvCount={realStats?.tvCount ?? 0} />
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Filmes */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 5, background: '#60a5fa', flexShrink: 0 }} />
-                    <Txt size={12} weight={600} color={T.t2}>Filmes</Txt>
-                    <Txt size={12} weight={700} color="#60a5fa" style={{ marginLeft: 'auto' }}>
-                      {realStats?.moviesCount ?? 0}
-                    </Txt>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-                    <AnimatedBar pct={realStats && (realStats.moviesCount + realStats.tvCount) > 0 ? Math.round((realStats.moviesCount / (realStats.moviesCount + realStats.tvCount)) * 100) : 0} color="#60a5fa" delay={0} />
-                  </div>
-                </div>
-                {/* Séries */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 5, background: '#a78bfa', flexShrink: 0 }} />
-                    <Txt size={12} weight={600} color={T.t2}>Séries</Txt>
-                    <Txt size={12} weight={700} color="#a78bfa" style={{ marginLeft: 'auto' }}>
-                      {realStats?.tvCount ?? 0}
-                    </Txt>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-                    <AnimatedBar pct={realStats && (realStats.moviesCount + realStats.tvCount) > 0 ? Math.round((realStats.tvCount / (realStats.moviesCount + realStats.tvCount)) * 100) : 0} color="#a78bfa" delay={80} />
-                  </div>
+          {/* ── 4. Gêneros prediletos ── */}
+          {activeGenres.length > 0 && (
+            <StatCard>
+              <Txt size={10} weight={700} color={statLabelColor} style={LBL}>Gêneros prediletos (top 5)</Txt>
+              <div style={{ display:'flex', gap:16, alignItems:'center' }}>
+                <MultiSegmentDonut segments={donutSegments} centerLabel={topGenre} isDark={isDark} />
+                <div style={{ flex:1, display:'flex', flexDirection:'column', gap:8 }}>
+                  {donutSegments.map((seg, i) => (
+                    <div key={i} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <div style={{ width:8, height:8, borderRadius:4, background:seg.color, flexShrink:0 }} />
+                      <Txt size={11} weight={600} color={T.t2} style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{seg.label}</Txt>
+                      <Txt size={11} weight={700} color={seg.color}>{seg.pct}%</Txt>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* ── Gêneros favoritos ── */}
-          {(realStats?.genres ?? []).length > 0 && (
-            <div style={{ margin: '16px 16px 0', padding: 20, background: T.card, borderRadius: 20, border: `1px solid ${T.border}` }}>
-              <Txt size={14} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 16 }}>Gêneros favoritos</Txt>
-              {(realStats?.genres ?? []).map(({ g, pct, color }, i) => (
-                <GenreBar key={g} label={g} pct={pct} color={color} delay={i * 80} />
-              ))}
-            </div>
+            </StatCard>
           )}
 
-          {/* ── Plataformas ── */}
-          {(realStats?.platforms ?? []).length > 0 && (
-            <div style={{ margin: '16px 16px 0', padding: 20, background: T.card, borderRadius: 20, border: `1px solid ${T.border}` }}>
-              <Txt size={14} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 14 }}>Plataformas</Txt>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {(realStats?.platforms ?? []).map((s) => (
-                  <div key={s} style={{
-                    padding: '8px 16px', borderRadius: 20,
-                    background: STREAM_COLORS[s] ? `${STREAM_COLORS[s]}22` : 'rgba(255,255,255,0.07)',
-                    border: `1px solid ${STREAM_COLORS[s] ? `${STREAM_COLORS[s]}44` : T.border}`,
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 4, background: STREAM_COLORS[s] || T.t3 }} />
-                    <Txt size={13} weight={600} color={T.t1}>{s}</Txt>
-                  </div>
-                ))}
-              </div>
+          {/* ── 5. Distribuição de avaliações ── */}
+          <StatCard>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
+              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1.1 }}>Distribuição de avaliações</Txt>
             </div>
-          )}
+            <RatingDistribution dist={activeRatingDist} isDark={isDark} />
+          </StatCard>
 
-          {/* ── Lista: quero ver ── */}
-          <div style={{ margin: '16px 16px 0', padding: 20, background: T.card, borderRadius: 20, border: `1px solid ${T.border}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(245,197,24,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="star" size={14} color={T.gold} />
-                </div>
-                <div>
-                  <Txt size={14} weight={700} color={T.t1} style={{ display: 'block' }}>Quero ver</Txt>
-                  <Txt size={11} color={T.t3}>Na fila</Txt>
-                </div>
-              </div>
-              <Txt size={28} weight={900} color={T.gold}>{realStats?.wantCount ?? 0}</Txt>
+          {/* ── 6. Histórico de consumo ── */}
+          <StatCard>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
+              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1.1 }}>Histórico de consumo (horas)</Txt>
             </div>
-
-            {/* Mini progress bar: watched vs want */}
-            {((realStats?.watchedCount ?? 0) + (realStats?.wantCount ?? 0)) > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <Txt size={10} weight={600} color={T.t3}>Assistidos</Txt>
-                  <Txt size={10} weight={600} color={T.t3}>Na fila</Txt>
-                </div>
-                <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden', display: 'flex' }}>
-                  <AnimatedBar
-                    pct={Math.round(((realStats?.watchedCount ?? 0) / ((realStats?.watchedCount ?? 0) + (realStats?.wantCount ?? 0))) * 100)}
-                    color={T.pink} delay={200}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── Empty state if no data ── */}
-          {(realStats?.watchedCount ?? 0) === 0 && (
-            <div style={{ margin: '24px 16px 0', padding: '32px 20px', background: T.card, borderRadius: 20, border: `1px solid ${T.border}`, textAlign: 'center' }}>
-              <div style={{ width: 52, height: 52, borderRadius: 26, background: 'rgba(192,105,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                <Icon name="play" size={24} color={T.pink} />
-              </div>
-              <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginBottom: 6 }}>Nenhum título assistido</Txt>
-              <Txt size={12} color={T.t3} style={{ display: 'block' }}>
-                Marque títulos como assistidos e suas estatísticas aparecerão aqui.
-              </Txt>
-            </div>
-          )}
+            <MonthlyLineChart data={monthlyHoursData} isDark={isDark} />
+          </StatCard>
 
           <div style={{ height: 32 }} />
         </ScrollArea>
       </Screen>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </Frame>
-  );
-}
-
-/* ── Thin animated bar (inline, re-usable) ──────────────────── */
-function AnimatedBar({ pct, color, delay = 0 }: { pct: number; color: string; delay?: number }) {
-  const [w, setW] = useState(0);
-  useEffect(() => { const t = setTimeout(() => setW(pct), 150 + delay); return () => clearTimeout(t); }, [pct, delay]);
-  return (
-    <div style={{
-      height: '100%', borderRadius: 3,
-      background: color,
-      width: `${w}%`,
-      transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)',
-    }} />
   );
 }

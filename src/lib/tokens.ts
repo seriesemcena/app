@@ -36,9 +36,9 @@ export const T = {
   pinkGlow: 'rgba(192,105,255,0.35)',
 
   /* radii (numeric, not colours) */
-  radius:   16,
-  radiusSm: 10,
-  radiusXs: 6,
+  radius:   22,
+  radiusSm: 14,
+  radiusXs: 9,
 } as const;
 
 export type IconName =
