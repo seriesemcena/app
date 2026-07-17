@@ -78,7 +78,7 @@
 
 /* ── CSS custom properties — dark theme (default) ── */
 :root {
-  --tab-h: 90px;   /* altura reservada para a pill TabBar */
+  --tab-h: calc(84px + env(safe-area-inset-bottom, 0px));   /* altura real do TabBar: 8px top + 64px pill + 12px bottom + safe-area */
   --c-bg:        #0D0D0F;
   --c-card:      #222228;
   --c-card-deep: #16161A;
@@ -151,7 +151,6 @@ button:focus, input:focus, textarea:focus { outline: none; }
   flex-direction: column;
   overflow: hidden;
   width: 100%;
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Desktop/tablet (≥ 768px): sidebar layout — no phone frame */
