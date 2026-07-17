@@ -6,6 +6,7 @@ import { Screen, ScrollArea, GlassHeader, Txt, Toast } from '@/components/primit
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { notifInboxStore, listStore, type InboxNotif } from '@/lib/store';
+import { useAuth } from '@/hooks/useAuth';
 
 /* ── Icon map per notification type ── */
 const TYPE_ICON: Record<InboxNotif['type'], string> = {
@@ -25,9 +26,9 @@ const TYPE_COLOR: Record<InboxNotif['type'], string> = {
   general:     T.t3,
 };
 
-/* ── Seed sample notifications from the user's watchlist (runs once) ── */
-function seedIfEmpty() {
-  const existing = notifInboxStore.get();
+/* ── Seed sample notifications for a specific user (runs once per account) ── */
+function seedIfEmpty(uid: string) {
+  const existing = notifInboxStore.get(uid);
   if (existing.length > 0) return;
 
   const watching = listStore.get('watching');
@@ -69,7 +70,7 @@ function seedIfEmpty() {
     read: false,
   });
 
-  seeds.forEach(n => notifInboxStore.add(n));
+  seeds.forEach(n => notifInboxStore.add(n, uid));
 }
 
 /* ── Group notifications by day label ── */
@@ -106,25 +107,36 @@ function timeAgo(iso: string): string {
 
 export default function NotificationsPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+  const uid = user?.uid ?? null;
+
   const [notifs, setNotifs]   = useState<InboxNotif[]>([]);
   const [toast, setToast]     = useState<string | false>(false);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2000); };
 
+  // Only load (or clear) notifications once auth state is confirmed.
+  // The effect re-runs whenever the authenticated uid changes so switching
+  // accounts always starts with a clean slate for the incoming account.
   useEffect(() => {
-    seedIfEmpty();
-    setNotifs(notifInboxStore.get());
-  }, []);
+    if (loading) return;          // auth not resolved yet — show nothing
+    if (!uid) {                   // logged out → clear immediately
+      setNotifs([]);
+      return;
+    }
+    seedIfEmpty(uid);
+    setNotifs(notifInboxStore.get(uid));
+  }, [uid, loading]);
 
   const markAll = () => {
-    notifInboxStore.markAllRead();
-    setNotifs(notifInboxStore.get());
+    notifInboxStore.markAllRead(uid);
+    setNotifs(notifInboxStore.get(uid));
     showToast('Tudo marcado como lido');
   };
 
   const markOne = (id: string) => {
-    notifInboxStore.markRead(id);
-    setNotifs(notifInboxStore.get());
+    notifInboxStore.markRead(id, uid);
+    setNotifs(notifInboxStore.get(uid));
   };
 
   const unread = notifs.filter(n => !n.read).length;

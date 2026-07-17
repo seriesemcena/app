@@ -6,6 +6,7 @@
 import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/context/AuthContext';
 import { firebaseConfigured, getFirebaseAuth } from '@/lib/firebase';
+import { notifInboxStore } from '@/lib/store';
 
 export function useAuth() {
   const { user, loading, offline } = useAuthContext();
@@ -61,8 +62,10 @@ export function useAuth() {
   const signOut = async () => {
     if (!firebaseConfigured) return;
     const { signOut: fbSignOut } = await import('firebase/auth');
-    // Clear legacy unscoped profile key so the next user starts clean
+    // Clear legacy unscoped keys so the next user starts with a clean slate
     try { localStorage.removeItem('sec_profile_v1'); } catch {}
+    // Remove the old global notification key that caused cross-account bleed
+    notifInboxStore.clearLegacy();
     await fbSignOut(getFirebaseAuth());
     router.push('/auth');
   };

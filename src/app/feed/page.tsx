@@ -130,7 +130,9 @@ export default function FeedPage() {
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setUnreadNotifs(notifInboxStore.unreadCount()); }, []);
+  useEffect(() => {
+    setUnreadNotifs(user ? notifInboxStore.unreadCount(user.uid) : 0);
+  }, [user]);
 
   /* ── Only reviews/comments from Firestore ── */
   useEffect(() => {

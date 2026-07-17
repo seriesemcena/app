@@ -268,49 +268,65 @@ export type InboxNotif = {
   link?: string;   // optional route to open on tap
 };
 
-const INBOX_KEY = 'sec_notif_inbox_v1';
+// Per-user key: sec_notif_inbox_v1_<uid>
+// When uid is absent the key resolves to 'sec_notif_inbox_v1_' which
+// contains no data — unauthenticated callers always see an empty inbox.
+const inboxKey = (uid?: string | null) => `sec_notif_inbox_v1_${uid ?? ''}`;
+
+// Legacy unscoped key written by the old code — kept only for cleanup.
+const INBOX_KEY_LEGACY = 'sec_notif_inbox_v1';
+
 const INBOX_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
+function readInbox(uid?: string | null): InboxNotif[] {
+  if (typeof window === 'undefined') return [];
+  const key = inboxKey(uid);
+  try {
+    const all: InboxNotif[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const now = Date.now();
+    const filtered = all.filter(n => now - new Date(n.time).getTime() < INBOX_TTL);
+    if (filtered.length !== all.length) localStorage.setItem(key, JSON.stringify(filtered));
+    return filtered.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  } catch { return []; }
+}
+
 export const notifInboxStore = {
-  get(): InboxNotif[] {
-    if (typeof window === 'undefined') return [];
-    try {
-      const all: InboxNotif[] = JSON.parse(localStorage.getItem(INBOX_KEY) || '[]');
-      const now = Date.now();
-      const filtered = all.filter(n => now - new Date(n.time).getTime() < INBOX_TTL);
-      if (filtered.length !== all.length) {
-        localStorage.setItem(INBOX_KEY, JSON.stringify(filtered));
-      }
-      return filtered.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    } catch { return []; }
-  },
-  add(n: InboxNotif) {
+  get(uid?: string | null): InboxNotif[] { return readInbox(uid); },
+  add(n: InboxNotif, uid?: string | null) {
     if (typeof window === 'undefined') return;
+    const key = inboxKey(uid);
     try {
-      const all: InboxNotif[] = JSON.parse(localStorage.getItem(INBOX_KEY) || '[]');
+      const all: InboxNotif[] = JSON.parse(localStorage.getItem(key) || '[]');
       all.unshift(n);
-      localStorage.setItem(INBOX_KEY, JSON.stringify(all));
+      localStorage.setItem(key, JSON.stringify(all));
     } catch {}
   },
-  markRead(id: string) {
+  markRead(id: string, uid?: string | null) {
     if (typeof window === 'undefined') return;
+    const key = inboxKey(uid);
     try {
-      const all = notifInboxStore.get().map(n => n.id === id ? { ...n, read: true } : n);
-      localStorage.setItem(INBOX_KEY, JSON.stringify(all));
+      const all = readInbox(uid).map(n => n.id === id ? { ...n, read: true } : n);
+      localStorage.setItem(key, JSON.stringify(all));
     } catch {}
   },
-  markAllRead() {
+  markAllRead(uid?: string | null) {
     if (typeof window === 'undefined') return;
+    const key = inboxKey(uid);
     try {
-      const all = notifInboxStore.get().map(n => ({ ...n, read: true }));
-      localStorage.setItem(INBOX_KEY, JSON.stringify(all));
+      const all = readInbox(uid).map(n => ({ ...n, read: true }));
+      localStorage.setItem(key, JSON.stringify(all));
     } catch {}
   },
-  unreadCount(): number {
-    return notifInboxStore.get().filter(n => !n.read).length;
+  unreadCount(uid?: string | null): number {
+    return readInbox(uid).filter(n => !n.read).length;
   },
-  clear() {
+  clear(uid?: string | null) {
     if (typeof window === 'undefined') return;
-    try { localStorage.removeItem(INBOX_KEY); } catch {}
+    try { localStorage.removeItem(inboxKey(uid)); } catch {}
+  },
+  /** Remove the unscoped legacy key that caused cross-account bleed. */
+  clearLegacy() {
+    if (typeof window === 'undefined') return;
+    try { localStorage.removeItem(INBOX_KEY_LEGACY); } catch {}
   },
 };
