@@ -9,7 +9,7 @@ import { ImgWithSkeleton } from '@/components/posters';
 import { listStore, revStore, profileStore, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, getUserByUsername } from '@/lib/db';
 
 const COLLAGE_SLOTS: Array<{ left?: number; right?: number; top: number; rotate: number; width: number }> = [
   { left:  -18, top:  8,  rotate: -20, width: 115 },
@@ -39,45 +39,98 @@ function UserProfileInner() {
   const [followersCount, setFollowersCount] = useState(0);
   const [followingNames, setFollowingNames] = useState<string[]>([]);
 
+  /* ── Target user (when !isMe) ── */
+  const [targetUid,     setTargetUid]     = useState<string | null>(null);
+  const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
+
   const favoritos    = useMemo(() => isMe ? listStore.get('favorites') : [], [isMe]);
   const watchingList = useMemo(() => isMe ? listStore.get('watching')  : [], [isMe]);
   const wantList     = useMemo(() => isMe ? listStore.get('want')      : [], [isMe]);
   const watchedList  = useMemo(() => isMe ? listStore.get('watched')   : [], [isMe]);
 
+  /* Sync own following list from localStorage (updated by subscribeUserDoc) */
   useEffect(() => {
+    if (!isMe) return;
     try {
       const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-      if (isMe) {
-        setFollowingNames(list);
-      } else {
-        setIsFollowing(list.includes(username));
-        const count = Number(localStorage.getItem(`sec_followers_${username}`) || '0');
-        setFollowersCount(count);
-      }
+      setFollowingNames(list);
     } catch {}
-  }, [username, isMe]);
+  }, [isMe]);
+
+  /* Load target user profile + isFollowing state from Firestore */
+  useEffect(() => {
+    if (isMe || loading) return;
+
+    // Optimistic read from localStorage first
+    try {
+      const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
+      setIsFollowing(list.includes(username));
+    } catch {}
+
+    if (!firebaseConfigured) return;
+    const db = getDB();
+
+    // Load the target user's full profile (gives us their UID for bidirectional writes)
+    getUserByUsername(db, username).then(result => {
+      if (!result) return;
+      setTargetUid(result.uid);
+      setTargetProfile(result.profile);
+      setFollowersCount(result.profile.followers ?? 0);
+    });
+
+    // Confirm isFollowing from Firestore (authoritative after login)
+    if (user) {
+      dbFollowStore.get(db, user.uid).then(list => {
+        setIsFollowing(list.includes(username));
+        try { localStorage.setItem('sec_following', JSON.stringify(list)); } catch {}
+      });
+    }
+  }, [username, isMe, user, loading]);
 
   const toggleFollow = async () => {
+    const wasFollowing  = isFollowing;
+    const prevCount     = followersCount;
+    const nextCount     = wasFollowing ? Math.max(0, prevCount - 1) : prevCount + 1;
+
+    // Optimistic update
+    setIsFollowing(!wasFollowing);
+    setFollowersCount(nextCount);
     try {
-      const following: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-      let updated: string[];
-      if (isFollowing) {
-        updated = following.filter(u => u !== username);
-        const next = Math.max(0, followersCount - 1);
-        localStorage.setItem(`sec_followers_${username}`, String(next));
-        setFollowersCount(next);
-      } else {
-        updated = [...following, username];
-        const next = followersCount + 1;
-        localStorage.setItem(`sec_followers_${username}`, String(next));
-        setFollowersCount(next);
-      }
+      const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
+      const updated = wasFollowing ? list.filter(u => u !== username) : [...list, username];
       localStorage.setItem('sec_following', JSON.stringify(updated));
-      setIsFollowing(f => !f);
-      if (firebaseConfigured && user) {
-        try { await dbFollowStore.set(getDB(), user.uid, updated); } catch {}
-      }
     } catch {}
+
+    if (!firebaseConfigured || !user) return;
+
+    try {
+      const db = getDB();
+      if (wasFollowing) {
+        const uid = targetUid ?? (await getUserByUsername(db, username))?.uid ?? null;
+        if (uid) await dbFollowStore.unfollow(db, user.uid, username, uid);
+        else await dbFollowStore.set(db, user.uid, (await dbFollowStore.get(db, user.uid)).filter(u => u !== username));
+      } else {
+        const uid = targetUid ?? (await getUserByUsername(db, username))?.uid ?? null;
+        if (uid) {
+          setTargetUid(uid);
+          await dbFollowStore.follow(db, user.uid, username, uid);
+        } else {
+          // target not found in Firestore — update own list only
+          const current = await dbFollowStore.get(db, user.uid);
+          await dbFollowStore.set(db, user.uid, [...current, username]);
+        }
+      }
+    } catch (err) {
+      console.error('[Follow] Error:', err);
+      // Rollback
+      setIsFollowing(wasFollowing);
+      setFollowersCount(prevCount);
+      try {
+        const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
+        const restored = wasFollowing ? [...list, username] : list.filter(u => u !== username);
+        localStorage.setItem('sec_following', JSON.stringify(restored));
+      } catch {}
+    }
   };
 
   useEffect(() => {
@@ -131,12 +184,13 @@ function UserProfileInner() {
     );
   }
 
-  const displayName     = isMe ? (profile?.name || username) : username;
-  const displayUsername = isMe ? (profile?.username || username) : username;
-  const displayAvatar   = isMe && profile?.avatarImage ? profile.avatarImage : '';
-  const displayGradient = isMe && profile?.avatarGradient ? profile.avatarGradient : `linear-gradient(135deg,${T.pink},#8B2FFF)`;
-  const bio             = isMe ? (profile?.bio || '') : '';
-  const followingCount  = isMe ? followingNames.length : 0;
+  const activeProfile   = isMe ? profile : targetProfile;
+  const displayName     = activeProfile?.name || username;
+  const displayUsername = activeProfile?.username || username;
+  const displayAvatar   = activeProfile?.avatarImage || '';
+  const displayGradient = activeProfile?.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`;
+  const bio             = activeProfile?.bio || '';
+  const followingCount  = isMe ? followingNames.length : (targetProfile?.following ?? 0);
   const followersVal    = isMe ? (profile?.followers ?? 0) : followersCount;
   const topPct          = isMe && stats.watched > 0 ? Math.max(1, Math.round(100 / (stats.watched + 1))) : null;
 

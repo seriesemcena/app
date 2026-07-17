@@ -11,7 +11,7 @@
      config/slider          — { items: SliderItem[] }
    ───────────────────────────────────────────────────────────── */
 import {
-  doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove,
+  doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, increment,
   collection, addDoc, getDocs, deleteDoc, query, orderBy, limit, onSnapshot, where,
   type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
@@ -98,6 +98,20 @@ export async function searchUsers(db: Firestore, q: string): Promise<UserSearchR
     }
     return byUsername;
   } catch { return []; }
+}
+
+export async function getUserByUsername(db: Firestore, username: string): Promise<{ uid: string; profile: Profile } | null> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'users'), where('profile.username', '==', username), limit(1))
+    );
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    return {
+      uid: d.id,
+      profile: { ...PROFILE_DEFAULT, ...(d.data()?.profile ?? {}) } as Profile,
+    };
+  } catch { return null; }
 }
 
 // ── Lists ────────────────────────────────────────────────────
@@ -297,6 +311,39 @@ export const dbFollowStore = {
   },
   async set(db: Firestore, uid: string, list: string[]): Promise<void> {
     await setField(db, ['users', uid], 'following_list', list);
+  },
+  // Bidirectional follow: updates follower's list + both counters atomically.
+  async follow(db: Firestore, followerUid: string, targetUsername: string, targetUid: string): Promise<void> {
+    const followerRef = doc(db, 'users', followerUid);
+    const snap = await getDoc(followerRef);
+    const currentList: string[] = snap.data()?.following_list ?? [];
+    if (currentList.includes(targetUsername)) return;
+    const nextList = [...currentList, targetUsername];
+    await updateDoc(followerRef, {
+      following_list: nextList,
+      'profile.following': nextList.length,
+    });
+    try {
+      await updateDoc(doc(db, 'users', targetUid), { 'profile.followers': increment(1) });
+    } catch {
+      // target doc may not exist yet — create a minimal shell, then increment
+      await setDoc(doc(db, 'users', targetUid), {}, { merge: true });
+      await updateDoc(doc(db, 'users', targetUid), { 'profile.followers': increment(1) });
+    }
+  },
+  async unfollow(db: Firestore, followerUid: string, targetUsername: string, targetUid: string): Promise<void> {
+    const followerRef = doc(db, 'users', followerUid);
+    const snap = await getDoc(followerRef);
+    const currentList: string[] = snap.data()?.following_list ?? [];
+    const nextList = currentList.filter(u => u !== targetUsername);
+    if (nextList.length === currentList.length) return; // wasn't following
+    await updateDoc(followerRef, {
+      following_list: nextList,
+      'profile.following': nextList.length,
+    });
+    try {
+      await updateDoc(doc(db, 'users', targetUid), { 'profile.followers': increment(-1) });
+    } catch {}
   },
 };
 
