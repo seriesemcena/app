@@ -8,6 +8,8 @@ import { ActorCircle, TMDBPosterCard } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, tmdbImg, type TMDBItem } from '@/lib/tmdb';
 
+const BIO_LIMIT = 180;
+
 export default function ActorPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -22,6 +24,7 @@ export default function ActorPage() {
     .sort((a: any, b: any) => b.popularity - a.popularity).slice(0, 12);
 
   const [tab, setTab] = useState<'filmes' | 'séries' | 'direção'>('filmes');
+  const [bioExpanded, setBioExpanded] = useState(false);
   const photo = person.profile_path ? tmdbImg(person.profile_path, 'w342') : null;
   const knownFor = [...movieCredits, ...tvCredits].sort((a: any, b: any) => b.vote_average - a.vote_average).slice(0, 4);
 
@@ -32,6 +35,9 @@ export default function ActorPage() {
 
   type Tab = 'filmes' | 'séries' | 'direção';
   const tabs: Tab[] = ['filmes', 'séries', ...(directed.length ? (['direção'] as Tab[]) : [])];
+
+  const bioText = String(person.biography || '');
+  const bioTruncated = bioText.length > BIO_LIMIT;
 
   return (
     <Frame>
@@ -68,6 +74,7 @@ export default function ActorPage() {
               </div>
             </div>
 
+            {/* ── Info + bio ── */}
             <div style={{ textAlign: 'center', padding: '12px 24px 20px' }}>
               <Txt size={22} weight={800} style={{ display: 'block', marginBottom: 4 }}>{person.name || '—'}</Txt>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -76,26 +83,63 @@ export default function ActorPage() {
                 {person.place_of_birth && <MetaChip label={String(person.place_of_birth).split(',').pop()?.trim() || ''} />}
               </div>
               {person.biography && (
-                <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block', textAlign: 'left' }}>
-                  {String(person.biography).slice(0, 300)}{String(person.biography).length > 300 ? '...' : ''}
-                </Txt>
+                <div style={{ textAlign: 'left' }}>
+                  <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block' }}>
+                    {bioExpanded || !bioTruncated
+                      ? bioText
+                      : bioText.slice(0, BIO_LIMIT) + '...'}
+                  </Txt>
+                  {bioTruncated && (
+                    <button
+                      onClick={() => setBioExpanded(!bioExpanded)}
+                      style={{ marginTop: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#C069FF', fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif" }}
+                    >
+                      {bioExpanded ? 'Leia menos' : 'Leia mais'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
+            {/* ── Conhecido por — grid 2 colunas estilo "Em alta" ── */}
             {knownFor.length > 0 && (
-              <div style={{ paddingBottom: 24 }}>
-                <div style={{ paddingLeft: 16, marginBottom: 12 }}>
+              <div style={{ padding: '0 16px 28px' }}>
+                <div style={{ marginBottom: 12 }}>
                   <Txt size={16} weight={700}>Conhecido por</Txt>
                 </div>
-                <div style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
-                  {knownFor.map((item: any) => (
-                    <TMDBPosterCard key={item.id} item={item} size="md" onClick={() => openTitle(item)} />
-                  ))}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {knownFor.map((item: any) => {
+                    const n = normalize(item);
+                    const thumb = n.backdrop_path
+                      ? tmdbImg(n.backdrop_path, 'w780')
+                      : n.poster_path ? tmdbImg(n.poster_path, 'w342') : null;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => openTitle(item)}
+                        style={{ background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, cursor: 'pointer', textAlign: 'left', padding: 0, overflow: 'hidden' }}
+                      >
+                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: 'var(--c-surface2)', overflow: 'hidden' }}>
+                          {thumb && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={thumb} alt={n.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          )}
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)', pointerEvents: 'none' }} />
+                        </div>
+                        <div style={{ padding: '8px 10px 10px', background: '#0a0a0a' }}>
+                          <Txt size={12} weight={700} color="rgba(255,255,255,0.92)" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {n.title}
+                          </Txt>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, padding: '12px 16px', overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+            {/* ── Tabs filmografia ── */}
+            <div style={{ display: 'flex', gap: 8, padding: '0 16px 12px', overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
               {tabs.map((t) => (
                 <button key={t} onClick={() => setTab(t)} style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: tab === t ? T.white : 'transparent', border: tab === t ? 'none' : `1px solid ${T.dim}`, color: tab === t ? T.bg : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s', textTransform: 'capitalize' }}>
                   {t}
