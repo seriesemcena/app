@@ -16,6 +16,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { tmdbImg } from '@/lib/tmdb';
+import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
 type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
@@ -101,6 +102,7 @@ function UserProfileInner() {
   /* ── Profile + lists ── */
   const [myProfile,     setMyProfile]     = useState<Profile | null>(null);
   const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
+  const [reportTarget, setReportTarget]   = useState<ReportTarget | null>(null);
   const [targetUid,     setTargetUid]     = useState<string | null>(null);
   const [targetLists,   setTargetLists]   = useState<Lists>(EMPTY_LISTS);
   const [notFound,      setNotFound]      = useState(false);
@@ -426,7 +428,15 @@ function UserProfileInner() {
                 <div style={{ flex: 1 }} />
                 <div style={{ display: 'flex', gap: 8 }}>
                   {!isMe && (
-                    <button title="Reportar usuário" style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <button
+                      title="Denunciar perfil"
+                      onClick={() => setReportTarget({
+                        kind: 'profile',
+                        targetId: targetProfile?.username || slug,
+                        targetLabel: `@${targetProfile?.username || slug}`,
+                        reportedUser: targetProfile?.name || targetProfile?.username || slug,
+                      })}
+                      style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <Icon name="flag" size={16} color="#fff" />
                     </button>
                   )}
@@ -764,6 +774,7 @@ function UserProfileInner() {
             </div>
           </>
         )}
+        <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
       </Screen>
     </Frame>
   );

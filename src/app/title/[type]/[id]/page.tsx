@@ -15,6 +15,7 @@ import { listStore, revStore, profileStore, epWatchedStore, type Review } from '
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore, dbListStore, dbActivityStore, dbEpWatchedStore } from '@/lib/db';
+import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 
@@ -56,6 +57,7 @@ export default function TitleDetailPage() {
   const [toast, setToast] = useState<string | false>(false);
   const [listSheet, setListSheet] = useState(false);
   const [maisSheet, setMaisSheet] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewText, setReviewText] = useState('');
@@ -620,10 +622,26 @@ export default function TitleDetailPage() {
 
           </div>
 
+          {/* ── Relatar problema (dados errados, imagem quebrada etc.) ── */}
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 16px 0' }}>
+            <button
+              onClick={() => setReportTarget({
+                kind: 'problem',
+                targetId: itemKey,
+                titleKey: itemKey,
+                targetLabel: title,
+              })}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', padding: '10px 14px' }}>
+              <Icon name="flag" size={13} color={T.t4} />
+              <Txt size={12} weight={600} color={T.t4}>Relatar problema</Txt>
+            </button>
+          </div>
+
           <div style={{ height: 100 }} />
         </div>
 
         <Toast msg={toast} visible={!!toast} />
+        <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
 
         {/* ── Modal de avaliação (filmes) ── */}
         {showForm && !isTV && (
@@ -819,7 +837,7 @@ export default function TitleDetailPage() {
             { icon: 'play'     as const, label: t('viewTrailer'),  action: () => { setTab('whereToWatch'); setMaisSheet(false); } },
             { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); setListSheet(true); } },
             { icon: 'share'    as const, label: t('shareTitle'),   action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); } },
-            { icon: 'flag'     as const, label: t('reportIssue'),  action: () => { showToast(t('reportThanks')); setMaisSheet(false); } },
+            { icon: 'flag'     as const, label: t('reportIssue'),  action: () => { setMaisSheet(false); setReportTarget({ kind: 'problem', targetId: itemKey, titleKey: itemKey, targetLabel: title }); } },
           ]).map(({ icon, label, action }, idx, arr) => (
             <button key={label} onClick={action} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: idx < arr.length - 1 ? `1px solid ${T.border}` : 'none', textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

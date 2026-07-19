@@ -380,15 +380,47 @@ export const dbActivityStore = {
 // ── Reports ──────────────────────────────────────────────────
 // Firestore: reports/{auto-id}
 
+export type ReportDoc = {
+  /** comment = denúncia de comentário; profile = denúncia de perfil;
+      problem = "relatar problema" de uma página de título */
+  kind: 'comment' | 'profile' | 'problem';
+  reason: 'spoiler' | 'spam' | 'offense' | 'other' | 'problem';
+  /** free text (reason 'other' / 'problem') */
+  details?: string;
+  /** reviewId | username | titleKey, depending on kind */
+  targetId: string;
+  titleKey?: string;
+  /** human-readable target: title name or @username */
+  targetLabel: string;
+  contentSnippet?: string;
+  reportedUser?: string;
+  reportedBy: string;
+  reportedByName?: string;
+  status: 'open' | 'resolved' | 'dismissed';
+  createdAt: string;
+};
+
 export const dbReportStore = {
-  async add(db: Firestore, report: {
-    itemId: string;
-    reportedUser: string;
-    content: string;
-    reportedBy: string;
-    reportedAt: string;
-  }): Promise<void> {
-    try { await addDoc(collection(db, 'reports'), report); } catch {}
+  async add(db: Firestore, report: Omit<ReportDoc, 'status' | 'createdAt'>): Promise<boolean> {
+    try {
+      await addDoc(collection(db, 'reports'), stripUndefined({
+        ...report, status: 'open', createdAt: new Date().toISOString(),
+      }));
+      return true;
+    } catch { return false; }
+  },
+
+  /** Admin only (rules) — newest first. */
+  async list(db: Firestore, limitN = 100): Promise<(ReportDoc & { docId: string })[]> {
+    try {
+      const q    = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(limitN));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ docId: d.id, ...d.data() as ReportDoc }));
+    } catch { return []; }
+  },
+
+  async setStatus(db: Firestore, docId: string, status: ReportDoc['status']): Promise<void> {
+    try { await updateDoc(doc(db, 'reports', docId), { status }); } catch {}
   },
 };
 

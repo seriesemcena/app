@@ -3,6 +3,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isAdminUser } from '@/lib/admin';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { dbReportStore, dbRevStore, type ReportDoc } from '@/lib/db';
 import { Txt, Btn, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
@@ -1051,34 +1053,99 @@ function AdminPanel() {
     );
   };
 
+  /* Denúncias e relatos REAIS (coleção `reports` — legível só pelo admin).
+     Ações: resolver/descartar (status) e, para comentário denunciado,
+     excluir o conteúdo direto daqui (rules dão esse poder ao admin). */
   const Moderacao = () => {
-    const approve = (id: string) => save('reviews', setReviews, reviews.map(r => r.id === id ? { ...r, approved: true, flagged: false } : r));
-    const reject  = (id: string) => save('reviews', setReviews, reviews.filter(r => r.id !== id));
+    const [reports, setReports]   = useState<(ReportDoc & { docId: string })[]>([]);
+    const [repLoading, setRepLoading] = useState(true);
+    const [onlyOpen, setOnlyOpen] = useState(true);
+
+    const load = () => {
+      if (!firebaseConfigured) { setRepLoading(false); return; }
+      dbReportStore.list(getDB()).then(list => { setReports(list); setRepLoading(false); });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(load, []);
+
+    const setStatus = async (docId: string, status: ReportDoc['status']) => {
+      await dbReportStore.setStatus(getDB(), docId, status);
+      setReports(prev => prev.map(r => r.docId === docId ? { ...r, status } : r));
+    };
+
+    const deleteReported = async (r: ReportDoc & { docId: string }) => {
+      if (r.kind !== 'comment' || !r.titleKey) return;
+      if (!window.confirm('Excluir o comentário denunciado para todos os usuários?')) return;
+      try { await dbRevStore.remove(getDB(), r.titleKey, r.targetId); } catch {}
+      await setStatus(r.docId, 'resolved');
+    };
+
+    const KIND_LABEL: Record<ReportDoc['kind'], string> = {
+      comment: 'Comentário', profile: 'Perfil', problem: 'Problema',
+    };
+    const REASON_LABEL: Record<string, string> = {
+      spoiler: 'Spoiler sem aviso', spam: 'Spam', offense: 'Ofensa',
+      other: 'Outros', problem: 'Relato de problema',
+    };
+    const STATUS_COLOR: Record<ReportDoc['status'], string> = {
+      open: T.red, resolved: '#22c55e', dismissed: T.t3,
+    };
+
+    const visible = onlyOpen ? reports.filter(r => r.status === 'open') : reports;
+    const openCount = reports.filter(r => r.status === 'open').length;
+
     return (
       <>
-        <SectionTitle label="🛡 Moderação de avaliações" />
-        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-          <div style={S.statCard}><Txt size={24} weight={900} color={T.red} style={{ display: 'block' }}>{reviews.filter(r => r.flagged).length}</Txt><Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4 }}>Sinalizadas</Txt></div>
-          <div style={S.statCard}><Txt size={24} weight={900} color={'#4ade80'} style={{ display: 'block' }}>{reviews.filter(r => r.approved).length}</Txt><Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4 }}>Aprovadas</Txt></div>
-          <div style={S.statCard}><Txt size={24} weight={900} color={T.t2} style={{ display: 'block' }}>{reviews.length}</Txt><Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4 }}>Total</Txt></div>
+        <SectionTitle label="🛡 Moderação — denúncias e relatos" />
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'center' }}>
+          <div style={S.statCard}><Txt size={24} weight={900} color={T.red} style={{ display: 'block' }}>{openCount}</Txt><Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4 }}>Abertas</Txt></div>
+          <div style={S.statCard}><Txt size={24} weight={900} color={T.t2} style={{ display: 'block' }}>{reports.length}</Txt><Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4 }}>Total</Txt></div>
+          <div style={{ flex: 1 }} />
+          <Btn label={onlyOpen ? 'Ver todas' : 'Só abertas'} variant="secondary" size="sm" onClick={() => setOnlyOpen(o => !o)} />
+          <Btn label="Atualizar" variant="secondary" size="sm" onClick={() => { setRepLoading(true); load(); }} />
         </div>
-        {reviews.map(r => (
-          <div key={r.id} style={{ ...S.card, borderLeft: `3px solid ${r.flagged ? T.red : r.approved ? '#22c55e' : T.border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Txt size={13} weight={700}>{r.user}</Txt>
-                <Txt size={12} color={T.t3}>em <b>{r.title}</b></Txt>
-                {r.flagged && <span style={S.tag(T.red)}>⚑ Sinalizado</span>}
-                {r.approved && <span style={S.tag('#166534')}>✓ Aprovado</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                {[...Array(5)].map((_, i) => <Icon key={i} name="star" size={11} color={i < r.rating ? T.gold : T.t4} />)}
-              </div>
+
+        {repLoading && <Txt size={13} color={T.t3}>Carregando denúncias…</Txt>}
+        {!repLoading && visible.length === 0 && (
+          <Txt size={13} color={T.t3}>Nenhuma denúncia {onlyOpen ? 'aberta' : 'registrada'}. 🎉</Txt>
+        )}
+
+        {visible.map(r => (
+          <div key={r.docId} style={{ ...S.card, borderLeft: `3px solid ${STATUS_COLOR[r.status]}` }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+              <span style={S.tag(T.pink)}>{KIND_LABEL[r.kind]}</span>
+              <span style={S.tag(T.red)}>{REASON_LABEL[r.reason] || r.reason}</span>
+              {r.status !== 'open' && <span style={S.tag(STATUS_COLOR[r.status])}>{r.status === 'resolved' ? '✓ Resolvida' : 'Descartada'}</span>}
+              <Txt size={12} color={T.t3}>{new Date(r.createdAt).toLocaleString('pt-BR')}</Txt>
             </div>
-            <Txt size={13} color={T.t2} style={{ display: 'block', marginBottom: 12 }}>"{r.text}"</Txt>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {!r.approved && <Btn label="Aprovar" variant="secondary" size="sm" onClick={() => approve(r.id)} />}
-              <Btn label="Remover" variant="danger" size="sm" onClick={() => reject(r.id)} />
+            <Txt size={13} weight={700} style={{ display: 'block', marginBottom: 2 }}>
+              {r.targetLabel}{r.reportedUser ? ` — autor: ${r.reportedUser}` : ''}
+            </Txt>
+            {r.contentSnippet && (
+              <Txt size={13} color={T.t2} style={{ display: 'block', marginBottom: 4 }}>&ldquo;{r.contentSnippet}&rdquo;</Txt>
+            )}
+            {r.details && (
+              <Txt size={13} color={T.t2} style={{ display: 'block', marginBottom: 4 }}>Motivo: {r.details}</Txt>
+            )}
+            <Txt size={12} color={T.t3} style={{ display: 'block', marginBottom: 12 }}>
+              Denunciado por {r.reportedByName || r.reportedBy}
+            </Txt>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {r.kind === 'comment' && r.status === 'open' && (
+                <Btn label="Excluir conteúdo" variant="danger" size="sm" onClick={() => deleteReported(r)} />
+              )}
+              {r.kind === 'profile' && (
+                <Btn label="Ver perfil" variant="secondary" size="sm" onClick={() => window.open(`/user/${encodeURIComponent(r.targetId)}`, '_blank')} />
+              )}
+              {r.kind === 'problem' && r.titleKey && (
+                <Btn label="Ver página" variant="secondary" size="sm" onClick={() => window.open(`/title/${r.titleKey!.replace('_', '/')}`, '_blank')} />
+              )}
+              {r.status === 'open' && (
+                <>
+                  <Btn label="Resolver" variant="secondary" size="sm" onClick={() => setStatus(r.docId, 'resolved')} />
+                  <Btn label="Descartar" variant="secondary" size="sm" onClick={() => setStatus(r.docId, 'dismissed')} />
+                </>
+              )}
             </div>
           </div>
         ))}

@@ -11,8 +11,9 @@ import { profileStore, notifInboxStore, reactionStore } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { dbActivityStore, dbRevStore, dbReportStore, dbReactionStore } from '@/lib/db';
+import { dbActivityStore, dbRevStore, dbReactionStore } from '@/lib/db';
 import { isAdminUser } from '@/lib/admin';
+import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { tmdbImg } from '@/lib/tmdb';
 
 type FeedTab = 'para_voce' | 'seguindo';
@@ -408,6 +409,7 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
   /* ── Three-dot menu ── */
   const [showMenu,   setShowMenu]   = useState(false);
   const [deleting,   setDeleting]   = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [toast,      setToast]      = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -433,25 +435,16 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
     }
   };
 
-  const handleReport = async () => {
+  const handleReport = () => {
     setShowMenu(false);
-    if (!firebaseConfigured || !user) {
-      showToast('Faça login para denunciar.');
-      return;
-    }
-    try {
-      const db = getDB();
-      await dbReportStore.add(db, {
-        itemId:       item.id,
-        reportedUser: item.user,
-        content:      item.text,
-        reportedBy:   user.uid,
-        reportedAt:   new Date().toISOString(),
-      });
-      showToast('Denúncia enviada. Obrigado!');
-    } catch {
-      showToast('Erro ao enviar denúncia.');
-    }
+    setReportTarget({
+      kind: 'comment',
+      targetId: item.reviewId || item.id,
+      titleKey: item.reviewTitleKey || item.titleKey,
+      targetLabel: displayLabel,
+      contentSnippet: item.text,
+      reportedUser: item.user,
+    });
   };
 
   const handleShare = async () => {
@@ -624,6 +617,7 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
           </div>
         )}
       </div>
+      <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
     </SocialCard>
   );
 }

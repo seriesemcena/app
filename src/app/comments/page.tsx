@@ -14,6 +14,7 @@ import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbNotifStore } from '@/lib/db';
 import { isAdminUser } from '@/lib/admin';
+import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 
@@ -228,6 +229,16 @@ function CommentsPageInner() {
     }
   };
 
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const reportComment = (rev: Review) => setReportTarget({
+    kind: 'comment',
+    targetId: rev.id,
+    titleKey: storageKey,
+    targetLabel: [showName, title].filter(Boolean).join(' · ') || storageKey,
+    contentSnippet: rev.text || rev.gifUrl || '',
+    reportedUser: rev.user,
+  });
+
   /* Author or admin — the Firestore rules enforce the same pair server-side,
      so the doc really goes away for every user and device. */
   const deleteComment = async (id: string) => {
@@ -396,6 +407,7 @@ function CommentsPageInner() {
                     onDelete={(rev.uid && rev.uid === user?.uid) || isAdminUser(user)
                       ? () => deleteComment(rev.id)
                       : undefined}
+                    onReport={rev.uid !== user?.uid ? () => reportComment(rev) : undefined}
                   />
                 ))}
               </div>
@@ -546,6 +558,7 @@ function CommentsPageInner() {
         </div>
 
         <Toast msg={toast} visible={!!toast} />
+        <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
 
       </Screen>
     </Frame>
@@ -553,7 +566,7 @@ function CommentsPageInner() {
 }
 
 /* ── Comment card ── */
-function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply, replyText, onReplyChange, onSubmitReply, replyInputRef, onDelete }: {
+function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply, replyText, onReplyChange, onSubmitReply, replyInputRef, onDelete, onReport }: {
   rev: Review & { liked?: boolean };
   timeAgo: (d: string) => string;
   onLike: () => void;
@@ -566,6 +579,8 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
   replyInputRef?: React.RefObject<HTMLInputElement | null>;
   /** Present for the comment's author and for admins (moderation). */
   onDelete?: () => void;
+  /** Present for everyone except the comment's author. */
+  onReport?: () => void;
 }) {
   const { t }         = useTranslation('title');
   const liked         = !!(rev as any).liked;
@@ -624,6 +639,12 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
           <button onClick={onDelete} aria-label="Excluir comentário"
             style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '7px 4px' }}>
             <Icon name="close" size={14} color={T.red ?? '#ff4444'} />
+          </button>
+        )}
+        {onReport && (
+          <button onClick={onReport} aria-label="Denunciar comentário"
+            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '7px 4px' }}>
+            <Icon name="flag" size={14} color={T.t4} />
           </button>
         )}
         <div style={{ flex: 1 }} />

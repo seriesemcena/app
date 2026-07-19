@@ -123,11 +123,11 @@ service cloud.firestore {
     }
 
     // ── Reports (moderation inbox) ───────────────────────────
-    // Write-only drop box: users file reports, nobody reads them
-    // from the client (review happens in the console/Admin SDK).
+    // Any signed-in user files reports (comment/profile/problem);
+    // only the admin reads and manages them (/admin → Moderação).
     match /reports/{id} {
       allow create: if request.auth != null;
-      allow read, update, delete: if false;
+      allow read, update, delete: if isAdmin();
     }
   }
 }
