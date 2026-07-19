@@ -1,20 +1,27 @@
 'use client';
-import { ReactNode, useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { ReactNode, useEffect } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { MobileFrame } from './MobileFrame';
 import { TabBar } from './TabBar';
 import { Sidebar } from './Sidebar';
 
-const TAB_PATHS = ['/home', '/search', '/calendar', '/lists', '/profile', '/movies', '/series', '/feed', '/trends', '/title', '/settings'];
+const TAB_PATHS = ['/home', '/search', '/calendar', '/lists', '/profile', '/user', '/movies', '/series', '/feed', '/trends', '/title', '/settings'];
 
 export function Frame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const showTabs = mounted && TAB_PATHS.some((p) => pathname?.startsWith(p));
+  const searchParams = useSearchParams();
+  const fromProfile = searchParams.get('from') === 'profile';
+  const showTabs = fromProfile || TAB_PATHS.some((p) => pathname?.startsWith(p));
+
+  useEffect(() => {
+    document.documentElement.dataset.hasTabbar = String(showTabs);
+    return () => {
+      delete document.documentElement.dataset.hasTabbar;
+    };
+  }, [showTabs]);
 
   return (
-    <MobileFrame sidebar={showTabs ? <Sidebar /> : undefined}>
+    <MobileFrame hasTabBar={showTabs} sidebar={showTabs ? <Sidebar /> : undefined}>
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <div className="screen-anim" key={pathname} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {children}

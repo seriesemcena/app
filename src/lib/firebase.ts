@@ -14,7 +14,7 @@
    ───────────────────────────────────────────────────────────── */
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getFirestore,  type Firestore  } from 'firebase/firestore';
-import { getAuth,       type Auth        } from 'firebase/auth';
+import { initializeAuth, browserLocalPersistence, getAuth, type Auth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -48,8 +48,31 @@ export function getDB(): Firestore {
 }
 
 export function getFirebaseAuth(): Auth {
-  if (!_auth) _auth = getAuth(ensureApp());
+  if (!_auth) {
+    const app = ensureApp();
+    if (typeof window !== 'undefined') {
+      try {
+        _auth = initializeAuth(app, { persistence: [browserLocalPersistence] });
+      } catch {
+        // Auth already initialized (hot-reload), get existing instance
+        _auth = getAuth(app);
+      }
+    } else {
+      _auth = getAuth(app);
+    }
+  }
   return _auth;
+}
+
+/** Authorization header with the signed-in user's ID token — {} when signed
+    out or Firebase is not configured. Used by the paid API routes (/api/ai,
+    /api/curadoria), which reject unauthenticated calls. */
+export async function authHeader(): Promise<Record<string, string>> {
+  if (!firebaseConfigured) return {};
+  try {
+    const token = await getFirebaseAuth().currentUser?.getIdToken();
+    return token ? { authorization: `Bearer ${token}` } : {};
+  } catch { return {}; }
 }
 
 /** Lazy-load Firebase Messaging (not available in SSR or old browsers) */

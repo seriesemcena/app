@@ -3,6 +3,8 @@ import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Logo } from '@/components/primitives';
 import { tmdb, tmdbImg, useTMDB, type TMDBItem } from '@/lib/tmdb';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
 function PosterCol({ items, animClass }: { items: TMDBItem[]; animClass: string }) {
   if (!items.length) return null;
@@ -25,6 +27,7 @@ function PosterCol({ items, animClass }: { items: TMDBItem[]; animClass: string 
 
 export default function WelcomePage() {
   const router = useRouter();
+  const { t } = useTranslation('home');
   const { data } = useTMDB(() => tmdb.trending('all', 'week'), []);
   const posters: TMDBItem[] = ((data as any)?.results ?? [])
     .filter((i: TMDBItem) => i.poster_path)
@@ -93,8 +96,9 @@ export default function WelcomePage() {
             fontSize: 15, color: 'rgba(255,255,255,0.56)',
             fontFamily: "'Area','Inter',sans-serif",
             lineHeight: 1.6, marginBottom: 44,
+            whiteSpace: 'pre-line',
           }}>
-            Seu app de filmes e séries.<br />Tudo em um só lugar.
+            {t('welcome.tagline')}
           </div>
 
           {/* CTA button — Liquid Glass white */}
@@ -113,7 +117,7 @@ export default function WelcomePage() {
               cursor: 'pointer', letterSpacing: 0.2,
             }}
           >
-            Vamos começar
+            {t('welcome.cta')}
           </button>
         </div>
       </Screen>

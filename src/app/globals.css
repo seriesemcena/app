@@ -78,7 +78,17 @@
 
 /* ── CSS custom properties — dark theme (default) ── */
 :root {
-  --tab-h: calc(84px + env(safe-area-inset-bottom, 0px));   /* altura real do TabBar: 8px top + 64px pill + 12px bottom + safe-area */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --toolbar-base-height: 84px;
+  --toolbar-height: calc(var(--toolbar-base-height) + var(--safe-area-bottom));
+  --tab-h: var(--safe-area-bottom);
+  --content-bottom-inset: var(--safe-area-bottom);
+  --interactive-safe-bottom: var(--safe-area-bottom);
+  --keyboard-offset: 0px;
+  --app-height: 100vh;
   --c-bg:        #0D0D0F;
   --c-card:      #222228;
   --c-card-deep: #16161A;
@@ -96,6 +106,18 @@
   --c-body-text: #fff;
   /* Dark: bright pink → deep purple → transparent → dark bg */
   --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #C069FF 0%, #6B10A0 44%, transparent 72%);
+}
+
+@supports (height: 100svh) {
+  :root { --app-height: 100svh; }
+}
+
+@supports (height: 100dvh) {
+  :root { --app-height: 100dvh; }
+}
+
+html[data-keyboard-open="true"] {
+  --interactive-safe-bottom: 0px;
 }
 
 /* ── Light theme override ── */
@@ -123,12 +145,15 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
   width: 100%;
-  min-height: 100dvh;
-  background: var(--c-outer);
+  height: 100%;
+  min-height: var(--app-height);
+  background: var(--c-bg);
   font-family: 'Area', 'Inter', sans-serif;
   color: var(--c-body-text);
   transition: background 0.25s ease, color 0.25s ease;
+  overscroll-behavior: none;
 }
+body { overflow: hidden; }
 ::-webkit-scrollbar { display: none; }
 * { -webkit-tap-highlight-color: transparent; }
 input, button, textarea { -webkit-appearance: none; }
@@ -139,11 +164,18 @@ button:focus, input:focus, textarea:focus { outline: none; }
 /* Mobile / real device: fills entire screen */
 .mf-outer {
   width: 100%;
-  min-height: 100dvh;
+  height: var(--app-height);
+  min-height: var(--app-height);
+  max-height: var(--app-height);
   background: var(--c-bg);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   transition: background 0.25s ease;
+}
+.mf-outer.has-tabbar {
+  --tab-h: var(--toolbar-height);
+  --content-bottom-inset: var(--toolbar-height);
 }
 .mf-inner {
   flex: 1;
@@ -151,27 +183,51 @@ button:focus, input:focus, textarea:focus { outline: none; }
   flex-direction: column;
   overflow: hidden;
   width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.tab-bar-wrap {
+  transition: opacity 0.16s ease, visibility 0.16s ease;
+}
+
+html[data-keyboard-open="true"] .tab-bar-wrap {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
+.keyboard-aware-bottom {
+  bottom: var(--keyboard-offset) !important;
+}
+
+.safe-bottom-sheet {
+  max-height: calc(100% - var(--safe-area-top) - 8px) !important;
 }
 
 /* Desktop/tablet (≥ 768px): sidebar layout — no phone frame */
 @media (min-width: 768px) {
   :root {
     --tab-h: 0px;
+    --content-bottom-inset: 0px;
   }
   .mf-outer {
     flex-direction: row;
     align-items: stretch;
     justify-content: flex-start;
     padding: 0;
-    height: 100dvh;
+    height: var(--app-height);
+    min-height: var(--app-height);
+    max-height: var(--app-height);
     overflow: hidden;
     background: var(--c-bg);
   }
   .mf-inner {
     flex: 1;
     min-width: 0;
-    height: 100dvh;
-    max-height: 100dvh;
+    height: 100%;
+    max-height: 100%;
     border-radius: 0;
     border: none;
     box-shadow: none;
@@ -184,6 +240,114 @@ button:focus, input:focus, textarea:focus { outline: none; }
 
 @media (max-width: 767px) {
   .sidebar-nav { display: none !important; }
+}
+
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767px) {
+    input, textarea, select { font-size: 16px !important; }
+  }
+}
+
+/* ── Shared startup, loading, error, empty and offline states ── */
+.app-state {
+  min-height: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: calc(var(--safe-area-top) + 28px) calc(var(--safe-area-right) + 24px) calc(var(--safe-area-bottom) + 28px) calc(var(--safe-area-left) + 24px);
+  background: var(--c-bg);
+  color: var(--c-t1);
+}
+.app-startup { min-height: var(--app-height); }
+.app-state-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 31px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+}
+.app-state-pulse {
+  width: 36px;
+  height: 4px;
+  margin: 8px 0 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--c-surface), #C069FF, var(--c-surface));
+  background-size: 200% 100%;
+  animation: img-shimmer 1.2s linear infinite;
+}
+.app-state-action {
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 24px;
+  background: #C069FF;
+  color: #fff;
+  font-family: 'Area', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.app-page-loading {
+  height: 100%;
+  overflow: hidden;
+  background: var(--c-bg);
+}
+.app-empty-state {
+  width: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 20px;
+}
+.offline-banner {
+  position: fixed;
+  left: max(12px, var(--safe-area-left));
+  right: max(12px, var(--safe-area-right));
+  bottom: calc(var(--safe-area-bottom) + 10px);
+  z-index: 120;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border-radius: 21px;
+  border: 1px solid var(--c-border);
+  background: color-mix(in srgb, var(--c-card) 92%, transparent);
+  color: var(--c-t2);
+  box-shadow: 0 8px 26px rgba(0,0,0,.24);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-family: 'Area', 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+html[data-has-tabbar="true"] .offline-banner {
+  bottom: calc(var(--toolbar-height) + 10px);
+}
+.offline-banner button {
+  margin-left: auto;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--c-surface2);
+  color: var(--c-t1);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-anim, .app-state-pulse, .img-skeleton { animation: none !important; }
 }
 
 /* ── Semantic heading defaults ── */

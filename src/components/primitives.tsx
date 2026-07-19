@@ -26,17 +26,17 @@ export const Logo = ({ height = 22, style = {} }: { height?: number; style?: CSS
 );
 
 export const Screen = ({ children, style = {} }: { children: ReactNode; style?: CSSProperties }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: T.bg, fontFamily: "'Area',sans-serif", overflow: 'hidden', position: 'relative', ...style }}>{children}</div>
+  <div className="app-screen" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: T.bg, fontFamily: "'Area',sans-serif", overflow: 'hidden', position: 'relative', ...style }}>{children}</div>
 );
 
 export const ScrollArea = ({ children, style = {} }: { children: ReactNode; style?: CSSProperties }) => (
-  <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', ...style, paddingBottom: 'var(--tab-h, 90px)' } as CSSProperties}>{children}</div>
+  <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehaviorY: 'contain', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', ...style, paddingBottom: 'var(--content-bottom-inset)' } as CSSProperties}>{children}</div>
 );
 
 export const AppBar = ({
   title, left, right, transparent,
 }: { title?: string; left?: ReactNode; right?: ReactNode; transparent?: boolean }) => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: transparent ? 'transparent' : T.bg, borderBottom: transparent ? 'none' : `1px solid ${T.border}`, minHeight: 52, flexShrink: 0 }}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(var(--safe-area-top) + 12px) calc(var(--safe-area-right) + 16px) 12px calc(var(--safe-area-left) + 16px)', background: transparent ? 'transparent' : T.bg, borderBottom: transparent ? 'none' : `1px solid ${T.border}`, minHeight: 'calc(52px + var(--safe-area-top))', flexShrink: 0 }}>
     <div style={{ width: 44 }}>{left}</div>
     <Txt size={16} weight={700} color={T.t1}>{title}</Txt>
     <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
@@ -65,7 +65,7 @@ export function GlassHeader({
   const navTitleColor = isDark ? '#fff' : 'rgba(0,0,0,0.85)';
 
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(56px + env(safe-area-inset-top, 0px))', overflow: 'visible' } as CSSProperties}>
+    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(56px + var(--safe-area-top))', overflow: 'visible' } as CSSProperties}>
       {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
       {[
         { blur: 22, end: 35 },
@@ -93,7 +93,7 @@ export function GlassHeader({
       {/* Conteúdo — logo + botões */}
       <div style={{
         position: 'relative', zIndex: 2,
-        height: 56, marginTop: 'env(safe-area-inset-top, 0px)',
+        height: 56, marginTop: 'var(--safe-area-top)',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', padding: '0 12px',
       }}>
@@ -195,7 +195,7 @@ export const Stars = ({ value = 0, max = 5, size = 14, onChange }: { value?: num
 );
 
 export const Toast = ({ msg, visible, icon = 'check' }: { msg?: string | false | null; visible: boolean; icon?: Parameters<typeof Icon>[0]['name'] }) => (
-  <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: `translateX(-50%) translateY(${visible ? 0 : 20}px)`, opacity: visible ? 1 : 0, transition: 'all 0.25s ease', background: T.surface2, borderRadius: T.radiusSm, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 100, whiteSpace: 'nowrap', border: `1px solid ${T.border}` }}>
+  <div style={{ position: 'absolute', bottom: 'calc(var(--content-bottom-inset) + 10px)', left: '50%', transform: `translateX(-50%) translateY(${visible ? 0 : 20}px)`, opacity: visible ? 1 : 0, transition: 'all 0.25s ease', background: T.surface2, borderRadius: T.radiusSm, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 100, whiteSpace: 'nowrap', border: `1px solid ${T.border}` }}>
     <Icon name={icon} size={14} color={T.pink} />
     <Txt size={13} weight={600}>{msg}</Txt>
   </div>
@@ -204,20 +204,25 @@ export const Toast = ({ msg, visible, icon = 'check' }: { msg?: string | false |
 export const BottomSheet = ({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children?: ReactNode }) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    if (!visible) return;
+    document.documentElement.dataset.modalOpen = 'true';
+    return () => { delete document.documentElement.dataset.modalOpen; };
+  }, [visible]);
 
   const sheet = (
     <>
       {visible && (
-        <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, pointerEvents: 'auto' }} />
+        <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, pointerEvents: 'auto', touchAction: 'none' }} />
       )}
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
+      <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
           <div style={{ width: 40 }} />
           <div style={{ width: 40, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
           <Txt size={15} weight={700}>{title}</Txt>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><Icon name="close" size={18} color={T.t3} /></button>
         </div>
-        <div style={{ overflowY: 'auto', padding: 16 }}>{children}</div>
+        <div style={{ overflowY: 'auto', overscrollBehavior: 'contain', padding: '16px 16px calc(16px + var(--interactive-safe-bottom))' }}>{children}</div>
       </div>
     </>
   );

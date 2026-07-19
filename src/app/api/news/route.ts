@@ -17,9 +17,20 @@ function decodeHtml(str: string) {
     .trim();
 }
 
+function localNewsImage(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (!['seriesemcena.com.br', 'www.seriesemcena.com.br'].includes(url.hostname)) return value;
+    return `/api/news-image?path=${encodeURIComponent(url.pathname)}`;
+  } catch {
+    return null;
+  }
+}
+
 async function resolveTermId(type: 'categories' | 'tags', slug: string): Promise<number | null> {
   try {
-    const res = await fetch(`${WP_BASE}/${type}?slug=${slug}&per_page=1`, {
+    const res = await fetch(`${WP_BASE}/${type}?slug=${encodeURIComponent(slug)}&per_page=1`, {
       next: { revalidate: 3600 },
     });
     const data = await res.json();
@@ -55,7 +66,7 @@ export async function GET(req: NextRequest) {
 
     const posts = rawPosts.map((p: any) => {
       const media = p._embedded?.['wp:featuredmedia']?.[0];
-      const image: string | null =
+      const sourceImage: string | null =
         media?.media_details?.sizes?.medium_large?.source_url ||
         media?.media_details?.sizes?.medium?.source_url ||
         media?.source_url ||
@@ -64,7 +75,7 @@ export async function GET(req: NextRequest) {
       return {
         id:      p.id as number,
         title:   decodeHtml(p.title?.rendered ?? ''),
-        image,
+        image:   localNewsImage(sourceImage),
         link:    p.link as string,
         date:    p.date as string,
       };

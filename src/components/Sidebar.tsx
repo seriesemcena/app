@@ -3,9 +3,10 @@ import { useRouter, usePathname } from 'next/navigation';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { Logo } from './primitives';
+import { useMyProfileUrl } from '@/hooks/useMyProfileUrl';
 import type { IconName } from '@/lib/tokens';
 
-const NAV: Array<{ id: string; icon: IconName; href: string; label: string }> = [
+const BASE_NAV: Array<{ id: string; icon: IconName; href: string; label: string }> = [
   { id: 'home',    icon: 'home',    href: '/home',    label: 'Home'   },
   { id: 'series',  icon: 'tv',      href: '/series',  label: 'Séries' },
   { id: 'movies',  icon: 'film',    href: '/movies',  label: 'Filmes' },
@@ -17,12 +18,24 @@ const NAV: Array<{ id: string; icon: IconName; href: string; label: string }> = 
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const active = NAV.find((t) => pathname?.startsWith(t.href))?.id;
+  // The profile entry points at the canonical /user/<username> route
+  const myProfileUrl = useMyProfileUrl();
+  const NAV = BASE_NAV.map(item =>
+    item.id === 'profile' ? { ...item, href: myProfileUrl } : item
+  );
+  // Same context mapping as TabBar: title/episode pages light up
+  // Séries/Filmes, and any profile (own or another user's) lights up Perfil.
+  const contextActive =
+    pathname?.startsWith('/title/tv') || pathname?.startsWith('/episode') ? 'series'
+    : pathname?.startsWith('/title/movie') ? 'movies'
+    : pathname?.startsWith('/user') || pathname?.startsWith('/profile') ? 'profile'
+    : undefined;
+  const active = contextActive ?? NAV.find((t) => pathname?.startsWith(t.href))?.id;
   const isSettings = pathname?.startsWith('/settings');
 
   return (
     <div style={{
-      width: 220, height: '100dvh', flexShrink: 0,
+      width: 220, height: 'var(--app-height)', flexShrink: 0,
       display: 'flex', flexDirection: 'column',
       background: T.surface, borderRight: `1px solid ${T.border}`,
       overflowY: 'auto', scrollbarWidth: 'none',

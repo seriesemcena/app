@@ -8,6 +8,7 @@ import { TMDBPosterCard, SkeletonCards, HSection } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { prefsStore } from '@/lib/store';
+import { navigateBack } from '@/lib/navigation';
 
 const GENRE_MAP: Record<string, number> = { 'Ação': 28, 'Drama': 18, 'Sci-Fi': 878, 'Terror': 27, 'Comédia': 35, 'Romance': 10749, 'Thriller': 53 };
 
@@ -43,7 +44,7 @@ export default function RecommendationsPage() {
     <Frame>
       <Screen>
         <AppBar title="Recomendações" left={
-          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+          <button onClick={() => navigateBack(router)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
             <Icon name="chevronL" size={20} color={T.t2} />
           </button>
         } />

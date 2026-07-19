@@ -9,6 +9,10 @@ import { T } from '@/lib/tokens';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
+import { useTranslation } from 'react-i18next';
+import { navigateBack } from '@/lib/navigation';
+import i18next from 'i18next';
+import '@/lib/i18n';
 
 interface RankEntry {
   uid:      string;
@@ -22,16 +26,17 @@ interface RankEntry {
   isMe:     boolean;
 }
 
-const MONTH = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
-  .format(new Date())
-  .replace(/^\w/, c => c.toUpperCase());
 
 const MEDAL_COLORS = ['#F5C518', '#9CA3AF', '#CD7F32'];
-const MEDAL_TEXT   = ['#1a1400', '#fff', '#fff'];
 
 export default function RankingPage() {
   const router   = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { t } = useTranslation('home');
+
+  const MONTH = new Intl.DateTimeFormat(i18next.language || 'pt-BR', { month: 'long', year: 'numeric' })
+    .format(new Date())
+    .replace(/^\w/, c => c.toUpperCase());
 
   const [ranking,  setRanking]  = useState<RankEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -40,12 +45,12 @@ export default function RankingPage() {
   useEffect(() => {
     if (authLoading) return;  // aguardar auth resolver antes de acessar Firestore
     if (!firebaseConfigured) {
-      setError('Firebase não configurado.');
+      setError(t('errors.firebase', { ns: 'errors', defaultValue: 'Firebase não configurado.' }));
       setLoading(false);
       return;
     }
     if (!user) {
-      setError('Faça login para ver o ranking.');
+      setError(t('errors.loginRequired', { ns: 'errors', defaultValue: 'Faça login para ver o ranking.' }));
       setLoading(false);
       return;
     }
@@ -106,7 +111,7 @@ export default function RankingPage() {
 
         setRanking(entries);
       } catch (e) {
-        setError('Não foi possível carregar o ranking.');
+        setError(t('errors.loadFailed', { ns: 'errors', defaultValue: 'Não foi possível carregar o ranking.' }));
       } finally {
         setLoading(false);
       }
@@ -115,185 +120,180 @@ export default function RankingPage() {
 
   const top3 = ranking.slice(0, 3);
   const rest = ranking.slice(3);
-  /* Pódio: 2º (esq), 1º (centro), 3º (dir) */
-  const podiumOrder  = [top3[1], top3[0], top3[2]];
-  const podiumRanks  = [1, 0, 2];
-
   const myRank = ranking.findIndex(e => e.isMe) + 1;
+  const myEntry = myRank > 0 ? ranking[myRank - 1] : undefined;
+
+  /* Pódio: 2º (esq), 1º (centro), 3º (dir) */
+  const podiumSlots = [
+    { entry: top3[1], rank: 2, height: 82, color: MEDAL_COLORS[1], surface: 'rgba(156,163,175,0.16)' },
+    { entry: top3[0], rank: 1, height: 116, color: T.pink, surface: 'rgba(192,105,255,0.24)' },
+    { entry: top3[2], rank: 3, height: 66, color: MEDAL_COLORS[2], surface: 'rgba(205,127,50,0.14)' },
+  ];
 
   return (
     <Frame>
       <Screen>
         <ScrollArea>
-          <GlassHeader
-            left={
-              <button
-                onClick={() => router.back()}
-                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}
-              >
-                <Icon name="chevronL" size={16} color="#fff" />
-              </button>
-            }
-            right={
-              <button
-                onClick={() => router.push('/notifications')}
-                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}
-              >
-                <Icon name="bell" size={16} color="#fff" />
-              </button>
-            }
-          />
-          {/* ── Título ── */}
-          <div style={{ padding: '20px 16px 0', textAlign: 'center' }}>
-            <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px' }}>
-              Ranking do Mês
-            </Txt>
-            <Txt size={13} color={T.t3} style={{ display: 'block', marginTop: 4 }}>
-              {MONTH} · Horas assistidas + avaliações
-            </Txt>
-          </div>
+          <div style={{ minHeight: '100%', background: `radial-gradient(circle at 50% 16%, rgba(192,105,255,0.12), transparent 34%)` }}>
+            <GlassHeader
+              left={
+                <button
+                  onClick={() => navigateBack(router)}
+                  aria-label="Voltar"
+                  style={{ width: 36, height: 36, borderRadius: 18, background: T.glassBg, border: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}
+                >
+                  <Icon name="chevronL" size={17} color={T.t1} />
+                </button>
+              }
+              right={
+                <button
+                  onClick={() => router.push('/notifications')}
+                  aria-label="Notificações"
+                  style={{ width: 36, height: 36, borderRadius: 18, background: T.glassBg, border: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}
+                >
+                  <Icon name="bell" size={17} color={T.t1} />
+                </button>
+              }
+            />
 
-          {/* ── Loading ── */}
-          {loading && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 24px', gap: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 20, border: `3px solid ${T.pink}`, borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-              <Txt size={13} color={T.t3}>Carregando ranking...</Txt>
-            </div>
-          )}
+            <div style={{ width: '100%', maxWidth: 720, margin: '0 auto', padding: '18px 16px 0', boxSizing: 'border-box' }}>
+              {/* ── Título ── */}
+              <div style={{ textAlign: 'center' }}>
+                <Txt size={22} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.45px' }}>
+                  {t('ranking.title')}
+                </Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block', marginTop: 4 }}>
+                  {t('ranking.challenge', { month: MONTH })}
+                </Txt>
+              </div>
 
-          {/* ── Erro ── */}
-          {!loading && error && (
-            <div style={{ margin: '32px 16px', padding: '20px', borderRadius: T.radius, background: T.card, border: `1px solid ${T.border}`, textAlign: 'center' }}>
-              <Icon name="info" size={24} color={T.t4} />
-              <Txt size={14} color={T.t3} style={{ display: 'block', marginTop: 10 }}>{error}</Txt>
-            </div>
-          )}
+              {/* ── Loading ── */}
+              {loading && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '72px 24px', gap: 16 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 20, border: `3px solid ${T.pink}`, borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+                  <Txt size={13} color={T.t3}>{t('ranking.loading')}</Txt>
+                </div>
+              )}
 
-          {/* ── Ranking vazio ── */}
-          {!loading && !error && ranking.length === 0 && (
-            <div style={{ margin: '32px 16px', padding: '40px 24px', borderRadius: T.radius, background: T.card, border: `1px solid ${T.border}`, textAlign: 'center' }}>
-              <Icon name="award" size={32} color={T.t4} />
-              <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginTop: 14, marginBottom: 6 }}>Nenhum maratonador ainda</Txt>
-              <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>Assista títulos e publique avaliações para entrar no ranking.</Txt>
-            </div>
-          )}
+              {/* ── Erro ── */}
+              {!loading && error && (
+                <div style={{ marginTop: 32, padding: '24px 20px', borderRadius: T.radius, background: T.card, border: `1px solid ${T.border}`, textAlign: 'center' }}>
+                  <Icon name="info" size={26} color={T.t4} />
+                  <Txt size={14} color={T.t3} style={{ display: 'block', marginTop: 10 }}>{error}</Txt>
+                </div>
+              )}
 
-          {/* ── Pódio ── */}
-          {!loading && !error && ranking.length > 0 && (
-            <>
-              <div style={{ padding: '32px 16px 0', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                {podiumOrder.map((u, i) => {
-                  if (!u) return <div key={i} style={{ flex: 1 }} />;
-                  const rank    = podiumRanks[i];
-                  const isFirst = rank === 0;
-                  const size    = isFirst ? 80 : 64;
-                  const mColor  = MEDAL_COLORS[rank];
-                  const mText   = MEDAL_TEXT[rank];
+              {/* ── Ranking vazio ── */}
+              {!loading && !error && ranking.length === 0 && (
+                <div style={{ marginTop: 32, padding: '44px 24px', borderRadius: T.radius, background: T.card, border: `1px solid ${T.border}`, textAlign: 'center' }}>
+                  <Icon name="award" size={34} color={T.t4} />
+                  <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginTop: 14, marginBottom: 6 }}>{t('ranking.noUsers')}</Txt>
+                  <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>{t('ranking.noUsersDetail')}</Txt>
+                </div>
+              )}
 
-                  return (
-                    <div
-                      key={u.uid}
-                      onClick={() => !u.isMe && router.push(`/user/${encodeURIComponent(u.username)}`)}
-                      style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: u.isMe ? 'default' : 'pointer', paddingBottom: isFirst ? 0 : 12 }}
-                    >
-                      <div style={{ position: 'relative' }}>
-                        <div style={{ width: size + 8, height: size + 8, borderRadius: '50%', background: mColor, padding: 3, boxShadow: isFirst ? `0 0 0 3px ${mColor}40, 0 8px 28px ${mColor}50` : `0 4px 16px ${mColor}30` }}>
-                          <div style={{ width: size, height: size, borderRadius: '50%', background: u.photoUrl ? `url(${u.photoUrl}) center/cover no-repeat` : u.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: `2px solid ${T.bg}` }}>
-                            {!u.photoUrl && <Txt size={isFirst ? 28 : 22} weight={900} color="#fff">{u.name[0]?.toUpperCase()}</Txt>}
+              {!loading && !error && ranking.length > 0 && (
+                <>
+                  {/* ── Participantes do pódio ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, alignItems: 'end', marginTop: 30 }}>
+                    {podiumSlots.map(({ entry: u, rank, color }) => {
+                      const isFirst = rank === 1;
+                      const avatarSize = isFirst ? 86 : 68;
+                      return (
+                        <button
+                          type="button"
+                          key={rank}
+                          onClick={() => u && !u.isMe && router.push(`/user/${encodeURIComponent(u.username)}`)}
+                          disabled={!u || u.isMe}
+                          style={{ minWidth: 0, padding: `0 2px ${isFirst ? 0 : 12}px`, border: 'none', background: 'none', cursor: u && !u.isMe ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                        >
+                          <div style={{ width: avatarSize + 8, height: avatarSize + 8, padding: 3, borderRadius: '50%', background: u ? `linear-gradient(145deg, ${color}, ${color}88)` : T.surface2, boxShadow: u ? (isFirst ? `0 0 0 3px ${T.pink}26, 0 10px 32px ${T.pink}45` : `0 7px 20px ${color}30`) : 'none' }}>
+                            <div style={{ width: avatarSize, height: avatarSize, borderRadius: '50%', background: u ? (u.photoUrl ? `url(${u.photoUrl}) center/cover no-repeat` : u.gradient) : T.surface, border: `2px solid ${T.bg}`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxSizing: 'border-box' }}>
+                              {u ? (!u.photoUrl && <Txt size={isFirst ? 28 : 22} weight={900} color="#fff">{u.name[0]?.toUpperCase()}</Txt>) : <Icon name="award" size={22} color={T.t4} />}
+                            </div>
                           </div>
-                        </div>
-                        <div style={{ position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)', width: 22, height: 22, borderRadius: 11, background: mColor, border: `2px solid ${T.bg}`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
-                          <Txt size={10} weight={900} color={mText}>{rank + 1}</Txt>
+                          <Txt size={isFirst ? 15 : 13} weight={800} color={u?.isMe ? T.pink : T.t1} style={{ display: 'block', width: '100%', marginTop: 9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                            {u ? (u.isMe ? t('ranking.you') : u.name.split(' ')[0]) : t('ranking.openSpot')}
+                          </Txt>
+                          <Txt size={11} color={T.t3} style={{ display: 'block', marginTop: 2 }}>{u ? `${u.score} pts` : '—'}</Txt>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* ── Pedestais ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, alignItems: 'end', marginTop: 14 }}>
+                    {podiumSlots.map(({ rank, height, color, surface }) => (
+                      <div key={rank} style={{ height, borderRadius: '18px 18px 5px 5px', background: `linear-gradient(180deg, ${surface}, transparent)`, border: `1px solid ${color}32`, borderBottomColor: `${color}12`, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 16, boxSizing: 'border-box', position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent, ${color}0C, transparent)`, pointerEvents: 'none' }} />
+                        <div style={{ width: rank === 1 ? 38 : 32, height: rank === 1 ? 38 : 32, borderRadius: 20, background: `${color}22`, border: `1px solid ${color}80`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: rank === 1 ? `0 0 18px ${color}50` : 'none' }}>
+                          <Txt size={rank === 1 ? 16 : 13} weight={900} color={rank === 1 ? '#fff' : color}>{rank}</Txt>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'center', marginTop: 6 }}>
-                        <Txt size={isFirst ? 15 : 13} weight={isFirst ? 800 : 700} color={u.isMe ? T.pink : T.t1} style={{ display: 'block', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {u.isMe ? 'Você' : u.name.split(' ')[0]}
-                        </Txt>
-                        <Txt size={11} color={T.t3} style={{ display: 'block' }}>{u.score} pts</Txt>
+                    ))}
+                  </div>
+
+                  {/* ── Atualização e fórmula ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 6, padding: '13px 8px 0', textAlign: 'center' }}>
+                    <Icon name="chart" size={13} color={T.t3} />
+                    <Txt size={11} color={T.t3}>{t('ranking.scoreFormula')}</Txt>
+                    <Txt size={10} color={T.t3}>•</Txt>
+                    <Txt size={11} color={T.t3}>{t('ranking.updatedNow')}</Txt>
+                  </div>
+
+                  {/* ── Outros participantes ── */}
+                  <div style={{ marginTop: 20, background: T.card, border: `1px solid ${T.border}`, borderRadius: 26, overflow: 'hidden', boxShadow: '0 12px 34px rgba(0,0,0,0.10)' }}>
+                    <div style={{ padding: '18px 18px 14px', textAlign: 'center' }}>
+                      <Txt size={15} weight={800} color={T.t1}>{t('ranking.others')}</Txt>
+                    </div>
+                    {rest.length === 0 ? (
+                      <div style={{ padding: '6px 20px 24px', textAlign: 'center' }}>
+                        <Txt size={12} color={T.t3}>{t('ranking.emptyOthers')}</Txt>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Degraus */}
-              <div style={{ display: 'flex', alignItems: 'flex-end', margin: '0 16px', gap: 6 }}>
-                <div style={{ flex: 1, height: 52, borderRadius: '12px 12px 0 0', background: 'rgba(156,163,175,0.10)', border: '1px solid rgba(156,163,175,0.18)', borderBottom: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Txt size={18} color="rgba(156,163,175,0.4)" weight={900}>2</Txt>
-                </div>
-                <div style={{ flex: 1, height: 76, borderRadius: '12px 12px 0 0', background: 'rgba(245,197,24,0.10)', border: '1px solid rgba(245,197,24,0.22)', borderBottom: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Txt size={22} color="rgba(245,197,24,0.45)" weight={900}>1</Txt>
-                </div>
-                <div style={{ flex: 1, height: 36, borderRadius: '12px 12px 0 0', background: 'rgba(205,127,50,0.10)', border: '1px solid rgba(205,127,50,0.18)', borderBottom: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Txt size={14} color="rgba(205,127,50,0.4)" weight={900}>3</Txt>
-                </div>
-              </div>
-
-              {/* Nota + legenda da pontuação */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '12px 0 0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Icon name="chart" size={12} color={T.t4} />
-                  <Txt size={11} color={T.t4}>Pontuação = horas assistidas + avaliações × 3</Txt>
-                </div>
-              </div>
-
-              {/* ── Minha posição (se fora do top 3) ── */}
-              {myRank > 3 && myRank > 0 && (
-                <div style={{ margin: '16px 16px 0', padding: '12px 16px', borderRadius: T.radiusSm, background: 'rgba(192,105,255,0.08)', border: `1px solid ${T.pink}30`, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 14, background: T.pink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Txt size={12} weight={900} color="#fff">{myRank}</Txt>
-                  </div>
-                  <div>
-                    <Txt size={13} weight={700} color={T.pink} style={{ display: 'block' }}>Sua posição no ranking</Txt>
-                    <Txt size={11} color={T.t3}>Continue maratonando para subir!</Txt>
-                  </div>
-                  <Txt size={14} weight={800} color={T.t1} style={{ marginLeft: 'auto' }}>
-                    {ranking[myRank - 1]?.score ?? 0} pts
-                  </Txt>
-                </div>
-              )}
-
-              {myRank > 0 && myRank <= 3 && (
-                <div style={{ margin: '16px 16px 0', padding: '12px 16px', borderRadius: T.radiusSm, background: 'rgba(245,197,24,0.08)', border: '1px solid rgba(245,197,24,0.22)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Icon name="crown" size={16} color={T.gold} />
-                  <Txt size={13} weight={700} color={T.gold}>Você está no top 3! Continue assim 🎉</Txt>
-                </div>
-              )}
-
-              {/* ── Outros participantes ── */}
-              {rest.length > 0 && (
-                <div style={{ margin: '16px 16px 0' }}>
-                  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: T.radius, overflow: 'hidden' }}>
-                    <div style={{ padding: '14px 16px 12px' }}>
-                      <Txt size={15} weight={800} color={T.t1}>Outros participantes</Txt>
-                    </div>
-                    {rest.map((u, i) => (
-                      <div
+                    ) : rest.map((u, i) => (
+                      <button
+                        type="button"
                         key={u.uid}
                         onClick={() => !u.isMe && router.push(`/user/${encodeURIComponent(u.username)}`)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderTop: `1px solid ${T.border}`, cursor: u.isMe ? 'default' : 'pointer', background: u.isMe ? 'rgba(192,105,255,0.06)' : 'transparent' }}
+                        disabled={u.isMe}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', border: 'none', borderTop: `1px solid ${T.border}`, cursor: u.isMe ? 'default' : 'pointer', background: u.isMe ? 'rgba(192,105,255,0.07)' : 'transparent', textAlign: 'left' }}
                       >
-                        <Txt size={13} weight={700} color={T.t4} style={{ width: 22, textAlign: 'center', flexShrink: 0 }}>{i + 4}</Txt>
-                        <div style={{ width: 40, height: 40, borderRadius: 20, flexShrink: 0, background: u.photoUrl ? `url(${u.photoUrl}) center/cover no-repeat` : u.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', border: u.isMe ? `2px solid ${T.pink}` : '2px solid transparent', overflow: 'hidden' }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 14, background: u.isMe ? T.pink : T.surface2, border: `1px solid ${u.isMe ? T.pink : T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Txt size={11} weight={900} color={u.isMe ? '#fff' : T.t3}>{i + 4}</Txt>
+                        </div>
+                        <div style={{ width: 42, height: 42, borderRadius: 21, flexShrink: 0, background: u.photoUrl ? `url(${u.photoUrl}) center/cover no-repeat` : u.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', border: u.isMe ? `2px solid ${T.pink}` : `2px solid ${T.border}`, overflow: 'hidden' }}>
                           {!u.photoUrl && <Txt size={15} weight={800} color="#fff">{u.name[0]?.toUpperCase()}</Txt>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <Txt size={14} weight={700} color={u.isMe ? T.pink : T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {u.isMe ? `Você (${u.name.split(' ')[0]})` : u.name}
+                            {u.isMe ? `${t('ranking.you')} (${u.name.split(' ')[0]})` : u.name}
                           </Txt>
                           <Txt size={11} color={T.t3}>{u.hours}h · {u.reviews} aval.</Txt>
                         </div>
-                        <Txt size={13} weight={700} color={T.t2}>{u.score} pts</Txt>
-                      </div>
+                        <Txt size={13} weight={800} color={T.t2}>{u.score} pts</Txt>
+                      </button>
                     ))}
                   </div>
-                </div>
-              )}
-            </>
-          )}
 
-          <div style={{ height: 90 }} />
+                  {/* ── Resumo da minha posição ── */}
+                  {myEntry && (
+                    <div style={{ position: 'sticky', bottom: 'calc(var(--tab-h, 84px) + 10px)', zIndex: 20, width: 'calc(100% - 24px)', maxWidth: 520, margin: '18px auto 0', padding: '10px 12px', borderRadius: 24, background: 'color-mix(in srgb, var(--c-card) 88%, transparent)', border: `1px solid ${T.border}`, boxShadow: '0 12px 34px rgba(0,0,0,0.22)', backdropFilter: 'blur(24px) saturate(160%)', WebkitBackdropFilter: 'blur(24px) saturate(160%)', display: 'flex', alignItems: 'center', gap: 10, boxSizing: 'border-box' } as React.CSSProperties}>
+                      <div style={{ width: 34, height: 34, borderRadius: 17, background: myRank <= 3 ? 'rgba(245,197,24,0.15)' : 'rgba(192,105,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Icon name={myRank <= 3 ? 'crown' : 'award'} size={17} color={myRank <= 3 ? T.gold : T.pink} />
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <Txt size={11} color={T.t3} style={{ display: 'block' }}>{t('ranking.position')}</Txt>
+                        <Txt size={13} weight={800} color={T.t1}>#{myRank} · {myEntry.score} pts</Txt>
+                      </div>
+                      <Txt size={11} weight={700} color={T.pink}>{t('ranking.myRankDetail')}</Txt>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div style={{ height: 110 }} />
+            </div>
+          </div>
         </ScrollArea>
       </Screen>
     </Frame>

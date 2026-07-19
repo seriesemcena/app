@@ -19,9 +19,8 @@ export default function SplashPage() {
     }
 
     if (!user) {
-      // Not logged in — show splash briefly then welcome
-      const t = setTimeout(() => router.replace('/auth'), 1600);
-      return () => clearTimeout(t);
+      router.replace('/auth');
+      return;
     }
 
     // Logged in — check if onboarding was ever completed

@@ -9,6 +9,9 @@ import { tmdb, tmdbImg, type TMDBItem } from '@/lib/tmdb';
 import { listStore } from '@/lib/store';
 import { MasonryGrid2 } from '@/components/posters';
 import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
+import i18next from '@/lib/i18n';
 
 type SeriesTab = 'minha_lista' | 'em_breve' | 'atrasadas';
 type WatchingTag = 'novo' | 'nao_assistido' | 'atrasado';
@@ -24,20 +27,22 @@ type WatchingItem = {
   network?: string;
 };
 
-const MONTHS_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  if (d.getTime() === today.getTime()) return 'Hoje';
-  if (d.getTime() === tomorrow.getTime()) return 'Amanhã';
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
-}
+type DateResult = { label: string; isToday: boolean; isTomorrow: boolean };
 
 export default function SeriesPage() {
   const router = useRouter();
+  const { t } = useTranslation('home');
   const { theme } = useTheme();
+
+  function formatDate(dateStr: string): DateResult {
+    const d = new Date(dateStr + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    if (d.getTime() === today.getTime()) return { label: t('today'), isToday: true, isTomorrow: false };
+    if (d.getTime() === tomorrow.getTime()) return { label: t('tomorrow'), isToday: false, isTomorrow: true };
+    const label = new Intl.DateTimeFormat(i18next.language, { day: 'numeric', month: 'short' }).format(d);
+    return { label, isToday: false, isTomorrow: false };
+  }
   const isDark = theme === 'dark';
   const [tab, setTab] = useState<SeriesTab>('minha_lista');
   const [items, setItems] = useState<WatchingItem[]>([]);
@@ -94,9 +99,9 @@ export default function SeriesPage() {
   [items]);
 
   const TAG_STYLES: Record<WatchingTag, { bg: string; color: string; label: string }> = {
-    novo:          { bg: '#CCFF84', color: '#000', label: 'NOVO' },
-    nao_assistido: { bg: '#FB772D', color: '#fff', label: 'NÃO ASSISTIDO' },
-    atrasado:      { bg: '#e0352b', color: '#fff', label: 'ATRASADO' },
+    novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo') },
+    nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido') },
+    atrasado:      { bg: '#e0352b', color: '#fff', label: t('tags.atrasado') },
   };
 
   return (
@@ -106,7 +111,7 @@ export default function SeriesPage() {
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
-            navTitle="Séries"
+            navTitle={t('series', { ns: 'navigation' })}
             showNavTitle={scrolled}
             right={
               <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.12)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.14)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}>
@@ -117,18 +122,14 @@ export default function SeriesPage() {
 
           {/* ── Tabs — sticky logo abaixo do header ── */}
           <div style={{
-            position: 'sticky', top: 56, zIndex: 48,
+            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '2px 16px 8px' : '8px 16px 10px',
             overflowX: 'auto', scrollbarWidth: 'none',
             background: 'transparent',
             transition: 'padding 0.25s ease',
           } as React.CSSProperties}>
-            {([
-              ['minha_lista', 'Minha lista'],
-              ['em_breve',    'Em breve'],
-              ['atrasadas',   'Atrasadas'],
-            ] as const).map(([id, label]) => (
+            {(['minha_lista', 'em_breve', 'atrasadas'] as const).map((id) => (
               <button key={id} onClick={() => setTab(id)} style={{
                 padding: scrolled ? '4.5px 13px' : '7px 16px',
                 borderRadius: 24, flexShrink: 0,
@@ -144,7 +145,7 @@ export default function SeriesPage() {
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
                 backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-              } as React.CSSProperties}>{label}</button>
+              } as React.CSSProperties}>{t(`tabs.${id}`)}</button>
             ))}
           </div>
 
@@ -157,12 +158,12 @@ export default function SeriesPage() {
 
                 {/* ── Minhas séries (assistindo) ── */}
                 <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Minhas séries</Txt>
+                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('mySeries')}</Txt>
                   {items.length === 0 && !loading ? (
                     <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 12, borderRadius: 14, background: T.card, border: `1px solid ${T.border}`, paddingLeft: 16 }}>
                       <Icon name="tv" size={22} color={T.t4} />
                       <Txt size={13} color={T.t3} style={{ flex: 1 }}>
-                        Adicione séries em <strong>Assistindo</strong> para vê-las aqui
+                        {t('emptySeriesDetail')}
                       </Txt>
                     </div>
                   ) : (
@@ -182,11 +183,11 @@ export default function SeriesPage() {
 
                 {/* ── Quero assistir ── */}
                 <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Quero assistir</Txt>
+                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('wantToWatchTitle')}</Txt>
                   {wantList.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
                       <Icon name="bookmark" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>Nenhuma série salva para assistir</Txt>
+                      <Txt size={13} color={T.t3}>{t('emptyWantSeries')}</Txt>
                     </div>
                   ) : (
                     <MasonryGrid2
@@ -199,18 +200,18 @@ export default function SeriesPage() {
 
                 {/* ── Finalizadas ── */}
                 <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Finalizadas</Txt>
+                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('finished')}</Txt>
                   {watchedList.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
                       <Icon name="check" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>Nenhuma série finalizada ainda</Txt>
+                      <Txt size={13} color={T.t3}>{t('emptyFinished')}</Txt>
                     </div>
                   ) : (
                     <MasonryGrid2
                       items={watchedList as unknown as TMDBItem[]}
                       onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
                       padding="0"
-                      getTag={() => ({ label: 'CONCLUÍDO', color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
+                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
                     />
                   )}
                 </div>
@@ -221,8 +222,8 @@ export default function SeriesPage() {
             {/* ══ TAB: Em breve ══ */}
             {tab === 'em_breve' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>Em breve</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>Próximos episódios das suas séries</Txt>
+                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('tabs.em_breve')}</Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('upcomingEpisodes')}</Txt>
 
                 {loading ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -233,18 +234,17 @@ export default function SeriesPage() {
                 ) : emBreve.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
                     <Icon name="calendar" size={40} color={T.t4} />
-                    <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>Sem episódios agendados</Txt>
+                    <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>{t('noUpcoming')}</Txt>
                     <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.4, maxWidth: 240 }}>
-                      Quando suas séries tiverem novos episódios confirmados, eles aparecerão aqui
+                      {t('noUpcomingDetail')}
                     </Txt>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {emBreve.map((item) => {
                       const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
-                      const dateLabel = item.nextAirDate ? formatDate(item.nextAirDate) : '';
-                      const isToday = dateLabel === 'Hoje';
-                      const isTomorrow = dateLabel === 'Amanhã';
+                      const dateResult = item.nextAirDate ? formatDate(item.nextAirDate) : { label: '', isToday: false, isTomorrow: false };
+                      const { label: dateLabel, isToday, isTomorrow } = dateResult;
                       return (
                         <button
                           key={item.id}
@@ -263,7 +263,7 @@ export default function SeriesPage() {
                               {item.title}
                             </Txt>
                             <Txt size={12} color={T.t3}>
-                              {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : 'Novo episódio'}
+                              {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : t('newEpisode')}
                             </Txt>
                           </div>
                           {/* Date badge */}
@@ -286,9 +286,9 @@ export default function SeriesPage() {
             {/* ══ TAB: Atrasadas ══ */}
             {tab === 'atrasadas' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>Atrasadas</Txt>
+                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('tabs.atrasadas')}</Txt>
                 <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>
-                  Séries que você está há mais de 30 dias sem assistir
+                  {t('behindDetail')}
                 </Txt>
 
                 {loading ? (
@@ -302,15 +302,15 @@ export default function SeriesPage() {
                     <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(52,199,89,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name="check" size={30} color="#1a8f3a" />
                     </div>
-                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block' }}>Você está em dia!</Txt>
-                    <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>Nenhuma série atrasada. Continue assim!</Txt>
+                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block' }}>{t('upToDate')}</Txt>
+                    <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>{t('noBehind')}</Txt>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {atrasadas.map((item) => {
                       const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
                       const lastDate = item.lastAirDate
-                        ? `${new Date(item.lastAirDate + 'T00:00:00').getDate()} ${MONTHS_SHORT[new Date(item.lastAirDate + 'T00:00:00').getMonth()]}`
+                        ? new Intl.DateTimeFormat(i18next.language, { day: 'numeric', month: 'short' }).format(new Date(item.lastAirDate + 'T00:00:00'))
                         : null;
                       return (
                         <button
@@ -331,10 +331,10 @@ export default function SeriesPage() {
                             </Txt>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ padding: '2px 7px', borderRadius: 6, background: '#e0352b' }}>
-                                <Txt size={10} weight={800} color="#fff">ATRASADO</Txt>
+                                <Txt size={10} weight={800} color="#fff">{t('tags.atrasado')}</Txt>
                               </span>
                               {lastDate && (
-                                <Txt size={12} color={T.t3}>Último: {lastDate}</Txt>
+                                <Txt size={12} color={T.t3}>{t('lastAiredPrefix')} {lastDate}</Txt>
                               )}
                             </div>
                           </div>

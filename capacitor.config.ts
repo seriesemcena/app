@@ -2,20 +2,21 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.sectime.app',
-  appName: 'SEC TIME',
+  appName: 'Maratonou',
   webDir: 'out',            // Next.js static export output folder
 
   /* ── Development: point to local/Vercel dev server ──────────────
      Comment this block out for PRODUCTION builds so the app
      bundles the static export instead of loading a remote URL.
      ─────────────────────────────────────────────────────────────── */
-  server: {
-    // For local dev: 'http://192.168.x.x:3000' (use your LAN IP, not localhost)
-    // For staging:   'https://your-app.vercel.app'
-    url: process.env.CAPACITOR_SERVER_URL ?? 'https://your-app.vercel.app',
-    cleartext: false,       // set true only for http:// local dev
-    androidScheme: 'https',
-  },
+  ...(process.env.CAPACITOR_SERVER_URL ? {
+    server: {
+      // For local dev use a LAN URL; production omits this block and bundles `out`.
+      url: process.env.CAPACITOR_SERVER_URL,
+      cleartext: process.env.CAPACITOR_SERVER_URL.startsWith('http://'),
+      androidScheme: 'https',
+    },
+  } : {}),
 
   plugins: {
     PushNotifications: {
@@ -37,7 +38,8 @@ const config: CapacitorConfig = {
   },
 
   ios: {
-    contentInset: 'automatic',
+    // CSS env(safe-area-inset-*) is the single source of truth.
+    contentInset: 'never',
   },
 };
 

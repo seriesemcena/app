@@ -1,0 +1,27 @@
+{
+  "generic": "Algo deu errado",
+  "network": "Erro de conexão. Verifique sua internet.",
+  "notFound": "Página não encontrada",
+  "unauthorized": "Você precisa estar logado para acessar esta página",
+  "forbidden": "Você não tem permissão para esta ação",
+  "loading": "Carregando...",
+  "restoringSession": "Restaurando sua sessão...",
+  "startupFailed": "Não foi possível iniciar o app",
+  "startupFailedDetail": "O Maratonou não conseguiu restaurar sua sessão com segurança.",
+  "genericDetail": "Não conseguimos carregar esta tela. Seus dados continuam protegidos.",
+  "offlineShort": "Sem conexão",
+  "retry": "Tentar novamente",
+  "imageLoad": "Erro ao carregar imagem",
+  "authFailed": "Erro de autenticação",
+  "saveFailed": "Erro ao salvar. Tente novamente.",
+  "deleteFailed": "Erro ao excluir. Tente novamente.",
+  "searchFailed": "Erro na busca. Tente novamente.",
+  "empty": {
+    "list": "Nenhum item na lista",
+    "search": "Nenhum resultado encontrado",
+    "feed": "Nenhuma atividade recente",
+    "reviews": "Nenhum comentário ainda",
+    "episodes": "Nenhum episódio encontrado",
+    "notifications": "Sem notificações"
+  }
+}

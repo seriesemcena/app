@@ -2,13 +2,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, AppBar, Txt, Toast } from '@/components/primitives';
+import { Screen, ScrollArea, Txt, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
+import { SettingsCard, SettingsHeader, SettingsPrimaryButton } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
 import { profileStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbProfileStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
+import { navigateBack } from '@/lib/navigation';
 
 const SERVICES = [
   { id: 'Netflix',    color: '#E50914', icon: 'N',  monthly: 'R$ 39,90' },
@@ -41,7 +43,7 @@ export default function StreamingsPage() {
       try { await dbProfileStore.set(getDB(), user.uid, { streamings: selected }); } catch {}
     }
     setToast('Streamings salvos!');
-    setTimeout(() => router.back(), 1100);
+    setTimeout(() => navigateBack(router, '/settings'), 1100);
   };
 
   const total = SERVICES.filter(s => selected.includes(s.id))
@@ -50,25 +52,22 @@ export default function StreamingsPage() {
   return (
     <Frame>
       <Screen>
-        <AppBar
-          title="Meus streamings"
-          left={<button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>}
-          right={<button onClick={save} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Txt size={14} weight={700} color={T.pink}>Salvar</Txt></button>}
-        />
+        <SettingsHeader title="Meus streamings" onBack={() => navigateBack(router, '/settings')} />
         <ScrollArea>
-          <div style={{ padding: '8px 16px 16px' }}>
-            <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>
+          <div style={{ padding: '18px 16px 32px' }}>
+            <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 18, lineHeight: 1.5 }}>
               Selecione os serviços que você assina
             </Txt>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <SettingsCard>
               {SERVICES.map(s => {
                 const on = selected.includes(s.id);
+                const index = SERVICES.indexOf(s);
                 return (
                   <button
                     key={s.id}
                     onClick={() => toggle(s.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: on ? s.color + '18' : T.card, border: `1px solid ${on ? s.color + '60' : T.border}`, borderRadius: 12, cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', background: on ? s.color + '12' : 'transparent', border: 'none', borderBottom: index < SERVICES.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s' }}
                   >
                     <div style={{ width: 44, height: 44, borderRadius: 12, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Txt size={14} weight={900} color="#fff">{s.icon}</Txt>
@@ -83,19 +82,19 @@ export default function StreamingsPage() {
                   </button>
                 );
               })}
-            </div>
+            </SettingsCard>
 
             {selected.length > 0 && (
-              <div style={{ marginTop: 20, padding: 16, background: T.card, borderRadius: 12, border: `1px solid ${T.border}` }}>
+              <SettingsCard style={{ marginTop: 16, padding: 16 }}>
                 <Txt size={12} color={T.t3} style={{ display: 'block', marginBottom: 6 }}>{selected.length} serviço{selected.length > 1 ? 's' : ''} selecionado{selected.length > 1 ? 's' : ''}</Txt>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <Txt size={14} weight={600}>Total estimado</Txt>
                   <Txt size={20} weight={900} color={T.pink}>R$ {total.toFixed(2).replace('.', ',')}/mês</Txt>
                 </div>
-              </div>
+              </SettingsCard>
             )}
 
-            <div style={{ height: 24 }} />
+            <SettingsPrimaryButton label="Salvar alterações" onClick={save} style={{ marginTop: 22 }} />
           </div>
         </ScrollArea>
         <Toast msg={toast} visible={!!toast} icon="check" />

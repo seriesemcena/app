@@ -6,10 +6,12 @@ import { Screen, Txt, Btn, Logo, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { TMDBBackdrop, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
-import { tmdb, tmdbImg, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
+import { tmdb, tmdbImg, normalizeTMDBImageUrl, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { listStore, sliderStore, type SliderItem, type SliderCategory } from '@/lib/store';
 import { checkUpcomingReleases } from '@/lib/releaseNotifier';
 import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
 type HomeTab = 'para_voce' | 'em_alta' | 'novidades';
 
@@ -27,6 +29,10 @@ type WatchingItem = {
   tag?: WatchingTag;
 };
 
+/* título localizado + poster textless dos heroes, por `${type}_${id}_${lang}` —
+   sobrevive a remontagens da página, então voltar à home não refaz fetches */
+const heroMetaCache = new Map<string, { title: string | null; textless: string | null }>();
+
 const PLATFORMS = [
   { id: 8,    name: 'Netflix',      logo: 'netflix'       },
   { id: 337,  name: 'Disney+',      logo: 'dineyplus'     },
@@ -40,8 +46,52 @@ const PLATFORMS = [
 
 const STREAM_NOISE = `url("data:image/svg+xml,%3Csvg xmlns%3D'http://www.w3.org/2000/svg'%3E%3Cfilter id%3D'n'%3E%3CfeTurbulence type%3D'fractalNoise' baseFrequency%3D'.75' numOctaves%3D'4'/%3E%3C/filter%3E%3Crect width%3D'100%25' height%3D'100%25' filter%3D'url(%23n)'/%3E%3C/svg%3E")`;
 
+type HomeSectionGridProps = {
+  title?: string;
+  items?: TMDBItem[];
+  loading?: boolean;
+  limit?: number;
+  loadMoreLabel: string;
+  onItem: (item: TMDBItem) => void;
+  onLoadMore?: () => void;
+};
+
+/* Kept outside HomePage so ordinary home state updates do not remount every
+   poster card and repeat all of their metadata/image requests. */
+function HomeSectionGrid({
+  title, items, loading, limit = 10, loadMoreLabel, onItem, onLoadMore,
+}: HomeSectionGridProps) {
+  const sliced = (items || []).slice(0, limit);
+  const hasMore = !loading && (items || []).length > limit;
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {title && <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, paddingRight: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>}
+      <MasonryGrid2
+        items={sliced}
+        onItem={onItem}
+        loading={loading}
+        skeletonCount={6}
+      />
+      {hasMore && onLoadMore && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 8px' }}>
+          <button onClick={onLoadMore} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '10px 24px', borderRadius: 24,
+            background: 'transparent', border: `1px solid ${T.border}`,
+            cursor: 'pointer', fontFamily: "'Area','Inter',sans-serif",
+          }}>
+            <Txt size={13} weight={700} color={T.t2}>{loadMoreLabel}</Txt>
+            <Icon name="chevronR" size={13} color={T.t3} style={{ transform: 'rotate(90deg)' }} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
+  const { t, i18n } = useTranslation('home');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -85,6 +135,7 @@ export default function HomePage() {
   const [newsItems, setNewsItems]       = useState<NewsPost[]>([]);
   const [customSlider, setCustomSlider] = useState<SliderItem[]>([]);
   const [watchingItems, setWatchingItems] = useState<WatchingItem[]>([]);
+  const [heroTitles, setHeroTitles]     = useState<Record<number, string>>({});
   const [trendFilter, setTrendFilter]   = useState<'series' | 'movies'>('series');
   const [novFilter, setNovFilter]       = useState<'series' | 'movies'>('series');
   const [trendLimit, setTrendLimit]     = useState(10);
@@ -106,9 +157,6 @@ export default function HomePage() {
   /* ── init: custom slider + upcoming releases ── */
   useEffect(() => {
     setCustomSlider(sliderStore.get());
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    }
     const initial = setTimeout(() => { checkUpcomingReleases().catch(() => {}); }, 4000);
     const interval = setInterval(() => { checkUpcomingReleases().catch(() => {}); }, 30 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };
@@ -147,6 +195,7 @@ export default function HomePage() {
 
           return {
             ...item,
+            title: detail?.name || detail?.title || item.title,
             backdrop_path: detail?.backdrop_path ?? (item as WatchingItem).backdrop_path ?? null,
             // próximo ep (EM BREVE)
             nextSeason:   next?.season_number  ?? undefined,
@@ -163,7 +212,8 @@ export default function HomePage() {
         }
       })
     ).then(setWatchingItems);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.language]);
 
   /* ── fetch news ── */
   useEffect(() => {
@@ -199,61 +249,44 @@ export default function HomePage() {
     });
   }, [customSlider, trendingAll]);
 
-  /* ── fetch textless posters for slider items ── */
+  /* ── one fetch per hero: localized title + textless poster together ──
+     The old poster fetch packed "?include_image_language=null" INSIDE the
+     endpoint param — the API's endpoint allowlist rejects "?"/"=" in the
+     path, so every hero poster came back 400 and the slider fell back to
+     localized art. append_to_response also halves the request count. */
   useEffect(() => {
     if (heroes.length === 0) return;
+    const lang = i18n.language || 'pt-BR';
     heroes.forEach(async (item) => {
-      if (textlessPosters[item.id] !== undefined) return;
+      const cacheKey = `${item.type}_${item.id}_${lang}`;
+      const hit = heroMetaCache.get(cacheKey);
+      if (hit) {
+        if (hit.title) setHeroTitles(prev => ({ ...prev, [item.id]: hit.title! }));
+        setTextlessPosters(prev => ({ ...prev, [item.id]: normalizeTMDBImageUrl(hit.textless) }));
+        return;
+      }
       try {
-        const endpoint = `/${item.type}/${item.id}/images?include_image_language=null`;
-        const data = await fetch(`/api/tmdb?endpoint=${encodeURIComponent(endpoint)}`).then(r => r.json());
-        const found = (data.posters || []).find((p: any) => p.iso_639_1 === null);
-        setTextlessPosters(prev => ({
-          ...prev,
-          [item.id]: found ? `https://image.tmdb.org/t/p/w780${found.file_path}` : null,
-        }));
+        const data = await fetch(
+          `/api/tmdb?endpoint=/${item.type}/${item.id}&language=${lang}&append_to_response=images&include_image_language=null`
+        ).then(r => r.json());
+        const title: string | null = data?.title || data?.name || null;
+        const found = (data?.images?.posters || []).find((p: any) => p.iso_639_1 === null);
+        const textless = found ? tmdbImg(found.file_path, 'w780') : null;
+        heroMetaCache.set(cacheKey, { title, textless });
+        if (title) setHeroTitles(prev => ({ ...prev, [item.id]: title }));
+        setTextlessPosters(prev => ({ ...prev, [item.id]: textless }));
       } catch {
         setTextlessPosters(prev => ({ ...prev, [item.id]: null }));
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heroes]);
+  }, [heroes, i18n.language]);
 
   const openTitle = useCallback((item: TMDBItem) => {
     const n = normalize(item);
     router.push(`/title/${n.type}/${n.id}`);
   }, [router]);
 
-
-  /* ── Section masonry 2 colunas ── */
-  const SectionGrid = ({ title, items, loading, limit = 10, onLoadMore }: { title?: string; items?: TMDBItem[]; loading?: boolean; limit?: number; onLoadMore?: () => void }) => {
-    const sliced = (items || []).slice(0, limit);
-    const hasMore = !loading && (items || []).length > limit;
-    return (
-      <div style={{ marginBottom: 28 }}>
-        {title && <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, paddingRight: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>}
-        <MasonryGrid2
-          items={sliced}
-          onItem={openTitle}
-          loading={loading}
-          skeletonCount={6}
-        />
-        {hasMore && onLoadMore && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 8px' }}>
-            <button onClick={onLoadMore} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '10px 24px', borderRadius: 24,
-              background: 'transparent', border: `1px solid ${T.border}`,
-              cursor: 'pointer', fontFamily: "'Area','Inter',sans-serif",
-            }}>
-              <Txt size={13} weight={700} color={T.t2}>Carregar mais</Txt>
-              <Icon name="chevronR" size={13} color={T.t3} style={{ transform: 'rotate(90deg)' }} />
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <Frame>
@@ -274,7 +307,7 @@ export default function HomePage() {
             const fs  = 12 - scrollRatio * 1;   // font-size: 12 → 11px
             const pbRow = 10 - scrollRatio * 4; // row bottom padding: 10 → 6px
             return (
-              <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, overflow: 'visible', paddingTop: 'env(safe-area-inset-top, 0px)' } as React.CSSProperties}>
+              <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, overflow: 'visible', paddingTop: 'var(--safe-area-top)' } as React.CSSProperties}>
                 {[{ blur: 22, end: 35 }, { blur: 14, end: 60 }, { blur: 7, end: 80 }, { blur: 3, end: 95 }].map(({ blur, end }, i) => (
                   <div key={i} style={{ position: 'absolute', inset: 0, backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)`, maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, pointerEvents: 'none' } as React.CSSProperties} />
                 ))}
@@ -296,7 +329,7 @@ export default function HomePage() {
                 </div>
                 {/* Tabs row — encolhe ao rolar */}
                 <div style={{ position: 'relative', zIndex: 2, padding: `0 16px ${pbRow}px`, display: 'flex', gap: 6 }}>
-                  {([['para_voce','Para você'],['em_alta','Em alta'],['novidades','Novidades']] as const).map(([id, label]) => (
+                  {(['para_voce','em_alta','novidades'] as const).map((id) => (
                     <button key={id} onClick={() => setHomeTab(id)} style={{
                       padding: `${pV}px ${pH}px`, borderRadius: 20, flexShrink: 0,
                       background: homeTab === id ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.12)',
@@ -307,7 +340,7 @@ export default function HomePage() {
                       backdropFilter: 'blur(24px) saturate(180%)',
                       WebkitBackdropFilter: 'blur(24px) saturate(180%)',
                       boxShadow: homeTab === id ? '0 2px 12px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,1)' : '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
-                    } as React.CSSProperties}>{label}</button>
+                    } as React.CSSProperties}>{t(`tabs.${id}`)}</button>
                   ))}
                 </div>
               </div>
@@ -337,7 +370,7 @@ export default function HomePage() {
                     : heroes.map((item) => {
                         // Desktop: usa backdrop diretamente (sem textless)
                         // Mobile: textless poster com fallback para poster padrão
-                        const textless = textlessPosters[item.id];
+                        const textless = normalizeTMDBImageUrl(textlessPosters[item.id]);
                         const fetchDone = textless !== undefined;
                         const imgUrl = isDesktop
                           ? (tmdbImg(item.backdrop_path, 'original') ?? tmdbImg(item.poster_path, 'w780'))
@@ -363,18 +396,18 @@ export default function HomePage() {
                             <div style={{ position: 'absolute', bottom: 52, left: 16, right: 16, zIndex: 3 }}>
                               <Txt size={32} weight={900} color="#fff"
                                 style={{ display: 'block', lineHeight: 1.05, letterSpacing: -1, marginBottom: 14, textShadow: '0 2px 20px rgba(0,0,0,0.7)', fontFamily: "'Greed','Area',sans-serif" } as React.CSSProperties}>
-                                {item.title}
+                                {heroTitles[item.id] ?? item.title}
                               </Txt>
                               <div style={{ display: 'flex', gap: 8 }}>
                                 <button onClick={(e) => { e.stopPropagation(); router.push(`/title/${item.type}/${item.id}`); }}
                                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 24, background: 'rgba(255,255,255,0.88)', border: '1px solid rgba(255,255,255,0.5)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 2px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,1)' } as React.CSSProperties}>
                                   <Icon name="plus" size={13} color="#0a0a0a" />
-                                  <Txt size={13} weight={700} color="#0a0a0a">Adicionar à lista</Txt>
+                                  <Txt size={13} weight={700} color="#0a0a0a">{t('addToList')}</Txt>
                                 </button>
                                 <button onClick={(e) => { e.stopPropagation(); router.push(`/title/${item.type}/${item.id}`); }}
                                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 24, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.25)' } as React.CSSProperties}>
                                   <Icon name="star" size={13} color="#fff" />
-                                  <Txt size={13} weight={600} color="#fff">Avaliar</Txt>
+                                  <Txt size={13} weight={600} color="#fff">{t('rate')}</Txt>
                                 </button>
                               </div>
                             </div>
@@ -420,11 +453,11 @@ export default function HomePage() {
               <div style={{ margin: '0 16px 28px' }}>
                 {/* Section header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <Txt size={22} weight={800} style={{ fontStretch: 'condensed' } as React.CSSProperties}>Minha lista</Txt>
+                  <Txt size={22} weight={800} style={{ fontStretch: 'condensed' } as React.CSSProperties}>{t('sections.myList')}</Txt>
                   <button
                     onClick={() => router.push('/lists')}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Txt size={13} weight={700} color={T.pink}>Ver tudo</Txt>
+                    <Txt size={13} weight={700} color={T.pink}>{t('sections.seeAll')}</Txt>
                     <Icon name="chevronR" size={14} color={T.pink} />
                   </button>
                 </div>
@@ -433,12 +466,12 @@ export default function HomePage() {
                   <div style={{ padding: '20px 16px', borderRadius: 16, background: T.card, border: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
                     <Icon name="tv" size={28} color={T.t3} />
                     <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.4 }}>
-                      Adicione séries em <strong>Assistindo</strong> para ver os próximos episódios aqui
+                      {t('emptyWatchingDetail')}
                     </Txt>
                     <button
                       onClick={() => router.push('/search')}
                       style={{ padding: '8px 20px', borderRadius: 20, background: T.pink, border: 'none', cursor: 'pointer' }}>
-                      <Txt size={13} weight={700} color="#fff">Explorar séries</Txt>
+                      <Txt size={13} weight={700} color="#fff">{t('explore')}</Txt>
                     </button>
                   </div>
                 ) : isDesktop ? (
@@ -447,16 +480,16 @@ export default function HomePage() {
                     {watchingItems.map((item) => {
                       const thumbUrl = tmdbImg(item.backdrop_path, 'w780') ?? tmdbImg(item.poster_path, 'w342') ?? undefined;
                       const tagStyles: Record<WatchingTag, { bg: string; color: string; label: string }> = {
-                        em_breve:      { bg: '#D92FFF',  color: '#fff', label: 'EM BREVE' },
-                        novo:          { bg: '#CCFF84',  color: '#000', label: 'NOVO' },
-                        nao_assistido: { bg: '#FB772D',  color: '#fff', label: 'NÃO ASSISTIDO' },
-                        atrasado:      { bg: '#e0352b',  color: '#fff', label: 'ATRASADO' },
+                        em_breve:      { bg: '#D92FFF',  color: '#fff', label: t('tags.em_breve') },
+                        novo:          { bg: '#CCFF84',  color: '#000', label: t('tags.novo') },
+                        nao_assistido: { bg: '#FB772D',  color: '#fff', label: t('tags.nao_assistido') },
+                        atrasado:      { bg: '#e0352b',  color: '#fff', label: t('tags.atrasado') },
                       };
                       const epLabel = item.tag === 'em_breve' && item.nextSeason && item.nextEpisode
                         ? `T${item.nextSeason} · Ep ${item.nextEpisode}`
                         : item.lastSeason && item.lastEpisode
                           ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
-                          : 'Assistindo';
+                          : t('watching');
                       return (
                         <button
                           key={item.id}
@@ -507,10 +540,10 @@ export default function HomePage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               {item.tag && (() => {
                                 const tagStyles: Record<WatchingTag, { bg: string; color: string; label: string }> = {
-                                  em_breve:      { bg: '#D92FFF',  color: '#fff', label: 'EM BREVE' },
-                                  novo:          { bg: '#CCFF84',  color: '#000', label: 'NOVO' },
-                                  nao_assistido: { bg: '#FB772D',  color: '#fff', label: 'NÃO ASSISTIDO' },
-                                  atrasado:      { bg: '#e0352b',  color: '#fff', label: 'ATRASADO' },
+                                  em_breve:      { bg: '#D92FFF',  color: '#fff', label: t('tags.em_breve') },
+                                  novo:          { bg: '#CCFF84',  color: '#000', label: t('tags.novo') },
+                                  nao_assistido: { bg: '#FB772D',  color: '#fff', label: t('tags.nao_assistido') },
+                                  atrasado:      { bg: '#e0352b',  color: '#fff', label: t('tags.atrasado') },
                                 };
                                 const s = tagStyles[item.tag];
                                 return (
@@ -526,7 +559,7 @@ export default function HomePage() {
                                     ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
                                     : item.lastSeason && item.lastEpisode
                                       ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
-                                      : 'Assistindo'}
+                                      : t('watching')}
                               </Txt>
                             </div>
                           </div>
@@ -539,15 +572,15 @@ export default function HomePage() {
               </div>
 
               {/* ── Séries recomendadas ── */}
-              <SectionGrid title="Séries recomendadas" items={topRatedTV?.results} loading={lTRTV} />
+              <HomeSectionGrid title={t('sections.recommendedSeries')} items={topRatedTV?.results} loading={lTRTV} loadMoreLabel={t('loadMore')} onItem={openTitle} />
 
               {/* ── Filmes recomendados ── */}
-              <SectionGrid title="Filmes recomendados" items={topRatedMov?.results} loading={lTRM} />
+              <HomeSectionGrid title={t('sections.recommendedMovies')} items={topRatedMov?.results} loading={lTRM} loadMoreLabel={t('loadMore')} onItem={openTitle} />
 
               {/* ── Streamings ── */}
               <div style={{ marginBottom: 28 }}>
                 <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>
-                  Streamings
+                  {t('streamings')}
                 </Txt>
                 <div style={{
                   display: 'flex', gap: 10,
@@ -615,7 +648,7 @@ export default function HomePage() {
                         display: 'flex', alignItems: 'center', gap: 3,
                         position: 'relative', zIndex: 1,
                       }}>
-                        Em alta <Icon name="chevronR" size={9} color={scSubColor} />
+                        {t('streamingTrending')} <Icon name="chevronR" size={9} color={scSubColor} />
                       </span>
                     </button>
                   ))}
@@ -628,10 +661,10 @@ export default function HomePage() {
                 <div style={{ background: T.card, padding: '20px 16px 24px', marginBottom: 8 }}>
                   {/* Section header */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <Txt size={22} weight={800} style={{ fontStretch: 'condensed' } as React.CSSProperties}>Fique por dentro</Txt>
+                    <Txt size={22} weight={800} style={{ fontStretch: 'condensed' } as React.CSSProperties}>{t('keepUpToDate')}</Txt>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src="https://seriesemcena.com.br/wp-content/uploads/2025/01/sec_logo_20252.png"
+                      src="/api/news-image?path=%2Fwp-content%2Fuploads%2F2025%2F01%2Fsec_logo_20252.png"
                       alt="Séries em Cena"
                       style={{ height: 22, width: 'auto', objectFit: 'contain' }}
                     />
@@ -696,7 +729,7 @@ export default function HomePage() {
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
                     <a href="https://seriesemcena.com.br" target="_blank" rel="noopener noreferrer"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '10px 24px', borderRadius: 24, background: T.bg, border: `1px solid ${T.border}` }}>
-                      <Txt size={13} weight={700} color={T.t2}>Ver mais notícias</Txt>
+                      <Txt size={13} weight={700} color={T.t2}>{t('seeMoreNews')}</Txt>
                       <Icon name="chevronR" size={13} color={T.t3} />
                     </a>
                   </div>
@@ -726,13 +759,13 @@ export default function HomePage() {
                     fontFamily: "'Area','Inter',sans-serif",
                     cursor: 'pointer', transition: 'all 0.2s',
                   }}>
-                    {f === 'series' ? 'Séries' : 'Filmes'}
+                    {t(`filter.${f}`)}
                   </button>
                 ))}
               </div>
               {trendFilter === 'series'
-                ? <SectionGrid items={trendTV?.results}     loading={lTTV} limit={trendLimit} onLoadMore={() => setTrendLimit(l => l + 10)} />
-                : <SectionGrid items={trendMovies?.results} loading={lTM}  limit={trendLimit} onLoadMore={() => setTrendLimit(l => l + 10)} />
+                ? <HomeSectionGrid items={trendTV?.results}     loading={lTTV} limit={trendLimit} loadMoreLabel={t('loadMore')} onItem={openTitle} onLoadMore={() => setTrendLimit(l => l + 10)} />
+                : <HomeSectionGrid items={trendMovies?.results} loading={lTM}  limit={trendLimit} loadMoreLabel={t('loadMore')} onItem={openTitle} onLoadMore={() => setTrendLimit(l => l + 10)} />
               }
             </div>
           )}
@@ -757,13 +790,13 @@ export default function HomePage() {
                     fontFamily: "'Area','Inter',sans-serif",
                     cursor: 'pointer', transition: 'all 0.2s',
                   }}>
-                    {f === 'series' ? 'Séries' : 'Filmes'}
+                    {t(`filter.${f}`)}
                   </button>
                 ))}
               </div>
               {novFilter === 'series'
-                ? <SectionGrid items={onAir?.results}      loading={lOA} limit={novLimit} onLoadMore={() => setNovLimit(l => l + 10)} />
-                : <SectionGrid items={nowPlaying?.results} loading={lNP} limit={novLimit} onLoadMore={() => setNovLimit(l => l + 10)} />
+                ? <HomeSectionGrid items={onAir?.results}      loading={lOA} limit={novLimit} loadMoreLabel={t('loadMore')} onItem={openTitle} onLoadMore={() => setNovLimit(l => l + 10)} />
+                : <HomeSectionGrid items={nowPlaying?.results} loading={lNP} limit={novLimit} loadMoreLabel={t('loadMore')} onItem={openTitle} onLoadMore={() => setNovLimit(l => l + 10)} />
               }
             </div>
           )}

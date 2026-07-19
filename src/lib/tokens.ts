@@ -43,8 +43,9 @@ export const T = {
 
 export type IconName =
   | 'home' | 'search' | 'calendar' | 'list' | 'user'
-  | 'star' | 'starO' | 'heart' | 'heartO' | 'play' | 'check' | 'plus'
+  | 'star' | 'starO' | 'heart' | 'heartO' | 'play' | 'check' | 'plus' | 'plusPlain'
   | 'chevronR' | 'chevronL' | 'chevronD' | 'bell' | 'settings'
   | 'film' | 'tv' | 'crown' | 'close' | 'info' | 'eye' | 'share'
   | 'fire' | 'mappin' | 'wifi' | 'lock' | 'smile' | 'message' | 'flag'
-  | 'chart' | 'chevronLeft' | 'chevronRight' | 'bookmark' | 'award' | 'clock';
+  | 'chart' | 'chevronLeft' | 'chevronRight' | 'bookmark' | 'award' | 'clock' | 'menuDots'
+  | 'moon' | 'logout';

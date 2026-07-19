@@ -9,6 +9,8 @@ import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { listStore, revStore } from '@/lib/store';
 import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
 type MoviesTab = 'minha_lista' | 'em_cartaz' | 'no_streaming' | 'avaliados';
 
@@ -18,6 +20,7 @@ type ListMovie = {
 
 export default function MoviesPage() {
   const router = useRouter();
+  const { t } = useTranslation('home');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [tab, setTab] = useState<MoviesTab>('minha_lista');
@@ -89,7 +92,7 @@ export default function MoviesPage() {
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
-            navTitle="Filmes"
+            navTitle={t('movies', { ns: 'navigation' })}
             showNavTitle={scrolled}
             right={
               <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -100,19 +103,14 @@ export default function MoviesPage() {
 
           {/* ── Tabs — sticky logo abaixo do header ── */}
           <div style={{
-            position: 'sticky', top: 56, zIndex: 48,
+            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '2px 16px 8px' : '8px 16px 10px',
             overflowX: 'auto', scrollbarWidth: 'none',
             background: 'transparent',
             transition: 'padding 0.25s ease',
           } as React.CSSProperties}>
-            {([
-              ['minha_lista',  'Minha lista'],
-              ['em_cartaz',    'Em cartaz'],
-              ['no_streaming', 'No streaming'],
-              ['avaliados',    'Avaliados'],
-            ] as const).map(([id, label]) => (
+            {(['minha_lista', 'em_cartaz', 'no_streaming', 'avaliados'] as const).map((id) => (
               <button key={id} onClick={() => setTab(id)} style={{
                 padding: scrolled ? '4.5px 13px' : '7px 16px',
                 borderRadius: 24, flexShrink: 0,
@@ -128,7 +126,7 @@ export default function MoviesPage() {
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
                 backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-              } as React.CSSProperties}>{label}</button>
+              } as React.CSSProperties}>{t(`movies.tabs.${id}`)}</button>
             ))}
           </div>
 
@@ -141,11 +139,11 @@ export default function MoviesPage() {
 
                 {/* ── Quero ver ── */}
                 <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Quero ver</Txt>
+                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('movies.wantSection')}</Txt>
                   {wantList.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
                       <Icon name="film" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>Nenhum filme salvo para assistir</Txt>
+                      <Txt size={13} color={T.t3}>{t('movies.emptyWant')}</Txt>
                     </div>
                   ) : (
                     <MasonryGrid2
@@ -158,11 +156,11 @@ export default function MoviesPage() {
 
                 {/* ── Favoritos ── */}
                 <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Favoritos</Txt>
+                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('movies.favSection')}</Txt>
                   {favList.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
                       <Icon name="heart" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>Nenhum filme favorito ainda</Txt>
+                      <Txt size={13} color={T.t3}>{t('movies.emptyFav')}</Txt>
                     </div>
                   ) : (
                     <MasonryGrid2
@@ -175,18 +173,18 @@ export default function MoviesPage() {
 
                 {/* ── Concluídos ── */}
                 <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>Concluídos</Txt>
+                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('movies.finishedSection')}</Txt>
                   {watchedList.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
                       <Icon name="check" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>Nenhum filme marcado como assistido</Txt>
+                      <Txt size={13} color={T.t3}>{t('movies.emptyWatched')}</Txt>
                     </div>
                   ) : (
                     <MasonryGrid2
                       items={watchedList.map(toTMDBItem)}
                       onItem={(item) => openTitle(item.id)}
                       padding="0"
-                      getTag={() => ({ label: 'CONCLUÍDO', color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
+                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
                     />
                   )}
                 </div>
@@ -197,8 +195,8 @@ export default function MoviesPage() {
             {/* ══ TAB: Em cartaz ══ */}
             {tab === 'em_cartaz' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>Em cartaz nos cinemas</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>Filmes em exibição nas salas de cinema</Txt>
+                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('movies.inTheaters')}</Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('movies.inTheatersSub')}</Txt>
                 <MasonryGrid2
                   items={(inTheaters?.results || []).slice(0, 10)}
                   onItem={(item) => { const n = normalize(item); router.push(`/title/${n.type}/${n.id}`); }}
@@ -212,8 +210,8 @@ export default function MoviesPage() {
             {/* ══ TAB: No streaming ══ */}
             {tab === 'no_streaming' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>No streaming</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>Filmes disponíveis para assistir agora</Txt>
+                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('movies.onStreamingTitle')}</Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('movies.onStreamingSub')}</Txt>
                 <MasonryGrid2
                   items={(onStreaming?.results || []).slice(0, 10)}
                   onItem={(item) => { const n = normalize(item); router.push(`/title/${n.type}/${n.id}`); }}
@@ -227,14 +225,14 @@ export default function MoviesPage() {
             {/* ══ TAB: Avaliados ══ */}
             {tab === 'avaliados' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>Avaliados</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>Filmes que você já avaliou</Txt>
+                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('movies.ratedTitle')}</Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('movies.ratedSub')}</Txt>
                 {reviewedList.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
                     <Icon name="star" size={40} color={T.t4} />
-                    <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>Nenhum filme avaliado ainda</Txt>
+                    <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>{t('movies.emptyRated')}</Txt>
                     <button onClick={() => router.push('/search')} style={{ marginTop: 4, padding: '10px 24px', borderRadius: 24, background: T.pink, border: 'none', cursor: 'pointer' }}>
-                      <Txt size={13} weight={700} color="#fff">Explorar filmes</Txt>
+                      <Txt size={13} weight={700} color="#fff">{t('movies.exploreMovies')}</Txt>
                     </button>
                   </div>
                 ) : (

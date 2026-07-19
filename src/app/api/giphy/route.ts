@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
-  const key   = process.env.GIPHY_API_KEY;
-  const q     = req.nextUrl.searchParams.get('q')?.trim() || '';
-  const limit = req.nextUrl.searchParams.get('limit') || '15';
+  const key = process.env.GIPHY_API_KEY;
+  const q   = req.nextUrl.searchParams.get('q')?.trim() || '';
+  // Clamp to a number — raw interpolation let "15&rating=r" smuggle params
+  // into the upstream URL and override the family-friendly rating=g filter.
+  const limit = Math.min(50, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '15', 10) || 15));
 
   if (!key) return NextResponse.json({ data: [] });
 

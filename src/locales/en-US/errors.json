@@ -1,0 +1,27 @@
+{
+  "generic": "Something went wrong",
+  "network": "Connection error. Check your internet.",
+  "notFound": "Page not found",
+  "unauthorized": "You need to be logged in to access this page",
+  "forbidden": "You don't have permission for this action",
+  "loading": "Loading...",
+  "restoringSession": "Restoring your session...",
+  "startupFailed": "The app couldn't start",
+  "startupFailedDetail": "Maratonou could not safely restore your session.",
+  "genericDetail": "We couldn't load this screen. Your data remains protected.",
+  "offlineShort": "No connection",
+  "retry": "Try again",
+  "imageLoad": "Error loading image",
+  "authFailed": "Authentication error",
+  "saveFailed": "Error saving. Please try again.",
+  "deleteFailed": "Error deleting. Please try again.",
+  "searchFailed": "Search error. Please try again.",
+  "empty": {
+    "list": "No items in list",
+    "search": "No results found",
+    "feed": "No recent activity",
+    "reviews": "No comments yet",
+    "episodes": "No episodes found",
+    "notifications": "No notifications"
+  }
+}

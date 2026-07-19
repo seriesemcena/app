@@ -4,13 +4,15 @@ import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
+import { SocialAction, SocialAuthor, SocialCard, SocialMedia } from '@/components/SocialCard';
 import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
-import { profileStore, notifInboxStore } from '@/lib/store';
+import { profileStore, notifInboxStore, reactionStore } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { dbActivityStore, dbRevStore, dbReportStore } from '@/lib/db';
+import { dbActivityStore, dbRevStore, dbReportStore, dbReactionStore } from '@/lib/db';
+import { tmdbImg } from '@/lib/tmdb';
 
 type FeedTab = 'para_voce' | 'seguindo';
 
@@ -33,21 +35,10 @@ type ActivityItem = {
   rawDate: string;
   posterColor: string;
   mediaUrl?: string;
+  spoiler?: boolean;
   isMe?: boolean;
 };
 
-const ACTION_COLOR: Record<string, string> = {
-  avaliou:   T.gold,
-  adicionou: '#60a5fa',
-  terminou:  '#4ade80',
-  comentou:  T.pink,
-};
-const ACTION_ICON: Record<string, string> = {
-  avaliou:   'star',
-  adicionou: 'plus',
-  terminou:  'check',
-  comentou:  'message',
-};
 const POSTER_COLORS = ['#1a3a5c','#2a1a0a','#5c1a3a','#0a1a2a','#1a2a1a','#1a0a2a','#0a2a1a','#2a0a1a'];
 const EMOJIS = ['🔥', '❤️', '😮', '😂', '👏'];
 
@@ -92,25 +83,22 @@ async function fetchCardData(titleKey: string, fallback: string): Promise<{ labe
       const eNum = String(parsed.episode).padStart(2, '0');
       const showName = showData.name || 'Série';
       const label = `${showName} · ${sNum}×${eNum}`;
-      const imageUrl = epData.still_path
-        ? `https://image.tmdb.org/t/p/w780${epData.still_path}`
-        : showData.poster_path
-          ? `https://image.tmdb.org/t/p/w342${showData.poster_path}`
-          : null;
+      const imageUrl = tmdbImg(epData.still_path, 'w780')
+        ?? tmdbImg(showData.poster_path, 'w342');
       return { label, imageUrl };
     }
     if (parsed.type === 'tv') {
       const d = await fetch(`/api/tmdb?endpoint=/tv/${parsed.showId}`).then(r => r.json());
       return {
         label:    d.name || fallback,
-        imageUrl: d.poster_path ? `https://image.tmdb.org/t/p/w342${d.poster_path}` : null,
+        imageUrl: tmdbImg(d.backdrop_path, 'w780') ?? tmdbImg(d.poster_path, 'w342'),
       };
     }
     if (parsed.type === 'movie') {
       const d = await fetch(`/api/tmdb?endpoint=/movie/${parsed.movieId}`).then(r => r.json());
       return {
         label:    d.title || fallback,
-        imageUrl: d.poster_path ? `https://image.tmdb.org/t/p/w342${d.poster_path}` : null,
+        imageUrl: tmdbImg(d.backdrop_path, 'w780') ?? tmdbImg(d.poster_path, 'w342'),
       };
     }
   } catch { /* ignore */ }
@@ -151,6 +139,7 @@ export default function FeedPage() {
             id:             `act_${a.docId}`,
             uid:            a.uid,
             firestoreDocId: a.docId,
+            reviewId:       a.reviewId,
             titleKey:       a.titleKey,
             displayTitle:   a.titleName,
             user:           a.username,
@@ -160,6 +149,8 @@ export default function FeedPage() {
             action:         a.rating > 0 ? 'avaliou' : 'comentou',
             rating:         a.rating,
             text:           a.text,
+            mediaUrl:       a.mediaUrl || '',
+            spoiler:        !!a.spoiler,
             time:           timeAgo(a.createdAt),
             rawDate:        a.createdAt,
             posterColor:    POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
@@ -175,7 +166,7 @@ export default function FeedPage() {
             new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
           );
           sorted.slice(0, 2).forEach((rev: any) => {
-            if (!rev.text && !rev.gifUrl) return;
+            if (!rev.text && !rev.gifUrl && !rev.imageUrl) return;
             items.push({
               id:             `rev_${titleKey}_${rev.id}`,
               reviewId:       rev.id,
@@ -189,7 +180,8 @@ export default function FeedPage() {
               action:         (rev.rating || 0) > 0 ? 'avaliou' : 'comentou',
               rating:         rev.rating || 0,
               text:           rev.text || '',
-              mediaUrl:       rev.gifUrl || '',
+              mediaUrl:       rev.gifUrl || rev.imageUrl || '',
+              spoiler:        !!rev.spoiler,
               time:           rev.date ? timeAgo(rev.date) : '',
               rawDate:        rev.date || '',
               posterColor:    POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
@@ -235,7 +227,7 @@ export default function FeedPage() {
 
           {/* ── Tabs — sticky logo abaixo do header ── */}
           <div style={{
-            position: 'sticky', top: 56, zIndex: 48,
+            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '2px 16px 8px' : '8px 16px 10px',
             overflowX: 'auto', scrollbarWidth: 'none',
@@ -314,8 +306,7 @@ export default function FeedPage() {
 function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: string) => void }) {
   const router      = useRouter();
   const { user }    = useAuth();
-  const actionColor = ACTION_COLOR[item.action] || T.t2;
-  const actionIcon  = ACTION_ICON[item.action]  || 'star';
+  const actionLabel = item.action === 'comentou' ? 'comentou em' : item.action;
 
   const myName   = user?.displayName || user?.email?.split('@')[0] || '';
   const isMyPost = !!user && (
@@ -326,30 +317,92 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
   const goToProfile = () => router.push(`/user/${encodeURIComponent(item.user)}`);
 
   /* ── TMDB label ── */
-  const [displayLabel, setDisplayLabel] = useState(item.displayTitle);
+  const [cardData, setCardData] = useState<{ label: string; imageUrl: string | null }>({ label: item.displayTitle, imageUrl: null });
   useEffect(() => {
-    fetchCardData(item.titleKey, item.displayTitle).then(d => setDisplayLabel(d.label));
+    fetchCardData(item.titleKey, item.displayTitle).then(setCardData);
   }, [item.titleKey, item.displayTitle]);
+  const displayLabel = cardData.label;
+  // Title artwork is context, not user content. Only explicit GIF/image
+  // attachments are rendered inside a feed post.
+  const mediaSrc = item.mediaUrl || '';
+  const [spoilerRevealed, setSpoilerRevealed] = useState(false);
+  const spoilerHidden = !!item.spoiler && !spoilerRevealed;
 
-  /* ── Emoji reactions ── */
+  /* ── Emoji reactions (persisted to Firestore) ── */
   const [reactions, setReactions]       = useState<Record<string, number>>({});
   const [myReaction, setMyReaction]     = useState<string | null>(null);
   const [showEmojis, setShowEmojis]     = useState(false);
   const [showReactors, setShowReactors] = useState(false);
 
-  const react = (emoji: string) => {
-    setReactions(prev => {
-      const next = { ...prev };
-      if (myReaction) next[myReaction] = Math.max(0, (next[myReaction] || 0) - 1);
-      if (myReaction !== emoji) { next[emoji] = (next[emoji] || 0) + 1; setMyReaction(emoji); }
-      else { setMyReaction(null); }
+  /* Apply a { uid: emoji } map to the counts + my-reaction UI state */
+  const applyReactionMap = (map: Record<string, string>) => {
+    const counts: Record<string, number> = {};
+    Object.values(map).forEach(e => { if (e) counts[e] = (counts[e] || 0) + 1; });
+    setReactions(counts);
+    setMyReaction(user && map[user.uid] ? map[user.uid] : null);
+  };
+
+  /* Load persisted reactions: localStorage first, then merge Firestore */
+  useEffect(() => {
+    const localMap = reactionStore.getMap(item.id);
+    applyReactionMap(localMap);
+    if (!firebaseConfigured) return;
+    let alive = true;
+    dbReactionStore.get(getDB(), item.id).then(cloudMap => {
+      if (!alive || !cloudMap || Object.keys(cloudMap).length === 0) return;
+      // Cloud holds other users' reactions; local keeps mine if the cloud
+      // write was blocked. Cloud wins on conflicts for a shared uid.
+      applyReactionMap({ ...localMap, ...cloudMap });
+    }).catch(() => {});
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, user]);
+
+  const react = async (emoji: string) => {
+    setShowEmojis(false);
+    if (!user) return;
+    const prev = myReaction;
+    const nextEmoji = prev === emoji ? null : emoji;
+    // Optimistic update
+    setReactions(cur => {
+      const next = { ...cur };
+      if (prev)      next[prev]      = Math.max(0, (next[prev] || 0) - 1);
+      if (nextEmoji) next[nextEmoji] = (next[nextEmoji] || 0) + 1;
       return next;
     });
-    setShowEmojis(false);
+    setMyReaction(nextEmoji);
+    // Persist locally (survives refresh) + best-effort shared cloud write
+    reactionStore.set(item.id, user.uid, nextEmoji);
+    if (firebaseConfigured) {
+      try { await dbReactionStore.set(getDB(), item.id, user.uid, nextEmoji); } catch {}
+    }
   };
 
   const totalReactions  = Object.values(reactions).reduce((a, b) => a + b, 0);
   const reactionEntries = Object.entries(reactions).filter(([, c]) => c > 0);
+
+  /* ── Reply count for this exact root comment/review ── */
+  const [replyCount, setReplyCount] = useState(0);
+  useEffect(() => {
+    if (!firebaseConfigured || !item.titleKey) return;
+    let alive = true;
+    dbRevStore.get(getDB(), item.titleKey).then(list => {
+      if (!alive) return;
+      const exact = item.reviewId
+        ? list.find(review => review.id === item.reviewId)
+        : [...list]
+            .filter(review => {
+              const sameAuthor = item.uid ? review.uid === item.uid : review.user === item.user;
+              return sameAuthor && (review.text || '') === item.text && (review.rating || 0) === item.rating;
+            })
+            .sort((a, b) => {
+              const target = new Date(item.rawDate).getTime();
+              return Math.abs(new Date(a.date).getTime() - target) - Math.abs(new Date(b.date).getTime() - target);
+            })[0];
+      setReplyCount(exact?.replies?.length ?? 0);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [item.rating, item.rawDate, item.reviewId, item.text, item.titleKey, item.uid, item.user]);
 
   /* ── Three-dot menu ── */
   const [showMenu,   setShowMenu]   = useState(false);
@@ -400,14 +453,28 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
     }
   };
 
+  const handleShare = async () => {
+    setShowMenu(false);
+    const url = `${window.location.origin}/comments?key=${encodeURIComponent(item.titleKey)}&title=${encodeURIComponent(displayLabel)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: displayLabel, text: item.text, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        showToast('Link copiado.');
+      }
+    } catch { /* user cancelled native share */ }
+  };
+
   const menuOptions = [
+    { label: 'Compartilhar', icon: 'share' as const, color: T.t2, action: handleShare },
     { label: 'Denunciar',  icon: 'flag'  as const, color: T.red ?? '#ff4444', action: handleReport },
     ...(!isMyPost ? [{ label: 'Ocultar conteúdo deste usuário', icon: 'eye' as const, color: T.t2, action: () => { setShowMenu(false); showToast('Conteúdo ocultado.'); } }] : []),
     ...(isMyPost  ? [{ label: 'Excluir comentário', icon: 'close' as const, color: T.red ?? '#ff4444', action: handleDelete }] : []),
   ];
 
   return (
-    <div style={{ background: T.card, borderRadius: 20, padding: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)', position: 'relative', opacity: deleting ? 0.5 : 1, transition: 'opacity 0.2s' }}>
+    <SocialCard dimmed={deleting}>
 
       {/* Toast feedback */}
       {toast && (
@@ -416,12 +483,14 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
         </div>
       )}
 
-      {/* ── Three-dot menu — topo direito ── */}
+      {/* ── Menu discreto — topo direito do card ── */}
       <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}>
         <button
+          type="button"
+          aria-label={`Mais opções de ${item.user}`}
           onClick={() => setShowMenu(v => !v)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 16, color: T.t4, letterSpacing: 1, lineHeight: 1, fontWeight: 700 }}>···</span>
+          style={{ width: 28, height: 28, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="menuDots" size={18} color={T.t2} />
         </button>
         {showMenu && (
           <>
@@ -439,79 +508,67 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
       </div>
 
       {/* ── User row ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, paddingRight: 28 }}>
-        <button onClick={goToProfile} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
-          {item.photoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.photoUrl} alt={item.user} style={{ width: 42, height: 42, borderRadius: 21, objectFit: 'cover', display: 'block' }} />
-          ) : (
-            <div style={{ width: 42, height: 42, borderRadius: 21, background: item.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Txt size={15} weight={800} color="#fff">{item.avatar}</Txt>
-            </div>
+      <div style={{ marginBottom: 12 }}>
+        <SocialAuthor
+          name={item.user}
+          time={item.time}
+          avatar={item.avatar}
+          photoUrl={item.photoUrl}
+          color={item.color}
+          endPadding={24}
+          onClick={goToProfile}
+          context={(
+            <>
+              <Txt size={11} weight={700} color={T.t3} style={{ flexShrink: 0 }}>{actionLabel}</Txt>
+              <Txt size={12} weight={700} color={T.t1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                {displayLabel}
+              </Txt>
+            </>
           )}
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-            <button onClick={goToProfile} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-              <Txt size={14} weight={700} color={T.t1}>{item.user}</Txt>
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-              <Icon name={actionIcon as Parameters<typeof Icon>[0]['name']} size={11} color={actionColor} />
-              <Txt size={12} weight={600} color={actionColor}>{item.action}</Txt>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, minWidth: 0 }}>
-            <Txt size={12} weight={600} color={T.t2} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-              {displayLabel}
-            </Txt>
-            {item.rating > 0 && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 7, background: '#FFEB13', flexShrink: 0 }}>
-                <Icon name="star" size={9} color="#1a1400" />
-                <Txt size={11} weight={700} color="#1a1400">{item.rating}/10</Txt>
-              </div>
-            )}
-          </div>
-          <Txt size={11} color={T.t4} style={{ display: 'block', marginTop: 1 }}>{item.time}</Txt>
-        </div>
+        />
       </div>
 
-      {/* ── Review text ── */}
-      {item.text ? (
-        <Txt size={15} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 12 }}>
-          {item.text}
-        </Txt>
-      ) : null}
-
-      {/* ── Imagem/GIF — apenas se o usuário escolheu durante a avaliação ── */}
-      {item.mediaUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.mediaUrl}
-          alt=""
-          style={{ width: '100%', borderRadius: 14, display: 'block', marginBottom: 12, maxHeight: 320, objectFit: 'cover' }}
-        />
-      )}
+      {/* ── Review content / spoiler cover ── */}
+      <div style={{ position: 'relative', minHeight: spoilerHidden ? 86 : undefined, marginBottom: 12, overflow: 'hidden', borderRadius: 16 }}>
+        <div style={{ filter: spoilerHidden ? 'blur(12px)' : 'none', transform: spoilerHidden ? 'scale(1.03)' : 'none', transition: 'filter 0.2s ease, transform 0.2s ease', pointerEvents: spoilerHidden ? 'none' : 'auto', userSelect: spoilerHidden ? 'none' : 'auto' }}>
+          {item.text ? (
+            <Txt size={15} color={T.t1} style={{ display: 'block', lineHeight: 1.55, marginBottom: mediaSrc ? 12 : 0 }}>
+              {item.text}
+            </Txt>
+          ) : null}
+          {mediaSrc && <SocialMedia src={mediaSrc} alt={displayLabel} />}
+        </div>
+        {spoilerHidden && (
+          <button type="button" onClick={() => setSpoilerRevealed(true)} style={{ position: 'absolute', inset: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'rgba(18,18,22,0.56)', border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="eye" size={16} color="#fff" />
+              <Txt size={12} weight={800} color="#fff">Este comentário contém spoiler</Txt>
+            </div>
+            <Txt size={10} color="rgba(255,255,255,0.7)">Toque para revelar</Txt>
+          </button>
+        )}
+      </div>
 
       {/* ── Actions bar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, paddingTop: 10, borderTop: `1px solid ${T.border}`, position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
 
         {/* Reacts: emoji picker trigger + count que abre popup de quem reagiu */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 0 }}>
+        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : T.surface2, border: `1px solid ${myReaction ? 'rgba(192,105,255,0.24)' : T.border}`, borderRadius: 20, overflow: 'visible' }}>
           {/* Emoji trigger — ícone coração por padrão */}
           <button
             onClick={() => setShowEmojis(v => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, background: myReaction ? 'rgba(192,105,255,0.10)' : 'none', border: 'none', borderRadius: 14, padding: '5px 8px 5px 6px', cursor: 'pointer' }}>
+            style={{ width: 28, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: myReaction ? T.pink : T.t3 }}>
             {myReaction
               ? <span style={{ fontSize: 18, lineHeight: 1 }}>{myReaction}</span>
-              : <Icon name={myReaction ? 'heart' : 'heartO'} size={18} color={T.t3} />
+              : <Icon name="heartO" size={16} color="currentColor" />
             }
           </button>
 
           {/* Count — abre popup de quem reagiu */}
           <button
             onClick={() => totalReactions > 0 ? setShowReactors(true) : setShowEmojis(v => !v)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px 4px' }}>
-            <Txt size={13} weight={600} color={totalReactions > 0 ? T.t1 : T.t3}>{totalReactions}</Txt>
+            style={{ width: 30, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 5px' }}>
+            <Txt size={12} weight={700} color={myReaction ? T.pink : T.t3}>{totalReactions}</Txt>
           </button>
 
           {/* Emoji picker */}
@@ -543,25 +600,26 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
           )}
         </div>
 
-        <div style={{ width: 1, height: 18, background: T.border, margin: '0 8px' }} />
-
-        {/* Respostas — navega para página de comentários */}
-        <button
+        {/* Respostas recebidas por este comentário principal */}
+        <SocialAction
+          icon="message"
+          width={58}
+          ariaLabel="Abrir respostas"
           onClick={() => router.push(`/comments?key=${encodeURIComponent(item.titleKey)}&title=${encodeURIComponent(displayLabel)}`)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 12 }}>
-          <Icon name="message" size={15} color={T.t3} />
-          <Txt size={13} weight={600} color={T.t3}>0</Txt>
-        </button>
+        >
+          <Txt size={12} weight={700} color="currentColor">{replyCount}</Txt>
+        </SocialAction>
 
         <div style={{ flex: 1 }} />
 
-        {/* Compartilhar */}
-        <button
-          onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ url: window.location.href }).catch(() => {}); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: '5px 8px', borderRadius: 12 }}>
-          <Icon name="share" size={15} color={T.t3} />
-        </button>
+        {/* Nota da avaliação — ocupa o antigo espaço do compartilhamento */}
+        {item.rating > 0 && (
+          <div style={{ minWidth: 60, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '0 11px', borderRadius: 17, background: '#FFEB13', flexShrink: 0 }}>
+            <Icon name="star" size={12} color="#1a1400" />
+            <Txt size={12} weight={800} color="#1a1400">{item.rating}/10</Txt>
+          </div>
+        )}
       </div>
-    </div>
+    </SocialCard>
   );
 }

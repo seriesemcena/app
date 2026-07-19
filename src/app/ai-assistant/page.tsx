@@ -5,6 +5,8 @@ import { Frame } from '@/components/Frame';
 import { Screen, AppBar, Chip, VIPBadge, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
+import { authHeader } from '@/lib/firebase';
+import { navigateBack } from '@/lib/navigation';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
 
@@ -34,7 +36,7 @@ export default function AIAssistantPage() {
     try {
       const res = await fetch('/api/ai', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ prompt: userMsg, metrics }),
       });
       const data = await res.json();
@@ -56,7 +58,7 @@ export default function AIAssistantPage() {
     <Frame>
       <Screen>
         <AppBar title="Assistente IA" left={
-          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>
+          <button onClick={() => navigateBack(router)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>
         } right={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <VIPBadge />

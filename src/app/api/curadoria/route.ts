@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyIdToken, rateLimit } from '@/lib/serverAuth';
 
 export type Suggestion = {
   title: string;
@@ -107,8 +108,28 @@ const DEFAULT_FALLBACK: Suggestion[] = [
 
 // ── Route handler ──────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const { mode, query, likedTitles, filters } = await req.json();
+  let body: {
+    mode?: string;
+    query?: string;
+    likedTitles?: Array<{ title: string; rating: number }>;
+    filters?: { genres?: string[]; decade?: string; minRating?: number; mediaType?: string };
+  };
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: 'invalid body' }, { status: 400 });
+  }
+  const { mode, query, likedTitles, filters } = body;
   const key = process.env.GEMINI_API_KEY;
+
+  // The Gemini call costs money — only signed-in users may trigger it, each
+  // with a small per-minute budget. Demo mode (no key) costs nothing and
+  // stays open.
+  if (key) {
+    const uid = await verifyIdToken(req.headers.get('authorization'));
+    if (!uid) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    if (!rateLimit(`curadoria:${uid}`, 20, 60_000)) {
+      return NextResponse.json({ error: 'rate limited' }, { status: 429 });
+    }
+  }
 
   // ── DISCOVER MODE ──────────────────────────────────────────────
   if (mode === 'discover') {

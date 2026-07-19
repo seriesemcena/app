@@ -8,20 +8,25 @@ import { T } from '@/lib/tokens';
 import { listStore } from '@/lib/store';
 import { MasonryGrid2 } from '@/components/posters';
 import { type TMDBItem } from '@/lib/tmdb';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
 type ListTab = 'want' | 'watching' | 'watched';
 
-const TABS: { id: ListTab; label: string; icon: string; emptyMsg: string }[] = [
-  { id: 'want',     label: 'Quero ver',  icon: 'bookmark', emptyMsg: 'Nenhum título salvo para assistir' },
-  { id: 'watching', label: 'Assistindo', icon: 'eye',      emptyMsg: 'Nenhum título em andamento'        },
-  { id: 'watched',  label: 'Assistido',  icon: 'check',    emptyMsg: 'Nenhum título finalizado ainda'    },
-];
+const TAB_ICONS: Record<ListTab, string> = { want: 'bookmark', watching: 'eye', watched: 'check' };
 
 export default function ListsPage() {
   const router = useRouter();
+  const { t } = useTranslation('home');
   const [tab, setTab]       = useState<ListTab>('want');
   const [scrolled, setScrolled] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  const TABS = [
+    { id: 'want'     as ListTab, label: t('myList.tabWant'),     icon: TAB_ICONS.want,     emptyMsg: t('myList.emptyWant')     },
+    { id: 'watching' as ListTab, label: t('myList.tabWatching'), icon: TAB_ICONS.watching, emptyMsg: t('myList.emptyWatching') },
+    { id: 'watched'  as ListTab, label: t('myList.tabWatched'),  icon: TAB_ICONS.watched,  emptyMsg: t('myList.emptyWatched')  },
+  ];
 
   const [items, setItems] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
   const [counts, setCounts] = useState<Record<ListTab, number>>({ want: 0, watching: 0, watched: 0 });
@@ -46,7 +51,7 @@ export default function ListsPage() {
   const activeTabMeta = TABS.find((t) => t.id === tab)!;
 
   const watchedTag = tab === 'watched'
-    ? () => ({ label: 'ASSISTIDO', color: '#fff', bg: 'rgba(52,199,89,0.75)' })
+    ? () => ({ label: t('myList.watchedTag'), color: '#fff', bg: 'rgba(52,199,89,0.75)' })
     : undefined;
 
   return (
@@ -64,16 +69,16 @@ export default function ListsPage() {
           {/* ── Título ── */}
           <div style={{ padding: '12px 16px 0' }}>
             <Txt size={28} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.5px' }}>
-              Minha lista
+              {t('myList.title')}
             </Txt>
             <Txt size={13} color={T.t3} style={{ display: 'block', marginTop: 4, marginBottom: 16 }}>
-              {counts.want + counts.watching + counts.watched} título{counts.want + counts.watching + counts.watched !== 1 ? 's' : ''} salvos
+              {t('myList.titleCount', { count: counts.want + counts.watching + counts.watched })}
             </Txt>
           </div>
 
           {/* ── Tabs sticky ── */}
           <div style={{
-            position: 'sticky', top: 56, zIndex: 48,
+            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '2px 16px 8px' : '4px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',
@@ -115,12 +120,12 @@ export default function ListsPage() {
                 <div style={{ width: 64, height: 64, borderRadius: 32, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Icon name={activeTabMeta.icon as any} size={28} color={T.t3} />
                 </div>
-                <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>Lista vazia</Txt>
+                <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>{t('myList.emptyTitle')}</Txt>
                 <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>{activeTabMeta.emptyMsg}</Txt>
                 <button
                   onClick={() => router.push('/search')}
                   style={{ marginTop: 8, padding: '10px 24px', borderRadius: 24, background: T.pink, border: 'none', cursor: 'pointer' }}>
-                  <Txt size={13} weight={700} color="#fff">Explorar títulos</Txt>
+                  <Txt size={13} weight={700} color="#fff">{t('myList.explore')}</Txt>
                 </button>
               </div>
             ) : (

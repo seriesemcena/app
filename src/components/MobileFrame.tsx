@@ -2,9 +2,9 @@
 import { ReactNode } from 'react';
 import { T } from '@/lib/tokens';
 
-export function MobileFrame({ children, sidebar }: { children: ReactNode; sidebar?: ReactNode }) {
+export function MobileFrame({ children, sidebar, hasTabBar = false }: { children: ReactNode; sidebar?: ReactNode; hasTabBar?: boolean }) {
   return (
-    <div className="mf-outer">
+    <div className={`mf-outer${hasTabBar ? ' has-tabbar' : ''}`}>
       {sidebar && (
         <aside className="sidebar-nav" style={{ display: 'none' }}>
           {sidebar}

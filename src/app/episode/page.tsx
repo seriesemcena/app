@@ -9,6 +9,11 @@ import { revStore, profileStore, epWatchedStore, type Review } from '@/lib/store
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore } from '@/lib/db';
+import { useTranslation } from 'react-i18next';
+import { navigateBack } from '@/lib/navigation';
+import i18next from 'i18next';
+import '@/lib/i18n';
+import { tmdbImg } from '@/lib/tmdb';
 
 /* ── emoji picker data ── */
 const EMOJI_GROUPS = [
@@ -30,6 +35,7 @@ function EpisodePageInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const { user } = useAuth();
+  const { t } = useTranslation('title');
 
   /* ── params from URL ── */
   const tvId    = sp.get('tvId')    || '';
@@ -46,7 +52,7 @@ function EpisodePageInner() {
   /* ── Format air date ── */
   const formattedAirDate = airDate ? (() => {
     try {
-      return new Date(airDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+      return new Date(airDate + 'T00:00:00').toLocaleDateString(i18next.language || 'pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
     } catch { return airDate; }
   })() : null;
 
@@ -150,15 +156,17 @@ function EpisodePageInner() {
 
   const submitReview = async () => {
     if (modalRating === 0 && !comment.trim()) {
-      showToast('Adicione nota ou comentário');
+      showToast(t('addRatingOrComment'));
       return;
     }
-    const displayName  = user?.displayName || user?.email?.split('@')[0] || 'Você';
+    const prof         = profileStore.get(user?.uid);
+    const displayName  = prof.username || prof.name || user?.displayName || user?.email?.split('@')[0] || 'Você';
     const avatarLetter = displayName[0]?.toUpperCase() || 'V';
-    const photoUrl     = user?.photoURL || profileStore.get().avatarImage || '';
+    const photoUrl     = user?.photoURL || prof.avatarImage || '';
     const newRev: Review = {
       id: `ep_${Date.now()}`,
       user: displayName,
+      uid: user?.uid || '',
       avatar: avatarLetter,
       photoUrl,
       rating: modalRating * 2,
@@ -174,7 +182,7 @@ function EpisodePageInner() {
     setModalRating(0);
     setComment('');
     setSelectedGif(null);
-    showToast('Avaliação publicada! 🎉');
+    showToast(t('reviewPublished'));
     // Sync to Firestore in background
     if (firebaseConfigured) {
       try { await dbRevStore.add(getDB(), storageKey, newRev); } catch {}
@@ -182,6 +190,7 @@ function EpisodePageInner() {
   };
 
   const toggleLike = async (id: string) => {
+    if (!user) { showToast('Faça login para curtir.'); return; }
     // Optimistic local update
     const updated = reviews.map(r => {
       if (r.id !== id) return r;
@@ -193,36 +202,31 @@ function EpisodePageInner() {
     // Sync to Firestore
     if (firebaseConfigured) {
       try {
-        const cloud = await dbRevStore.toggleLike(getDB(), storageKey, id, user?.uid || 'anon');
-        setReviews(cloud);
-        revStore.set(storageKey, cloud);
+        const cloud = await dbRevStore.toggleLike(getDB(), storageKey, id, user.uid);
+        if (cloud) { setReviews(cloud); revStore.set(storageKey, cloud); }
       } catch {}
     }
   };
 
   const submitReply = async (reviewId: string) => {
     if (!replyText.trim()) return;
-    const displayName  = user?.displayName || user?.email?.split('@')[0] || 'Você';
+    const prof         = profileStore.get(user?.uid);
+    const displayName  = prof.username || prof.name || user?.displayName || user?.email?.split('@')[0] || 'Você';
     const avatarLetter = displayName[0]?.toUpperCase() || 'V';
+    const newReply = { id: `rep_${Date.now()}`, user: displayName, avatar: avatarLetter, text: replyText.trim(), date: new Date().toISOString() };
     const updated = reviews.map(r =>
       r.id === reviewId
-        ? {
-            ...r,
-            replies: [
-              ...(r.replies || []),
-              { id: `rep_${Date.now()}`, user: displayName, avatar: avatarLetter, text: replyText.trim(), date: new Date().toISOString() },
-            ],
-          }
+        ? { ...r, replies: [...(r.replies || []), newReply] }
         : r
     );
     setReviews(updated);
     revStore.set(storageKey, updated);
     setReplyText('');
     setReplyOpen(null);
-    showToast('Resposta enviada!');
+    showToast(t('comments.replySent'));
     // Sync to Firestore
     if (firebaseConfigured) {
-      try { await dbRevStore.set(getDB(), storageKey, updated); } catch {}
+      try { await dbRevStore.addReply(getDB(), storageKey, reviewId, newReply); } catch {}
     }
   };
 
@@ -244,7 +248,7 @@ function EpisodePageInner() {
         <ScrollArea>
           <GlassHeader
             left={
-              <button onClick={() => router.back()}
+              <button onClick={() => navigateBack(router)}
                 style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
                 <Icon name="chevronL" size={16} color={T.white} />
               </button>
@@ -262,7 +266,7 @@ function EpisodePageInner() {
           <div style={{ height: 210, position: 'relative', overflow: 'hidden', background: still ? 'transparent' : 'var(--c-surface2)' }}>
             {still && (
               <img
-                src={`https://image.tmdb.org/t/p/w780${still}`}
+                src={tmdbImg(still, 'w780') ?? ''}
                 alt={epName}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
@@ -275,16 +279,14 @@ function EpisodePageInner() {
             {/* ── Episode info header ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6, marginTop: 4 }}>
               <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-                {/* Show name + Temporada */}
                 {showName ? (
                   <Txt size={12} color={T.pink} weight={700} style={{ display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                    {showName}{season ? `  ·  Temporada ${season}` : ''}
+                    {showName}{season ? `  ·  ${t('season', { number: season })}` : ''}
                   </Txt>
                 ) : null}
-                {/* Episódio N: Título */}
                 <div ref={epTitleRef}>
                   <Txt size={20} weight={800} style={{ display: 'block', marginBottom: 6, lineHeight: 1.25 }}>
-                    {`Episódio ${epNum}`}{epName ? `: ${epName}` : ''}
+                    {t('episode', { number: epNum })}{epName ? `: ${epName}` : ''}
                   </Txt>
                 </div>
                 {/* Air date · Duration */}
@@ -321,10 +323,10 @@ function EpisodePageInner() {
                   </div>
                   <div>
                     <Txt size={13} weight={700} style={{ display: 'block' }}>
-                      {ratedReviews.length} {ratedReviews.length === 1 ? 'avaliação' : 'avaliações'}
+                      {t('reviewCount', { count: ratedReviews.length })}
                     </Txt>
                     {myRating > 0 && (
-                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 3 }}>Sua nota: {myRating}/10</Txt>
+                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 3 }}>{t('yourRatingValue', { value: myRating })}</Txt>
                     )}
                   </div>
                 </div>
@@ -332,9 +334,9 @@ function EpisodePageInner() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <Icon name="star" size={20} color={T.t4} />
                   <div>
-                    <Txt size={13} weight={600} color={T.t2} style={{ display: 'block' }}>Sem avaliações ainda</Txt>
+                    <Txt size={13} weight={600} color={T.t2} style={{ display: 'block' }}>{t('noRatingYet')}</Txt>
                     {myRating > 0 && (
-                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 2 }}>Sua nota: {myRating}/10</Txt>
+                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 2 }}>{t('yourRatingValue', { value: myRating })}</Txt>
                     )}
                   </div>
                 </div>
@@ -351,18 +353,18 @@ function EpisodePageInner() {
                   // Only open modal if user hasn't reviewed yet
                   const alreadyReviewed = revStore.get(storageKey).some(r => r.user === currentUserName);
                   if (!alreadyReviewed) setModalOpen(true);
-                  else showToast('Marcado como assistido ✓');
+                  else showToast(t('markedWatched'));
                 } else {
                   setWatched(false);
                   localStorage.removeItem(`sec_watched_${storageKey}`);
                   epWatchedStore.unmarkWatched(tvId, parseInt(season), parseInt(epNum));
-                  showToast('Desmarcado');
+                  showToast(t('unmarkWatched'));
                 }
               }}
               style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: watched ? T.surface2 : T.pink, border: watched ? `1px solid ${T.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 12, boxShadow: watched ? 'none' : `0 4px 16px ${T.pinkGlow}` }}>
               <Icon name={watched ? 'check' : 'eye'} size={18} color={watched ? T.t2 : T.white} />
               <Txt size={15} weight={700} color={watched ? T.t2 : T.white}>
-                {watched ? 'Assistido ✓' : 'Marcar como assistido'}
+                {watched ? t('watchedMark') : t('markAsWatched')}
               </Txt>
             </button>
 
@@ -371,7 +373,7 @@ function EpisodePageInner() {
               style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 24 }}>
               <Icon name="message" size={18} color={T.t2} />
               <Txt size={15} weight={700} color={T.t1}>
-                Ver comentários{commentCount > 0 ? ` (${commentCount})` : ''}
+                {t('viewComments')}{commentCount > 0 ? ` (${commentCount})` : ''}
               </Txt>
             </button>
           </div>
@@ -386,11 +388,11 @@ function EpisodePageInner() {
             <div onClick={() => { setModalOpen(false); setShowEmoji(false); setShowGif(false); }}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
 
-            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
+            <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
               {/* handle + title */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
                 <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
-                <Txt size={15} weight={700}>Avaliar episódio</Txt>
+                <Txt size={15} weight={700}>{t('rateEpisode')}</Txt>
                 <button onClick={() => { setModalOpen(false); setShowEmoji(false); setShowGif(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
                   <Icon name="close" size={18} color={T.t3} />
                 </button>
@@ -399,13 +401,13 @@ function EpisodePageInner() {
               <div style={{ overflowY: 'auto', padding: '16px 16px 0', flex: 1 }}>
                 {/* Star rating */}
                 <div style={{ marginBottom: 16, textAlign: 'center' }}>
-                  <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>Sua nota</Txt>
+                  <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>{t('yourRating')}</Txt>
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     <Stars value={modalRating} max={5} size={36} onChange={setModalRating} />
                   </div>
                   {modalRating > 0 && (
                     <Txt size={13} color={T.gold} weight={700} style={{ display: 'block', marginTop: 6 }}>
-                      {'★'.repeat(modalRating)} {['', 'Ruim', 'Regular', 'Bom', 'Ótimo', 'Obra-prima'][modalRating]}
+                      {'★'.repeat(modalRating)} {['', t('ratingLabel_1'), t('ratingLabel_2'), t('ratingLabel_3'), t('ratingLabel_4'), t('ratingLabel_5')][modalRating]}
                     </Txt>
                   )}
                 </div>
@@ -431,7 +433,7 @@ function EpisodePageInner() {
                     ref={textareaRef}
                     value={comment}
                     onChange={e => setComment(e.target.value)}
-                    placeholder="Escreva seu comentário..."
+                    placeholder={t('writeComment')}
                     rows={3}
                     maxLength={500}
                     style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, color: T.white, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", padding: '12px 14px', outline: 'none', resize: 'none', boxSizing: 'border-box' }}
@@ -481,18 +483,18 @@ function EpisodePageInner() {
                       <input
                         value={gifSearch}
                         onChange={e => setGifSearch(e.target.value)}
-                        placeholder="Buscar GIF..."
+                        placeholder={t('searchGif')}
                         style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.t1, fontSize: 13, fontFamily: "'Area','Inter',sans-serif", padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
                       />
                       <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Giphy-logo.svg/200px-Giphy-logo.svg.png" alt="GIPHY" style={{ height: 16, opacity: 0.5 }} />
                     </div>
                     {gifLoading ? (
                       <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
-                        <Txt size={12} color={T.t3}>Carregando...</Txt>
+                        <Txt size={12} color={T.t3}>{t('loadingGif')}</Txt>
                       </div>
                     ) : gifResults.length === 0 ? (
                       <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
-                        <Txt size={12} color={T.t3}>Nenhum GIF encontrado</Txt>
+                        <Txt size={12} color={T.t3}>{t('noGifFound')}</Txt>
                       </div>
                     ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 3, padding: 8, maxHeight: 340, overflowY: 'auto' }}>
@@ -516,10 +518,10 @@ function EpisodePageInner() {
               </div>
 
               {/* Submit */}
-              <div style={{ padding: '12px 16px 24px', borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
+              <div style={{ padding: '12px 16px calc(16px + var(--interactive-safe-bottom))', borderTop: `1px solid ${T.border}`, flexShrink: 0 }}>
                 <button onClick={submitReview}
                   style={{ width: '100%', padding: '14px 0', borderRadius: T.radiusSm, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}` }}>
-                  <Txt size={15} weight={700} color={T.white}>Publicar avaliação</Txt>
+                  <Txt size={15} weight={700} color={T.white}>{t('publishReview')}</Txt>
                 </button>
               </div>
             </div>
@@ -587,12 +589,12 @@ function ReviewCard({ rev, timeAgo, onLike, replyOpen, onToggleReply, replyText,
         </button>
         <button onClick={onToggleReply} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           <Icon name="message" size={15} color={replyOpen ? T.pink : T.t3} />
-          <Txt size={12} color={replyOpen ? T.pink : T.t3}>Responder</Txt>
+          <Txt size={12} color={replyOpen ? T.pink : T.t3}>{i18next.t('comments.reply', { ns: 'title' })}</Txt>
         </button>
         {(rev.replies?.length ?? 0) > 0 && (
           <button onClick={() => setShowReplies(s => !s)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             <Icon name="chevronD" size={13} color={T.t3} />
-            <Txt size={12} color={T.t3}>{rev.replies!.length} resposta{rev.replies!.length > 1 ? 's' : ''}</Txt>
+            <Txt size={12} color={T.t3}>{i18next.t('comments.replyCount', { ns: 'title', count: rev.replies!.length })}</Txt>
           </button>
         )}
       </div>
@@ -610,7 +612,7 @@ function ReviewCard({ rev, timeAgo, onLike, replyOpen, onToggleReply, replyText,
       {replyOpen && (
         <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
           <input value={replyText} onChange={e => onReplyChange(e.target.value)}
-            placeholder="Escreva uma resposta..."
+            placeholder={i18next.t('comments.replyPlaceholderFull', { ns: 'title' })}
             style={{ flex: 1, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 20, color: T.white, fontSize: 13, fontFamily: "'Area','Inter',sans-serif", padding: '8px 14px', outline: 'none' }}
             onKeyDown={e => e.key === 'Enter' && onSubmitReply()}
           />

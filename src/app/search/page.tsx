@@ -6,14 +6,18 @@ import { Screen, Txt, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
-import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
+import { tmdb, tmdbImg, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { profileStore } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { searchUsers, type UserSearchResult } from '@/lib/db';
+import { useMyProfileUrl } from '@/hooks/useMyProfileUrl';
+import { AppErrorState } from '@/components/AppStates';
 import { getDB } from '@/lib/firebase';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
-type FilterType = 'Séries' | 'Filmes' | 'Pessoas' | 'Usuários';
-type SortOrder = 'Relevância' | 'Recentes' | 'Antigos';
+type FilterType = 'series' | 'movies' | 'people' | 'users';
+type SortOrder = 'relevance' | 'newest' | 'oldest';
 type RecentItem = { id: number; title: string; type: string; poster_path?: string | null };
 
 const RECENT_KEY = 'sec_recent_search_v1';
@@ -30,12 +34,14 @@ function saveRecent(item: RecentItem) {
 
 export default function SearchPage() {
   const router = useRouter();
+  const myProfileUrl = useMyProfileUrl();
+  const { t } = useTranslation('common');
   const { user } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [debouncedQ, setDQ] = useState('');
-  const [filter, setFilter] = useState<FilterType>('Séries');
-  const [sort, setSort] = useState<SortOrder>('Relevância');
+  const [filter, setFilter] = useState<FilterType>('series');
+  const [sort, setSort] = useState<SortOrder>('relevance');
   const [sortOpen, setSortOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const [recentSearches, setRecentSearches] = useState<RecentItem[]>([]);
@@ -54,10 +60,11 @@ export default function SearchPage() {
     recents.forEach(async (item) => {
       if (textlessPosters[item.id] !== undefined) return;
       try {
-        const endpoint = `/${item.type}/${item.id}/images?include_image_language=null`;
-        const data = await fetch(`/api/tmdb?endpoint=${encodeURIComponent(endpoint)}`).then(r => r.json());
+        // include_image_language must be its own query param — a "?" inside
+        // the endpoint value is rejected by the API's endpoint allowlist
+        const data = await fetch(`/api/tmdb?endpoint=/${item.type}/${item.id}/images&include_image_language=null`).then(r => r.json());
         const found = (data.posters || []).find((p: any) => p.iso_639_1 === null);
-        setTextlessPosters(prev => ({ ...prev, [item.id]: found ? `https://image.tmdb.org/t/p/w342${found.file_path}` : null }));
+        setTextlessPosters(prev => ({ ...prev, [item.id]: found ? tmdbImg(found.file_path, 'w342') : null }));
       } catch {
         setTextlessPosters(prev => ({ ...prev, [item.id]: null }));
       }
@@ -74,7 +81,7 @@ export default function SearchPage() {
 
   // Search Firestore users when "Usuários" tab is active
   useEffect(() => {
-    if (filter !== 'Usuários' || debouncedQ.length < 2) {
+    if (filter !== 'users' || debouncedQ.length < 2) {
       setUserResults([]);
       return;
     }
@@ -89,22 +96,22 @@ export default function SearchPage() {
   }, [debouncedQ, filter]);
 
   const { data: trending } = useTMDB(() => tmdb.trending('all', 'day'), []);
-  const { data: searchRes, loading: searchLoad } = useTMDB(
+  const { data: searchRes, loading: searchLoad, error: searchError, retry: retrySearch } = useTMDB(
     () => debouncedQ.length > 1 ? tmdb.search(debouncedQ) : Promise.resolve(null),
     [debouncedQ]
   );
 
   const rawResults: TMDBItem[] = (searchRes?.results || []).filter((i: TMDBItem) => {
-    if (filter === 'Séries')  return i.media_type === 'tv';
-    if (filter === 'Filmes')  return i.media_type === 'movie';
-    if (filter === 'Pessoas') return i.media_type === 'person';
-    if (filter === 'Usuários') return false; // handled separately
+    if (filter === 'series')  return i.media_type === 'tv';
+    if (filter === 'movies')  return i.media_type === 'movie';
+    if (filter === 'people')  return i.media_type === 'person';
+    if (filter === 'users')   return false; // handled separately
     return true;
   });
 
   const results = [...rawResults].sort((a, b) => {
-    if (sort === 'Recentes') return (b.release_date || b.first_air_date || '').localeCompare(a.release_date || a.first_air_date || '');
-    if (sort === 'Antigos')  return (a.release_date || a.first_air_date || '').localeCompare(b.release_date || b.first_air_date || '');
+    if (sort === 'newest') return (b.release_date || b.first_air_date || '').localeCompare(a.release_date || a.first_air_date || '');
+    if (sort === 'oldest') return (a.release_date || a.first_air_date || '').localeCompare(b.release_date || b.first_air_date || '');
     return 0;
   });
 
@@ -122,7 +129,7 @@ export default function SearchPage() {
     router.push(`/title/${item.type}/${item.id}`);
   };
 
-  const tabs: FilterType[] = ['Séries', 'Filmes', 'Pessoas', 'Usuários'];
+  const tabs: FilterType[] = ['series', 'movies', 'people', 'users'];
 
   return (
     <Frame>
@@ -136,7 +143,7 @@ export default function SearchPage() {
 
               {/* Linha 1: Avatar + Logo + Notificações */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingTop: 8 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', border: '2px solid rgba(255,255,255,0.25)' }} onClick={() => router.push('/profile')}>
+                <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', border: '2px solid rgba(255,255,255,0.25)' }} onClick={() => router.push(myProfileUrl)}>
                   {avatarImage
                     ? <img src={avatarImage} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                     : <div style={{ width: '100%', height: '100%', background: avatarGradient, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -171,7 +178,7 @@ export default function SearchPage() {
                   onChange={(e) => setQuery(e.target.value)}
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
-                  placeholder="Buscar filmes, séries, pessoas..."
+                  placeholder={t('search.placeholder')}
                   style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none' }}
                 />
                 {query && (
@@ -186,12 +193,12 @@ export default function SearchPage() {
                 <div style={{ marginTop: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                     <Txt size={22} weight={800} color="rgba(255,255,255,0.90)" style={{ fontStretch: 'condensed' } as React.CSSProperties}>
-                      Pesquisas recentes
+                      {t('search.recentSearches')}
                     </Txt>
                     <button
                       onClick={() => { localStorage.removeItem(RECENT_KEY); setRecentSearches([]); setTextlessPosters({}); }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}>
-                      <Txt size={11} weight={700} color={T.pink}>Limpar</Txt>
+                      <Txt size={11} weight={700} color={T.pink}>{t('search.clear')}</Txt>
                     </button>
                   </div>
                   <div style={{ display: 'flex', gap: 14, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 } as React.CSSProperties}>
@@ -199,7 +206,7 @@ export default function SearchPage() {
                       <div key={item.id} onClick={() => openRecent(item)} style={{ flexShrink: 0, cursor: 'pointer' }}>
                         <div style={{ width: 130, height: 130, borderRadius: 28, overflow: 'hidden', background: 'rgba(255,255,255,0.10)', border: '2px solid rgba(255,255,255,0.18)', position: 'relative', flexShrink: 0 }}>
                           {(() => {
-                            const src = textlessPosters[item.id] ?? (item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null);
+                            const src = textlessPosters[item.id] ?? tmdbImg(item.poster_path, 'w185');
                             return src
                               ? <img src={src} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                               : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -227,7 +234,7 @@ export default function SearchPage() {
             {!isSearching ? (
               <>
                 <Txt size={22} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>
-                  Em alta hoje
+                  {t('search.trendingToday')}
                 </Txt>
                 <MasonryGrid2
                   items={trending?.results?.slice(0, 12) ?? []}
@@ -255,10 +262,10 @@ export default function SearchPage() {
                           fontFamily: "'Area','Inter',sans-serif",
                           cursor: 'pointer', transition: 'all 0.2s',
                         }}>
-                        {f}
+                        {t(`search.filter.${f}`)}
                       </button>
                     ))}
-                    {filter !== 'Usuários' && (
+                    {filter !== 'users' && (
                       <button
                         onClick={() => setSortOpen((v) => !v)}
                         style={{
@@ -277,12 +284,12 @@ export default function SearchPage() {
                     <>
                       <div onClick={() => setSortOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
                       <div style={{ position: 'absolute', top: 50, right: 0, zIndex: 20, background: T.card, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 160, overflow: 'hidden' }}>
-                        {(['Relevância', 'Recentes', 'Antigos'] as SortOrder[]).map((s) => (
+                        {(['relevance', 'newest', 'oldest'] as SortOrder[]).map((s) => (
                           <button
                             key={s}
                             onClick={() => { setSort(s); setSortOpen(false); }}
                             style={{ width: '100%', padding: '13px 16px', background: sort === s ? 'rgba(192,105,255,0.08)' : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: "'Area','Inter',sans-serif" }}>
-                            <Txt size={14} weight={sort === s ? 700 : 500} color={sort === s ? T.pink : T.t1}>{s}</Txt>
+                            <Txt size={14} weight={sort === s ? 700 : 500} color={sort === s ? T.pink : T.t1}>{t(`search.sort.${s}`)}</Txt>
                             {sort === s && <Icon name="check" size={14} color={T.pink} />}
                           </button>
                         ))}
@@ -292,11 +299,11 @@ export default function SearchPage() {
                 </div>
 
                 {/* ── Usuários tab ── */}
-                {filter === 'Usuários' ? (
+                {filter === 'users' ? (
                   debouncedQ.length < 2 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '60px 24px', textAlign: 'center' }}>
                       <Icon name="search" size={44} color={T.t4} />
-                      <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>Digite para buscar usuários</Txt>
+                      <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>{t('search.typeToSearchUsers')}</Txt>
                     </div>
                   ) : userLoading ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -313,15 +320,15 @@ export default function SearchPage() {
                   ) : userResults.length === 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '60px 24px', textAlign: 'center' }}>
                       <Icon name="user" size={44} color={T.t4} />
-                      <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>Nenhum usuário encontrado</Txt>
-                      <Txt size={13} color={T.t3} style={{ display: 'block' }}>Tente buscar pelo nome de usuário</Txt>
+                      <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>{t('search.noUsersFound')}</Txt>
+                      <Txt size={13} color={T.t3} style={{ display: 'block' }}>{t('search.tryUsernameHint')}</Txt>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {userResults.map((u) => (
                         <div
                           key={u.uid}
-                          onClick={() => router.push(`/user/${u.uid}`)}
+                          onClick={() => router.push(`/user/${encodeURIComponent(u.username || u.uid)}`)}
                           style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', cursor: 'pointer', borderBottom: `1px solid ${T.border}` }}>
                           {/* Avatar */}
                           <div style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', flexShrink: 0, background: u.avatarGradient || 'linear-gradient(135deg,#C069FF,#6B10A0)' }}>
@@ -351,17 +358,24 @@ export default function SearchPage() {
                   )
                 ) : (
                   /* ── Séries / Filmes / Pessoas tabs ── */
-                  results.length === 0 && !searchLoad ? (
+                  searchError ? (
+                    <AppErrorState
+                      title={t('searchFailed', { ns: 'errors' })}
+                      message={t('network', { ns: 'errors' })}
+                      actionLabel={t('retry', { ns: 'errors' })}
+                      onRetry={retrySearch}
+                    />
+                  ) : results.length === 0 && !searchLoad ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '60px 24px', textAlign: 'center' }}>
                       <Icon name="search" size={44} color={T.t4} />
-                      <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>Nenhum resultado</Txt>
-                      <Txt size={13} color={T.t3} style={{ display: 'block' }}>Tente outros termos ou filtros</Txt>
+                      <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>{t('search.noResults')}</Txt>
+                      <Txt size={13} color={T.t3} style={{ display: 'block' }}>{t('search.tryOtherTerms')}</Txt>
                     </div>
                   ) : (
                     <>
                       {!searchLoad && results.length > 0 && (
                         <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 12 }}>
-                          {results.length} resultado{results.length !== 1 ? 's' : ''}
+                          {t('search.resultsCount', { count: results.length, defaultValue: `${results.length} resultado${results.length !== 1 ? 's' : ''}` })}
                         </Txt>
                       )}
                       <MasonryGrid2

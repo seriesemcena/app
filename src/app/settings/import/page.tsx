@@ -5,11 +5,14 @@ import JSZip from 'jszip';
 import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
+import { SettingsHeader } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
 import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbListStore, dbRevStore, dbEpWatchedStore } from '@/lib/db';
+import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { tmdbImg } from '@/lib/tmdb';
 
 /* ─────────────────────────────────────────────────────────────
    Types
@@ -393,6 +396,7 @@ export default function ImportPage() {
         const review: Review = {
           id: `tvtime_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           user: displayName,
+          uid: user?.uid || '',
           avatar: avatarLetter,
           photoUrl,
           rating: pr.rating,
@@ -437,7 +441,7 @@ export default function ImportPage() {
   if (step === 'upload') return (
     <Frame>
       <Screen>
-        <HeaderBar title="Importar do TV Time" onBack={() => router.back()} />
+        <HeaderBar title="Importar do TV Time" onBack={() => navigateBack(router, '/settings')} />
         <ScrollArea style={{ padding: '0 16px 32px' }}>
 
           <div style={{ textAlign: 'center', padding: '32px 16px 24px' }}>
@@ -622,7 +626,7 @@ export default function ImportPage() {
   return (
     <Frame>
       <Screen>
-        <HeaderBar title="Importação concluída" onBack={() => router.push('/settings')} />
+        <HeaderBar title="Importação concluída" onBack={() => router.push(withProfileOrigin('/settings'))} />
         <ScrollArea style={{ padding: '0 16px 32px' }}>
 
           <div style={{ textAlign: 'center', padding: '32px 16px 28px' }}>
@@ -662,7 +666,7 @@ export default function ImportPage() {
                 {matched.map((r, i) => (
                   <div key={i} style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < matched.length - 1 ? `1px solid ${T.border}` : 'none' }}>
                     {r.poster
-                      ? <img src={`https://image.tmdb.org/t/p/w92${r.poster}`} alt="" style={{ width: 28, height: 42, borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} />
+                      ? <img src={tmdbImg(r.poster, 'w92') ?? ''} alt="" style={{ width: 28, height: 42, borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} />
                       : <div style={{ width: 28, height: 42, borderRadius: 5, background: T.surface2, flexShrink: 0 }} />
                     }
                     <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -701,7 +705,7 @@ export default function ImportPage() {
           )}
 
           <button
-            onClick={() => router.push('/profile')}
+            onClick={() => router.push(withProfileOrigin('/profile'))}
             style={{
               width: '100%', padding: '16px 0', borderRadius: 50,
               background: T.pink, border: 'none', cursor: 'pointer',
@@ -712,7 +716,7 @@ export default function ImportPage() {
             Ver meu perfil
           </button>
           <button
-            onClick={() => router.push('/search')}
+            onClick={() => router.push(withProfileOrigin('/search'))}
             style={{
               width: '100%', padding: '14px 0', borderRadius: 50,
               background: 'transparent', border: `1px solid ${T.border}`, cursor: 'pointer',
@@ -729,31 +733,7 @@ export default function ImportPage() {
 
 /* ── Shared sub-components ── */
 function HeaderBar({ title, onBack, hideBack }: { title: string; onBack: () => void; hideBack?: boolean }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '52px 16px 14px', flexShrink: 0,
-      borderBottom: `1px solid ${T.border}`,
-    }}>
-      {!hideBack && (
-        <button
-          onClick={onBack}
-          style={{
-            width: 36, height: 36, borderRadius: 18,
-            background: 'rgba(255,255,255,0.09)',
-            border: '1px solid rgba(255,255,255,0.14)',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-            boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
-          } as React.CSSProperties}
-        >
-          <Icon name="chevronL" size={17} color={T.t1} />
-        </button>
-      )}
-      <Txt size={18} weight={800} color={T.t1}>{title}</Txt>
-    </div>
-  );
+  return <SettingsHeader title={title} onBack={onBack} hideBack={hideBack} />;
 }
 
 const STATUS_LABELS: Record<Status, { label: string; color: string; bg: string }> = {

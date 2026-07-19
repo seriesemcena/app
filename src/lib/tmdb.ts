@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import i18next from 'i18next';
 
 export type TMDBItem = {
   id: number;
@@ -26,20 +27,38 @@ export type TMDBItem = {
   videos?: { results: any[] };
 };
 
-export const tmdbImg = (path?: string | null, size: 'w185' | 'w342' | 'w500' | 'w780' | 'original' = 'w342') =>
-  path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
+export type TMDBImageSize = 'w92' | 'w154' | 'w185' | 'w300' | 'w342' | 'w500' | 'w780' | 'original';
+
+export const tmdbImg = (path?: string | null, size: TMDBImageSize = 'w342') => {
+  if (!path) return null;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `/api/tmdb-image?size=${size}&path=${encodeURIComponent(normalizedPath)}`;
+};
+
+/** Converts legacy TMDB CDN URLs kept in client-side caches to the local relay. */
+export const normalizeTMDBImageUrl = (value?: string | null) => {
+  if (!value) return null;
+  if (value.startsWith('/api/tmdb-image?')) return value;
+
+  const match = value.match(
+    /^https:\/\/image\.tmdb\.org\/t\/p\/(w92|w154|w185|w300|w342|w500|w780|original)(\/[^?#]+)$/i,
+  );
+  if (!match) return value;
+
+  return tmdbImg(match[2], match[1].toLowerCase() as TMDBImageSize);
+};
 
 const get = async (endpoint: string, params: Record<string, string> = {}) => {
   const url = new URL('/api/tmdb', window.location.origin);
   url.searchParams.set('endpoint', endpoint);
+  const lang = i18next.language || 'pt-BR';
+  url.searchParams.set('language', lang);
+  const region = lang.split('-')[1];
+  if (region) url.searchParams.set('region', region);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  try {
-    const res = await fetch(url.toString());
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`TMDB request failed (${res.status})`);
+  return res.json();
 };
 
 export const tmdb = {
@@ -62,6 +81,7 @@ export function useTMDB<T = any>(fn: () => Promise<T | null>, deps: any[] = []) 
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(null);
@@ -69,8 +89,8 @@ export function useTMDB<T = any>(fn: () => Promise<T | null>, deps: any[] = []) 
         .catch((e) => { if (alive) { setError(e); setLoading(false); } });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return { data, loading, error };
+  }, [...deps, attempt]);
+  return { data, loading, error, retry: () => setAttempt((value) => value + 1) };
 }
 
 export const normalize = (item: TMDBItem = {} as TMDBItem) => ({

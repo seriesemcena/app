@@ -7,6 +7,10 @@ import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
+import '@/lib/i18n';
+import { navigateBack } from '@/lib/navigation';
 
 /* ── TVMaze ── */
 type TVMazeShow = {
@@ -36,7 +40,7 @@ async function enrichWithTMDB(show: TVMazeShow): Promise<EnrichedShow> {
     const url = new URL('/api/tmdb', window.location.origin);
     url.searchParams.set('endpoint', `/find/${imdb}`);
     url.searchParams.set('external_source', 'imdb_id');
-    url.searchParams.set('language', 'pt-BR');
+    url.searchParams.set('language', i18next.language || 'pt-BR');
     const res = await fetch(url.toString());
     const data = await res.json();
     const tv = data.tv_results?.[0];
@@ -87,12 +91,12 @@ function getWeekDates(): string[] {
 }
 
 /* ── Estreias — helpers ── */
-const DAYS_PT = ['DOMINGO','SEGUNDA-FEIRA','TERÇA-FEIRA','QUARTA-FEIRA','QUINTA-FEIRA','SEXTA-FEIRA','SÁBADO'];
-const MONTHS_PT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
-function formatDateBR(dateStr: string): string {
+function formatDateLocale(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   const date = new Date(y, m - 1, d);
-  return `${DAYS_PT[date.getDay()]}, ${d} DE ${MONTHS_PT[m - 1]}`;
+  return new Intl.DateTimeFormat(i18next.language || 'pt-BR', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  }).format(date).toUpperCase();
 }
 
 type EstreiaCardData = {
@@ -202,7 +206,7 @@ function EstreiaCard({ data, onOpen, onList }: {
             border: badgeBorder,
           } as React.CSSProperties}>
             <Txt size={10} weight={700} color={badgeTextColor} style={{ letterSpacing: '0.5px' }}>
-              LANÇAMENTO {dateLabel}
+              {i18next.t('streamingPage.releaseLabel', { ns: 'home', date: dateLabel })}
             </Txt>
           </div>
         )}
@@ -248,7 +252,7 @@ function EstreiaCard({ data, onOpen, onList }: {
             color: btnPrimaryColor, fontSize: 13, fontWeight: 700,
             fontFamily: "'Area','Inter',sans-serif",
           }}>
-            Ver detalhes
+            {i18next.t('streamingPage.viewDetails', { ns: 'home' })}
           </button>
           <button onClick={onList} style={{
             flex: 1, padding: '9px 0', borderRadius: 12, cursor: 'pointer',
@@ -256,7 +260,7 @@ function EstreiaCard({ data, onOpen, onList }: {
             color: btnSecColor, fontSize: 13, fontWeight: 600,
             fontFamily: "'Area','Inter',sans-serif",
           }}>
-            Adicionar à lista
+            {i18next.t('streamingPage.addToList', { ns: 'home' })}
           </button>
         </div>
       </div>
@@ -292,7 +296,7 @@ function EstreiaGrid({ shows, loading, onItem }: {
   );
   if (shows.length === 0) return (
     <div style={{ padding: '24px 16px', textAlign: 'center' }}>
-      <Txt size={13} color={T.t4}>Nenhuma estreia esta semana</Txt>
+      <Txt size={13} color={T.t4}>{i18next.t('streamingPage.noTvReleases', { ns: 'home' })}</Txt>
     </div>
   );
   return (
@@ -308,11 +312,11 @@ function EstreiaGrid({ shows, loading, onItem }: {
               id: show.id,
               title: show.tmdbTitle || show.name,
               backdropUrl: show.tmdbBackdrop ? tmdbImg(show.tmdbBackdrop, 'w780') : (show.image?.original?.replace('http:', 'https:') ?? null),
-              dateLabel: dateRaw ? formatDateBR(dateRaw) : null,
+              dateLabel: dateRaw ? formatDateLocale(dateRaw) : null,
               rating: show.tmdbRating && show.tmdbRating > 0 ? show.tmdbRating.toFixed(1) : null,
               overview: show.tmdbOverview ?? null,
               platform: show.webChannel?.name ?? 'Streaming',
-              mediaType: show.tmdbType === 'movie' ? 'Filme' : 'Série',
+              mediaType: show.tmdbType === 'movie' ? i18next.t('streamingPage.movieType', { ns: 'home' }) : i18next.t('streamingPage.seriesType', { ns: 'home' }),
             }}
             onOpen={() => onItem(show)}
             onList={() => onItem(show)}
@@ -353,7 +357,7 @@ function MovieEstreiaGrid({ items, loading, onItem, platformName }: {
   );
   if (items.length === 0) return (
     <div style={{ padding: '24px 16px', textAlign: 'center' }}>
-      <Txt size={13} color={T.t4}>Nenhum filme estreando esta semana</Txt>
+      <Txt size={13} color={T.t4}>{i18next.t('streamingPage.noMovieReleases', { ns: 'home' })}</Txt>
     </div>
   );
   return (
@@ -369,11 +373,11 @@ function MovieEstreiaGrid({ items, loading, onItem, platformName }: {
                 id: item.id,
                 title: item.title || item.name || '',
                 backdropUrl: item.backdrop_path ? tmdbImg(item.backdrop_path, 'w780') : (item.poster_path ? tmdbImg(item.poster_path, 'w342') : null),
-                dateLabel: dateRaw ? formatDateBR(dateRaw) : null,
+                dateLabel: dateRaw ? formatDateLocale(dateRaw) : null,
                 rating: item.vote_average && item.vote_average > 0 ? item.vote_average.toFixed(1) : null,
                 overview: item.overview ?? null,
                 platform: platformName,
-                mediaType: 'Filme',
+                mediaType: i18next.t('streamingPage.movieType', { ns: 'home' }),
               }}
               onOpen={() => onItem(item)}
               onList={() => onItem(item)}
@@ -465,7 +469,7 @@ function RankedGrid({ items, loading, onItem }: {
   );
   if (list.length === 0) return (
     <div style={{ padding: '12px 16px' }}>
-      <Txt size={13} color={T.t4}>Nenhum título encontrado</Txt>
+      <Txt size={13} color={T.t4}>{i18next.t('streamingPage.noTitles', { ns: 'home' })}</Txt>
     </div>
   );
   return (
@@ -517,6 +521,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
   const router   = useRouter();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { t } = useTranslation('home');
   const platform = PLATFORMS[id] ?? { name: 'Streaming', color: '#555' };
   const { start, end } = getWeekRange();
 
@@ -620,8 +625,8 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
   const newMovieItems = (newMovie?.results || []).slice(0, 20);
 
   const TAB_OPTIONS = [
-    { id: 'series' as const, label: 'Séries' },
-    { id: 'filmes' as const, label: 'Filmes' },
+    { id: 'series' as const, label: t('streamingPage.seriesTab') },
+    { id: 'filmes' as const, label: t('streamingPage.moviesTab') },
   ];
 
   return (
@@ -634,7 +639,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
             navTitle={platform.name}
             showNavTitle={showNavTitle}
             left={
-              <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: 17, background: btnIconBg, border: btnIconBorder, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
+              <button onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: btnIconBg, border: btnIconBorder, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
                 <Icon name="chevronL" size={16} color={btnIconColor} />
               </button>
             }
@@ -685,7 +690,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
                   <h1 ref={titleRef} style={{ margin: 0, fontSize: 26, fontWeight: 900, color: bannerTitle, lineHeight: 1.1, fontFamily: "'Greed','Area',sans-serif", letterSpacing: '-0.3px' }}>
                     {platform.name}
                   </h1>
-                  <Txt size={12} color={bannerSub} style={{ display: 'block', marginTop: 6 }}>Séries e filmes em destaque</Txt>
+                  <Txt size={12} color={bannerSub} style={{ display: 'block', marginTop: 6 }}>{t('streamingPage.tagline')}</Txt>
                 </div>
               </div>
             </div>
@@ -696,7 +701,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
             <div style={{ padding: '0 16px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 3, height: 20, borderRadius: 2, background: accentBar, flexShrink: 0 }} />
               <Txt size={20} weight={900} style={{ fontStretch: 'condensed', lineHeight: 1 } as React.CSSProperties}>
-                Em alta esta semana
+                {t('streamingPage.trending')}
               </Txt>
             </div>
             {/* Tabs glass abaixo do título */}
@@ -713,7 +718,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
             <div style={{ padding: '0 16px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 3, height: 20, borderRadius: 2, background: accentBar, flexShrink: 0 }} />
               <Txt size={20} weight={900} style={{ fontStretch: 'condensed', lineHeight: 1 } as React.CSSProperties}>
-                Estreias da semana
+                {t('streamingPage.newReleases')}
               </Txt>
             </div>
             <GlassTabs options={TAB_OPTIONS} value={newTab} onChange={setNewTab} color={tabColor} />

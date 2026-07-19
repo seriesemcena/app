@@ -26,12 +26,14 @@ export async function initFCM(db: Firestore, uid: string): Promise<string | null
   }
   if (perm !== 'granted') return null;
 
-  /* 2. Register service worker (required for FCM on web) */
+  /* 2. Reuse the PWA worker. Registering another worker with scope `/`
+        would replace offline/navigation handling. */
   let swReg: ServiceWorkerRegistration | undefined;
   if ('serviceWorker' in navigator) {
     try {
-      swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+      swReg = await navigator.serviceWorker.register('/sw.js', {
         scope: '/',
+        updateViaCache: 'none',
       });
     } catch {
       // fall back to existing sw

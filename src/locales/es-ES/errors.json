@@ -1,0 +1,27 @@
+{
+  "generic": "Algo salió mal",
+  "network": "Error de conexión. Verifica tu internet.",
+  "notFound": "Página no encontrada",
+  "unauthorized": "Debes iniciar sesión para acceder a esta página",
+  "forbidden": "No tienes permiso para esta acción",
+  "loading": "Cargando...",
+  "restoringSession": "Restaurando tu sesión...",
+  "startupFailed": "No se pudo iniciar la app",
+  "startupFailedDetail": "Maratonou no pudo restaurar tu sesión de forma segura.",
+  "genericDetail": "No pudimos cargar esta pantalla. Tus datos siguen protegidos.",
+  "offlineShort": "Sin conexión",
+  "retry": "Intentar de nuevo",
+  "imageLoad": "Error al cargar la imagen",
+  "authFailed": "Error de autenticación",
+  "saveFailed": "Error al guardar. Inténtalo de nuevo.",
+  "deleteFailed": "Error al eliminar. Inténtalo de nuevo.",
+  "searchFailed": "Error en la búsqueda. Inténtalo de nuevo.",
+  "empty": {
+    "list": "No hay elementos en la lista",
+    "search": "No se encontraron resultados",
+    "feed": "Sin actividad reciente",
+    "reviews": "Sin comentarios aún",
+    "episodes": "No se encontraron episodios",
+    "notifications": "Sin notificaciones"
+  }
+}

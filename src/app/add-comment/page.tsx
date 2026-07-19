@@ -9,6 +9,7 @@ import { revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore } from '@/lib/db';
+import { navigateBack } from '@/lib/navigation';
 
 const EMOJI_GROUPS = [
   { label: '😀', emojis: ['😀','😂','🤣','😍','🥰','😎','🤩','😱','😭','😤','🙄','🤔','😴','🤯','🥳'] },
@@ -80,6 +81,7 @@ function AddCommentPageInner() {
     const newRev: Review = {
       id:       `rev_${Date.now()}`,
       user:     displayName,
+      uid:      user?.uid || '',
       avatar:   avatarLetter,
       photoUrl,
       rating:   0,
@@ -92,7 +94,7 @@ function AddCommentPageInner() {
     if (firebaseConfigured) {
       try { await dbRevStore.add(getDB(), storageKey, newRev); } catch {}
     }
-    router.back();
+    navigateBack(router);
   };
 
   const subtitle = [showName, title].filter(Boolean).join(' · ');
@@ -104,7 +106,7 @@ function AddCommentPageInner() {
           <GlassHeader
             left={
               <button
-                onClick={() => router.back()}
+                onClick={() => navigateBack(router)}
                 style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}
               >
                 <Icon name="chevronL" size={16} color="#fff" />
@@ -247,7 +249,7 @@ function AddCommentPageInner() {
         </ScrollArea>
 
         {/* Publish button */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 16px 28px', background: `linear-gradient(to bottom, transparent, ${T.bg} 40%)` }}>
+        <div className="keyboard-aware-bottom" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px calc(16px + var(--safe-area-right)) calc(16px + var(--interactive-safe-bottom)) calc(16px + var(--safe-area-left))', background: `linear-gradient(to bottom, transparent, ${T.bg} 40%)` }}>
           <button
             onClick={submitComment}
             style={{ width: '100%', padding: '14px 0', borderRadius: 14, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}` }}

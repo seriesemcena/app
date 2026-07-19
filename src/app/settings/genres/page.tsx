@@ -2,13 +2,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, AppBar, Txt, Toast } from '@/components/primitives';
+import { Screen, ScrollArea, Txt, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
+import { SettingsCard, SettingsHeader, SettingsPrimaryButton } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
 import { profileStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbProfileStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
+import { navigateBack } from '@/lib/navigation';
 
 const GENRES = [
   { id: 'Ação',         emoji: '💥' },
@@ -49,43 +51,40 @@ export default function GenresPage() {
       try { await dbProfileStore.set(getDB(), user.uid, { genres: selected }); } catch {}
     }
     setToast('Gêneros salvos!');
-    setTimeout(() => router.back(), 1100);
+    setTimeout(() => navigateBack(router, '/settings'), 1100);
   };
 
   return (
     <Frame>
       <Screen>
-        <AppBar
-          title="Meus gêneros"
-          left={<button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>}
-          right={<button onClick={save} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Txt size={14} weight={700} color={T.pink}>Salvar</Txt></button>}
-        />
+        <SettingsHeader title="Meus gêneros" onBack={() => navigateBack(router, '/settings')} />
         <ScrollArea>
-          <div style={{ padding: '8px 16px 32px' }}>
-            <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>
+          <div style={{ padding: '18px 16px 32px' }}>
+            <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 18, lineHeight: 1.5 }}>
               Escolha os gêneros que você mais curte assistir
             </Txt>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <SettingsCard style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', padding: 8, gap: 8 }}>
               {GENRES.map(g => {
                 const on = selected.includes(g.id);
                 return (
                   <button
                     key={g.id}
                     onClick={() => toggle(g.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: on ? 'rgba(192,105,255,0.12)' : T.card, border: `1px solid ${on ? T.pink + '80' : T.border}`, borderRadius: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 54, padding: '11px 12px', background: on ? 'rgba(192,105,255,0.14)' : 'transparent', border: `1px solid ${on ? T.pink + '70' : 'transparent'}`, borderRadius: 14, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
                   >
                     <span style={{ fontSize: 22 }}>{g.emoji}</span>
-                    <Txt size={13} weight={on ? 700 : 500} color={on ? T.white : T.t2} style={{ flex: 1 }}>{g.id}</Txt>
+                    <Txt size={13} weight={on ? 700 : 500} color={on ? T.pink : T.t2} style={{ flex: 1 }}>{g.id}</Txt>
                     {on && <Icon name="check" size={14} color={T.pink} />}
                   </button>
                 );
               })}
-            </div>
+            </SettingsCard>
             {selected.length > 0 && (
               <Txt size={12} color={T.t3} style={{ display: 'block', textAlign: 'center', marginTop: 16 }}>
                 {selected.length} gênero{selected.length > 1 ? 's' : ''} selecionado{selected.length > 1 ? 's' : ''}
               </Txt>
             )}
+            <SettingsPrimaryButton label="Salvar alterações" onClick={save} style={{ marginTop: 22 }} />
           </div>
         </ScrollArea>
         <Toast msg={toast} visible={!!toast} icon="check" />

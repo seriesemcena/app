@@ -9,37 +9,16 @@ import { prefsStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbPrefsStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
-const STEPS: Array<{
-  id: number;
-  icon: IconName;
-  title: string;
-  subtitle: string;
-  options: string[];
-  key: 'streams' | 'genres' | 'notifications';
-}> = [
-  {
-    id: 0, icon: 'wifi',
-    title: 'Seus streamings',
-    subtitle: 'Diga quais plataformas você assina e nunca perca um lançamento.',
-    options: ['Netflix', 'Prime Video', 'Disney+', 'HBO Max', 'Apple TV+', 'Globoplay', 'Paramount+'],
-    key: 'streams',
-  },
-  {
-    id: 1, icon: 'heart',
-    title: 'Seus gostos',
-    subtitle: 'Selecione os gêneros que mais curte para recomendações certeiras.',
-    options: ['Ação', 'Drama', 'Comédia', 'Terror', 'Sci-Fi', 'Romance', 'Thriller', 'Documentário', 'Animação', 'Crime'],
-    key: 'genres',
-  },
-  {
-    id: 2, icon: 'bell',
-    title: 'Notificações',
-    subtitle: 'Quando você quer receber alertas?',
-    options: ['Estreias no cinema', 'Chegou no streaming', 'Novo episódio', 'Lembretes VIP'],
-    key: 'notifications',
-  },
+const STEP_META: Array<{ id: number; icon: IconName; key: 'streams' | 'genres' | 'notifications' }> = [
+  { id: 0, icon: 'wifi',  key: 'streams' },
+  { id: 1, icon: 'heart', key: 'genres' },
+  { id: 2, icon: 'bell',  key: 'notifications' },
 ];
+
+const STREAMING_OPTIONS = ['Netflix', 'Prime Video', 'Disney+', 'HBO Max', 'Apple TV+', 'Globoplay', 'Paramount+'];
 
 /* ── Dark skin tokens ── */
 const DK = {
@@ -56,8 +35,16 @@ const DK = {
 export default function OnboardingPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { t } = useTranslation('home');
   const [step,     setStep]     = useState(0);
   const [selected, setSelected] = useState<string[][]>([[], [], []]);
+
+  const STEPS = [
+    { ...STEP_META[0], title: t('onboarding.step0Title'), subtitle: t('onboarding.step0Sub'), options: STREAMING_OPTIONS },
+    { ...STEP_META[1], title: t('onboarding.step1Title'), subtitle: t('onboarding.step1Sub'), options: t('onboarding.genres', { returnObjects: true }) as string[] },
+    { ...STEP_META[2], title: t('onboarding.step2Title'), subtitle: t('onboarding.step2Sub'), options: t('onboarding.notifOptions', { returnObjects: true }) as string[] },
+  ];
+
   const data   = STEPS[step];
   const isLast = step === STEPS.length - 1;
 
@@ -163,7 +150,7 @@ export default function OnboardingPage() {
         {/* Footer */}
         <div style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
-          padding: '20px 24px 44px',
+          padding: '20px calc(24px + var(--safe-area-right)) calc(20px + var(--safe-area-bottom)) calc(24px + var(--safe-area-left))',
           background: `linear-gradient(to top, ${DK.bg} 60%, transparent)`,
           display: 'flex', gap: 10,
         }}>
@@ -181,7 +168,7 @@ export default function OnboardingPage() {
                 cursor: 'pointer',
               }}
             >
-              Voltar
+              {t('onboarding.back')}
             </button>
           )}
           <button
@@ -198,7 +185,7 @@ export default function OnboardingPage() {
               cursor: 'pointer',
             }}
           >
-            {isLast ? 'Começar' : 'Próximo'}
+            {isLast ? t('onboarding.begin') : t('onboarding.next')}
           </button>
         </div>
       </Screen>

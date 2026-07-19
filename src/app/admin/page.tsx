@@ -1,10 +1,13 @@
 'use client';
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import { Txt, Btn, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { listStore, revStore, sliderStore, notifiedStore, type SliderItem } from '@/lib/store';
 import { checkUpcomingReleases, DAYS_THRESHOLD } from '@/lib/releaseNotifier';
+import { tmdbImg } from '@/lib/tmdb';
 
 /* ─── types ─── */
 type AdminSection =
@@ -76,8 +79,32 @@ const NAV: { id: AdminSection; icon: string; label: string }[] = [
   { id: 'moderacao',    icon: 'flag',   label: 'Moderação'        },
 ];
 
+/* ── access control ──
+   Deny-by-default allowlist: NEXT_PUBLIC_ADMIN_EMAILS (comma-separated).
+   Exposing the list in the client bundle is fine — access is granted by
+   BEING signed in as one of these accounts, not by knowing the list.
+   Unset (e.g. env var missing in prod) ⇒ nobody gets in. */
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+  .split(',')
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean);
+
 /* ══════════════════════════════════════════════════════════════════════ */
 export default function AdminPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const allowed = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+
+  useEffect(() => {
+    if (!authLoading && !allowed) router.replace('/home');
+  }, [authLoading, allowed, router]);
+
+  // Render nothing while auth resolves or for non-admins (redirect fires above).
+  if (!allowed) return null;
+  return <AdminPanel />;
+}
+
+function AdminPanel() {
   const [section, setSection] = useState<AdminSection>('metrics');
   const [toast, setToast] = useState<string | null>(null);
   const [sideOpen, setSideOpen] = useState(true);
@@ -120,10 +147,6 @@ export default function AdminPage() {
     setReviews(LS.get('reviews', SEED_REVIEWS));
     setSliderItems(sliderStore.get());
 
-    /* Register service worker */
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    }
     /* Read current notification permission */
     if (typeof Notification !== 'undefined') {
       setNotifPerm(Notification.permission);
@@ -282,7 +305,7 @@ export default function AdminPage() {
 
   /* ── styles ── */
   const S = {
-    page: { display: 'flex', minHeight: '100vh', background: T.bg, color: T.t1, fontFamily: "'Area','Inter',sans-serif" } as React.CSSProperties,
+    page: { display: 'flex', minHeight: 'var(--app-height)', background: T.bg, color: T.t1, fontFamily: "'Area','Inter',sans-serif" } as React.CSSProperties,
     sidebar: { width: sideOpen ? 220 : 60, flexShrink: 0, background: T.bg, borderRight: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column' as const, transition: 'width 0.25s ease', overflow: 'hidden' },
     navItem: (active: boolean): React.CSSProperties => ({ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', cursor: 'pointer', background: active ? 'var(--c-glass-bg)' : 'transparent', borderLeft: active ? `3px solid ${T.pink}` : '3px solid transparent', color: active ? T.white : T.t3, fontSize: 13, fontWeight: active ? 700 : 500, whiteSpace: 'nowrap', transition: 'all 0.15s' }),
     main: { flex: 1, padding: 28, overflowY: 'auto' as const },
@@ -821,7 +844,7 @@ export default function AdminPage() {
                 {item.backdrop_path ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={`https://image.tmdb.org/t/p/w92${item.backdrop_path}`}
+                    src={tmdbImg(item.backdrop_path, 'w92') ?? ''}
                     alt={item.title}
                     style={{ width: 60, height: 34, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
                   />
@@ -881,7 +904,7 @@ export default function AdminPage() {
                   <Txt size={12} color={T.t4} style={{ width: 18, textAlign: 'center', flexShrink: 0 }}>{idx + 1}</Txt>
                   {item.backdrop_path ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`https://image.tmdb.org/t/p/w92${item.backdrop_path}`} alt={item.title}
+                    <img src={tmdbImg(item.backdrop_path, 'w92') ?? ''} alt={item.title}
                       style={{ width: 60, height: 34, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
                   ) : (
                     <div style={{ width: 60, height: 34, borderRadius: 4, background: T.surface, flexShrink: 0 }} />

@@ -11,19 +11,27 @@ import {
 import type { User } from 'firebase/auth';
 import { firebaseConfigured, getFirebaseAuth, getDB } from '@/lib/firebase';
 import { migrateLocalToFirestore, syncFromFirestore, subscribeUserDoc } from '@/lib/db';
+import { switchActiveUser, getActiveUser } from '@/lib/store';
 
 interface AuthState {
   user:    User | null;
   loading: boolean;
   /** True when Firebase is not configured — app runs in local-only mode */
   offline: boolean;
+  initializationError: Error | null;
 }
 
-const AuthContext = createContext<AuthState>({ user: null, loading: true, offline: false });
+const AuthContext = createContext<AuthState>({
+  user: null,
+  loading: true,
+  offline: false,
+  initializationError: null,
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initializationError, setInitializationError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!firebaseConfigured) {
@@ -34,41 +42,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Holds the Firestore real-time subscription for the current user
     let unsubDoc: (() => void) | null = null;
     let unsubAuth = () => {};
+    let active = true;
 
     import('firebase/auth').then(({ onAuthStateChanged }) => {
+      if (!active) return;
       unsubAuth = onAuthStateChanged(getFirebaseAuth(), async (u) => {
         // Clean up previous user's real-time subscription
         unsubDoc?.();
         unsubDoc = null;
 
+        // Wipe the previous account's cached content BEFORE anything reads
+        // or uploads it. Without this the new user inherits the old user's
+        // lists — and migrateLocalToFirestore would write them into the
+        // new account's Firestore document.
+        let cacheOwner: string | null = null;
+        try {
+          cacheOwner = getActiveUser();
+          switchActiveUser(u?.uid ?? null);
+        } catch {}
+
         setUser(u);
-        setLoading(false);
+
+        // Firebase local persistence restores the cached account first and
+        // refreshes expired ID tokens when the network is available. Do not
+        // expose signed-out UI until that restoration callback has completed.
+        if (u) {
+          try { await u.getIdToken(false); }
+          catch (error) {
+            if (navigator.onLine) console.warn('[Auth] Token refresh deferred', error);
+          }
+        }
+        if (active) setLoading(false);
 
         if (u) {
           const db = getDB();
 
-          // 1. Migrate localStorage → Firestore (one-time, first login)
-          try { await migrateLocalToFirestore(db, u.uid); } catch {}
+          // 1. Migrate localStorage → Firestore (one-time, first login).
+          //    Only when the cache provably belongs to this account: an
+          //    unknown owner may be leftovers from a different user, and
+          //    uploading those would corrupt this account's data.
+          if (cacheOwner === u.uid) {
+            try { await migrateLocalToFirestore(db, u.uid); } catch {}
+          }
 
           // 2. Initial pull: Firestore → localStorage (catches up any offline changes)
-          try { await syncFromFirestore(db, u.uid); } catch {}
+          try { await syncFromFirestore(db, u.uid, u.email, u.displayName); } catch {}
 
           // 3. Real-time subscription: whenever Firestore changes (other device or
           //    server-side update), localStorage is refreshed automatically and
           //    components listening to 'maratonou:sync' re-render.
           try { unsubDoc = subscribeUserDoc(db, u.uid); } catch {}
         }
+      }, (error) => {
+        console.error('[Auth] Failed to restore Firebase session', error);
+        if (active) {
+          setInitializationError(error instanceof Error ? error : new Error('Firebase session initialization failed'));
+          setLoading(false);
+        }
       });
+    }).catch((error) => {
+      console.error('[Auth] Failed to initialize Firebase Auth', error);
+      if (active) {
+        setInitializationError(error instanceof Error ? error : new Error('Firebase Auth initialization failed'));
+        setLoading(false);
+      }
     });
 
     return () => {
+      active = false;
       unsubAuth();
       unsubDoc?.();
     };
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, offline: !firebaseConfigured }}>
+    <AuthContext.Provider value={{ user, loading, offline: !firebaseConfigured, initializationError }}>
       {children}
     </AuthContext.Provider>
   );

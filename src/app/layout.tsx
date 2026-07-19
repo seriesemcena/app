@@ -3,10 +3,23 @@ import Script from 'next/script';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { LocaleProvider } from '@/context/LocaleContext';
+import { AppRuntimeProvider } from '@/context/AppRuntimeContext';
+import { AppBootstrap } from '@/components/AppBootstrap';
 
 export const metadata: Metadata = {
-  title: 'Séries em Cena',
+  title: {
+    default: 'Maratonou',
+    template: '%s · Maratonou',
+  },
   description: 'Seu guia de filmes e séries',
+  applicationName: 'Maratonou',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'Maratonou',
+    statusBarStyle: 'black-translucent',
+  },
 };
 
 export const viewport: Viewport = {
@@ -19,24 +32,25 @@ export const viewport: Viewport = {
   ],
 };
 
+/* Inline script runs before hydration to prevent flash of wrong locale */
+const localeScript = `
+(function(){
+  try {
+    var l = localStorage.getItem('sec_locale_v1');
+    if (l) document.documentElement.lang = l;
+  } catch(e){}
+})();
+`;
+
 /* Inline script runs before hydration to prevent flash of wrong theme */
 const themeScript = `
 (function(){
   try {
     var t = localStorage.getItem('sec_theme_v1');
-    var active = (t === 'light' || t === 'dark') ? t : 'light';
+    var active = (t === 'light' || t === 'dark') ? t : 'dark';
     document.documentElement.setAttribute('data-theme', active);
   } catch(e){}
 })();
-`;
-
-/* Register SW on every page so PWA scope covers all routes */
-const swScript = `
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function() {});
-  });
-}
 `;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -48,15 +62,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="apple-touch-icon" href="/logo_dark.png" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        {/* Anti-FOUC scripts must be in head; rendering beforeInteractive Script in body logs React errors. */}
+        <Script id="locale-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: localeScript }} />
+        <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        {/* Anti-FOUC: set theme before first paint */}
-        <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
-        {/* Register SW on all pages so PWA scope covers every route */}
-        <Script id="sw-register" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: swScript }} />
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AppRuntimeProvider>
+            <AuthProvider>
+              <LocaleProvider>
+                <AppBootstrap>{children}</AppBootstrap>
+              </LocaleProvider>
+            </AuthProvider>
+          </AppRuntimeProvider>
         </ThemeProvider>
       </body>
     </html>

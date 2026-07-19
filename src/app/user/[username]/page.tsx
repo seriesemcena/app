@@ -2,14 +2,24 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Txt, GlassHeader } from '@/components/primitives';
+import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { ImgWithSkeleton } from '@/components/posters';
-import { listStore, revStore, profileStore, type Profile } from '@/lib/store';
+import { listStore, revStore, profileStore, prefsStore, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore, getUserByUsername } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
+import { navigateBack, withProfileOrigin } from '@/lib/navigation';
+import { usernameFromNameOrEmail } from '@/lib/username';
+import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
+import { tmdbImg } from '@/lib/tmdb';
+
+type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
+type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
+const EMPTY_LISTS: Lists = { watching: [], want: [], watched: [], favorites: [] };
 
 const COLLAGE_SLOTS: Array<{ left?: number; right?: number; top: number; rotate: number; width: number }> = [
   { left:  -18, top:  8,  rotate: -20, width: 115 },
@@ -20,207 +30,365 @@ const COLLAGE_SLOTS: Array<{ left?: number; right?: number; top: number; rotate:
   { left:   30, top:  90, rotate: -12, width: 100 },
 ];
 
+const GENRE_COLORS: Record<string, string> = {
+  'Drama': '#C069FF', 'Ação': '#FF6B2B', 'Action': '#FF6B2B',
+  'Comédia': '#F5C518', 'Comedy': '#F5C518',
+  'Ficção científica': '#3b82f6', 'Ficção Científica': '#3b82f6',
+  'Science Fiction': '#3b82f6', 'Sci-Fi': '#3b82f6',
+  'Terror': '#8b5cf6', 'Horror': '#8b5cf6',
+  'Romance': '#ec4899', 'Thriller': '#ef4444',
+  'Documentário': '#10b981', 'Documentary': '#10b981',
+  'Animação': '#f97316', 'Animation': '#f97316',
+  'Crime': '#6366f1', 'Aventura': '#06b6d4', 'Adventure': '#06b6d4',
+  'Família': '#f59e0b', 'Family': '#f59e0b',
+  'Mistério': '#7c3aed', 'Mystery': '#7c3aed',
+  'Western': '#a16207', 'Guerra': '#dc2626', 'War': '#dc2626',
+};
+
+const STREAMING_LOGOS: Record<string, string> = {
+  netflix: 'netflix',
+  prime: 'primevideo',
+  disney: 'dineyplus',
+  hbo: 'hbomax',
+  apple: 'appletv',
+  globo: 'globoplay',
+  paramount: 'paramountplus',
+  mgm: 'mgm',
+  star: 'mgm',
+};
+
+const STREAMING_LOGOS_BY_NAME: Record<string, string> = {
+  Netflix: 'netflix',
+  'Prime Video': 'primevideo',
+  'Disney+': 'dineyplus',
+  'HBO Max': 'hbomax',
+  'Apple TV+': 'appletv',
+  Globoplay: 'globoplay',
+  'Paramount+': 'paramountplus',
+  'MGM+': 'mgm',
+  'Star+': 'mgm',
+};
+
 function UserProfileInner() {
   const router            = useRouter();
+  const { t }             = useTranslation('profile');
+  const { theme }         = useTheme();
+  const isDark            = theme === 'dark';
   const params            = useParams();
   const { user, loading } = useAuth();
 
-  const username     = decodeURIComponent((params.username as string) || '');
-  const currentUserName = user?.displayName || user?.email?.split('@')[0] || '';
-  const isMe            = !!user && (username === currentUserName || username === user.email?.split('@')[0]);
+  const slug = decodeURIComponent((params.username as string) || '');
 
-  const [profile,      setProfile]      = useState<Profile | null>(null);
-  const [stats,        setStats]        = useState({ watched: 0, watching: 0, want: 0, reviews: 0 });
-  const [totalHours,   setTotalHours]   = useState(0);
-  const [socialSheet,  setSocialSheet]  = useState<'followers' | 'following' | null>(null);
+  /* ── Is this my own profile? ──
+     Matches my uid or my *effective* username — the stored one, or the
+     name-slug fallback when Firestore hasn't synced yet. This must stay
+     identical to useMyProfileUrl(), otherwise the Perfil tab links to a
+     URL this page doesn't recognise as mine.
+     An old alias is deliberately NOT matched here: another account may
+     currently own that username, and the real owner must win. Those
+     cases fall through to the lookup below, which compares uids. */
+  const localProfile = user ? profileStore.get(user.uid) : null;
+  const myUsername = user
+    ? (localProfile?.username || usernameFromNameOrEmail(localProfile?.name || user.displayName, user.email))
+    : '';
+  const directIsMe = !!user && (
+    slug === user.uid ||
+    (!!myUsername && slug === myUsername)
+  );
+  const [resolvedSelf, setResolvedSelf] = useState(false);
+  const isMe = directIsMe || resolvedSelf;
 
-  /* ── Follow state ── */
-  const [isFollowing,    setIsFollowing]    = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
-  const [followingNames, setFollowingNames] = useState<string[]>([]);
-
-  /* ── Target user (when !isMe) ── */
-  const [targetUid,     setTargetUid]     = useState<string | null>(null);
+  /* ── Profile + lists ── */
+  const [myProfile,     setMyProfile]     = useState<Profile | null>(null);
   const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
+  const [targetUid,     setTargetUid]     = useState<string | null>(null);
+  const [targetLists,   setTargetLists]   = useState<Lists>(EMPTY_LISTS);
+  const [notFound,      setNotFound]      = useState(false);
+  const [reviewCount,   setReviewCount]   = useState(0);
 
-  const favoritos    = useMemo(() => isMe ? listStore.get('favorites') : [], [isMe]);
-  const watchingList = useMemo(() => isMe ? listStore.get('watching')  : [], [isMe]);
-  const wantList     = useMemo(() => isMe ? listStore.get('want')      : [], [isMe]);
-  const watchedList  = useMemo(() => isMe ? listStore.get('watched')   : [], [isMe]);
+  /* ── Social ── */
+  const [socialSheet,    setSocialSheet]    = useState<'followers' | 'following' | null>(null);
+  const [followingNames, setFollowingNames] = useState<string[]>([]);
+  const [myFollowing,    setMyFollowing]    = useState<string[]>([]);
+  const [followers,      setFollowers]      = useState<FollowerInfo[]>([]);
+  const [targetFollowing, setTargetFollowing] = useState(0);
 
-  /* Sync own following list from localStorage (updated by subscribeUserDoc) */
+  /* ── My own data (localStorage) ── */
+  const myLists: Lists = useMemo(() => (isMe ? {
+    watching:  listStore.get('watching'),
+    want:      listStore.get('want'),
+    watched:   listStore.get('watched'),
+    favorites: listStore.get('favorites'),
+  } : EMPTY_LISTS), [isMe]);
+
+  /* Every name this profile may be recorded under in someone's following_list:
+     canonical username, old aliases, display name, and the URL slug. Legacy
+     follows stored the display name, so a single-key check misses them. */
+  const targetIdentities = useMemo(() => Array.from(new Set([
+    targetProfile?.username, ...(targetProfile?.aliases ?? []), targetProfile?.name, slug,
+  ].filter(Boolean) as string[])), [targetProfile, slug]);
+
+  const isFollowing = useMemo(
+    () => myFollowing.some(f => targetIdentities.includes(f)),
+    [myFollowing, targetIdentities],
+  );
+
+  const lists      = isMe ? myLists : targetLists;
+  const favoritos  = lists.favorites;
+  const minhaLista = lists.want;
+  const assistindo = lists.watching;
+  const concluidos = lists.watched;
+
+  const activeProfile = isMe ? myProfile : targetProfile;
+
+  /* ── Load my profile ── */
   useEffect(() => {
-    if (!isMe) return;
+    if (!isMe || loading || !user) return;
+    setReviewCount(revStore.countAll());
+    const applyProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
+      const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
+      const resolvedName = merged.name || user.displayName || 'Usuário';
+      setMyProfile({
+        ...merged,
+        name:         resolvedName,
+        username:     merged.username || usernameFromNameOrEmail(resolvedName, user.email),
+        avatarImage:  merged.avatarImage || user.photoURL || '',
+        avatarLetter: resolvedName[0]?.toUpperCase() || 'U',
+      });
+    };
+    const local = profileStore.get(user.uid);
+    applyProfile(local);
     try {
       const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
       setFollowingNames(list);
     } catch {}
-  }, [isMe]);
-
-  /* Load target user profile + isFollowing state from Firestore */
-  useEffect(() => {
-    if (isMe || loading) return;
-
-    // Optimistic read from localStorage first
-    try {
-      const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-      setIsFollowing(list.includes(username));
-    } catch {}
-
-    if (!firebaseConfigured) return;
-    const db = getDB();
-
-    // Load the target user's full profile (gives us their UID for bidirectional writes)
-    getUserByUsername(db, username).then(result => {
-      if (!result) return;
-      setTargetUid(result.uid);
-      setTargetProfile(result.profile);
-      setFollowersCount(result.profile.followers ?? 0);
-    });
-
-    // Confirm isFollowing from Firestore (authoritative after login)
-    if (user) {
-      dbFollowStore.get(db, user.uid).then(list => {
-        setIsFollowing(list.includes(username));
-        try { localStorage.setItem('sec_following', JSON.stringify(list)); } catch {}
-      });
-    }
-  }, [username, isMe, user, loading]);
-
-  const toggleFollow = async () => {
-    const wasFollowing  = isFollowing;
-    const prevCount     = followersCount;
-    const nextCount     = wasFollowing ? Math.max(0, prevCount - 1) : prevCount + 1;
-
-    // Optimistic update
-    setIsFollowing(!wasFollowing);
-    setFollowersCount(nextCount);
-    try {
-      const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-      const updated = wasFollowing ? list.filter(u => u !== username) : [...list, username];
-      localStorage.setItem('sec_following', JSON.stringify(updated));
-    } catch {}
-
-    if (!firebaseConfigured || !user) return;
-
-    try {
-      const db = getDB();
-      if (wasFollowing) {
-        const uid = targetUid ?? (await getUserByUsername(db, username))?.uid ?? null;
-        if (uid) await dbFollowStore.unfollow(db, user.uid, username, uid);
-        else await dbFollowStore.set(db, user.uid, (await dbFollowStore.get(db, user.uid)).filter(u => u !== username));
-      } else {
-        const uid = targetUid ?? (await getUserByUsername(db, username))?.uid ?? null;
-        if (uid) {
-          setTargetUid(uid);
-          await dbFollowStore.follow(db, user.uid, username, uid);
-        } else {
-          // target not found in Firestore — update own list only
-          const current = await dbFollowStore.get(db, user.uid);
-          await dbFollowStore.set(db, user.uid, [...current, username]);
-        }
-      }
-    } catch (err) {
-      console.error('[Follow] Error:', err);
-      // Rollback
-      setIsFollowing(wasFollowing);
-      setFollowersCount(prevCount);
-      try {
-        const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
-        const restored = wasFollowing ? [...list, username] : list.filter(u => u !== username);
-        localStorage.setItem('sec_following', JSON.stringify(restored));
-      } catch {}
-    }
-  };
-
-  useEffect(() => {
-    if (!isMe || loading) return;
-
-    setStats({
-      watched:  listStore.get('watched').length,
-      watching: listStore.get('watching').length,
-      want:     listStore.get('want').length,
-      reviews:  revStore.countAll(),
-    });
-    setTotalHours(Math.round(listStore.get('watched').length * 1.5));
-
-    const applyProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
-      const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
-      if (user) {
-        const resolvedName = merged.name || user.displayName || 'Usuário';
-        setProfile({
-          ...merged,
-          name:         resolvedName,
-          username:     merged.username || user.email?.split('@')[0] || 'usuario',
-          avatarImage:  merged.avatarImage || user.photoURL || '',
-          avatarLetter: resolvedName[0]?.toUpperCase() || 'U',
-        });
-      } else {
-        setProfile(merged);
-      }
-    };
-
-    const local = profileStore.get(user?.uid);
-    applyProfile(local);
-
-    if (user && firebaseConfigured) {
+    if (firebaseConfigured) {
       dbProfileStore.get(getDB(), user.uid).then(cloud => {
         if (cloud && (cloud.name || cloud.username || cloud.bio)) {
           profileStore.set({ ...local, ...cloud }, user.uid);
           applyProfile(local, cloud);
         }
+        // Derive my own follower list the same way (no stored counter)
+        const p = { ...local, ...(cloud ?? {}) } as Profile;
+        return getFollowers(getDB(), [p.username, ...(p.aliases ?? []), p.name, slug]);
+      }).then(f => { if (f) setFollowers(f); }).catch(() => {});
+    }
+  }, [isMe, user, loading, slug]);
+
+  /* Navigating to a different profile clears the "resolved to me" flag */
+  useEffect(() => {
+    setResolvedSelf(false);
+    setNotFound(false);
+    setTargetProfile(null);
+    setTargetLists(EMPTY_LISTS);
+  }, [slug]);
+
+  /* ── Load someone else's profile (public) ── */
+  useEffect(() => {
+    if (isMe || loading) return;
+    try {
+      setMyFollowing(JSON.parse(localStorage.getItem('sec_following') || '[]'));
+    } catch {}
+    if (!firebaseConfigured) return;
+    const db = getDB();
+    let alive = true;
+
+    getUserByUsername(db, slug).then(async result => {
+      if (!alive) return;
+      if (!result) { setNotFound(true); return; }
+      setNotFound(false);
+      // The slug resolved back to me (e.g. one of my old usernames, and
+      // nobody else claimed it) — render the owner view instead.
+      if (user && result.uid === user.uid) { setResolvedSelf(true); return; }
+      setTargetUid(result.uid);
+      setTargetProfile(result.profile);
+      setTargetFollowing(result.followingCount);
+      // Followers are derived: match the canonical username, any alias, and
+      // the display name (legacy follows stored the name, e.g. "Danilo").
+      getFollowers(db, [result.profile.username, ...(result.profile.aliases ?? []), result.profile.name, slug])
+        .then(f => { if (alive) setFollowers(f); }).catch(() => {});
+      try {
+        const [watching, want, watched, favorites] = await Promise.all([
+          dbListStore.get(db, result.uid, 'watching'),
+          dbListStore.get(db, result.uid, 'want'),
+          dbListStore.get(db, result.uid, 'watched'),
+          dbListStore.get(db, result.uid, 'favorites'),
+        ]);
+        if (alive) setTargetLists({ watching, want, watched, favorites });
+      } catch {}
+    });
+
+    if (user) {
+      dbFollowStore.get(db, user.uid).then(list => {
+        if (!alive) return;
+        // A follow may be recorded under the canonical username or, for older
+        // entries, the display name / whatever slug the URL carried.
+        setMyFollowing(list);
+        try { localStorage.setItem('sec_following', JSON.stringify(list)); } catch {}
       }).catch(() => {});
     }
-  }, [isMe, user, loading]);
+    return () => { alive = false; };
+  }, [slug, isMe, user, loading]);
 
-  if (loading && isMe) {
+  /* ── Real stats from the watched list (works for any profile) ── */
+  const [realStats, setRealStats] = useState<{
+    totalHours: number; moviesCount: number; tvCount: number;
+    genres: Array<{ g: string; pct: number; color: string }>;
+  } | null>(null);
+
+  useEffect(() => {
+    const watched = concluidos;
+    if (watched.length === 0) {
+      setRealStats({ totalHours: 0, moviesCount: 0, tvCount: 0, genres: [] });
+      return;
+    }
+    let alive = true;
+    const toFetch = watched.slice(0, 20);
+    Promise.all(
+      toFetch.map(async (item) => {
+        try {
+          const ep = item.type === 'movie' ? `/movie/${item.id}` : `/tv/${item.id}`;
+          return await fetch(`/api/tmdb?endpoint=${ep}`).then(r => r.json());
+        } catch { return null; }
+      })
+    ).then((results) => {
+      if (!alive) return;
+      let totalMinutes = 0, moviesCount = 0, tvCount = 0;
+      const genreCount: Record<string, number> = {};
+      results.forEach((d, i) => {
+        if (!d) return;
+        const item = toFetch[i];
+        (d.genres || []).forEach((g: { name: string }) => {
+          genreCount[g.name] = (genreCount[g.name] || 0) + 1;
+        });
+        if (item.type === 'movie') { moviesCount++; totalMinutes += d.runtime || 110; }
+        else { tvCount++; totalMinutes += (d.episode_run_time?.[0] || 45) * Math.min(d.number_of_episodes || 10, 24); }
+      });
+      const totalGenreCount = Math.max(Object.values(genreCount).reduce((a, b) => a + b, 0), 1);
+      const genres = Object.entries(genreCount)
+        .sort(([, a], [, b]) => b - a).slice(0, 5)
+        .map(([name, count]) => ({
+          g: name, pct: Math.round((count / totalGenreCount) * 100),
+          color: GENRE_COLORS[name] || '#6b7280',
+        }));
+      setRealStats({ totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount, genres });
+    });
+    return () => { alive = false; };
+  }, [concluidos]);
+
+  /* ── Follow / unfollow ── */
+  const toggleFollow = async () => {
+    if (!user) { router.push('/auth'); return; }
+    const wasFollowing = isFollowing;
+    // Always record the target's CANONICAL username. Storing the URL slug
+    // (often a display name like "Danilo") made the entry unmatchable, so
+    // the follower count could never find it.
+    const canonical = targetProfile?.username || slug;
+    // Optimistic: add the canonical name, or drop every identity this
+    // profile could be recorded under (canonical, aliases, display name).
+    const optimistic = wasFollowing
+      ? myFollowing.filter(u => !targetIdentities.includes(u))
+      : Array.from(new Set([...myFollowing, canonical]));
+    setMyFollowing(optimistic);
+    setFollowers(prev => wasFollowing
+      ? prev.filter(f => f.uid !== user.uid)
+      : [...prev, { uid: user.uid, username: '', name: '', avatarImage: '', avatarLetter: '', avatarGradient: '' }]);
+    try { localStorage.setItem('sec_following', JSON.stringify(optimistic)); } catch {}
+
+    if (!firebaseConfigured) return;
+    try {
+      const db  = getDB();
+      const uid = targetUid ?? (await getUserByUsername(db, slug))?.uid ?? null;
+      if (wasFollowing) {
+        // Drop the canonical entry and any legacy display-name entry
+        const current = await dbFollowStore.get(db, user.uid);
+        const next = current.filter(u => !targetIdentities.includes(u));
+        await dbFollowStore.set(db, user.uid, next);
+        setMyFollowing(next);
+        try { localStorage.setItem('sec_following', JSON.stringify(next)); } catch {}
+      } else if (uid) {
+        setTargetUid(uid);
+        await dbFollowStore.follow(db, user.uid, canonical);
+        const myProf     = profileStore.get(user.uid);
+        const myUsername = myProf.username || usernameFromNameOrEmail(myProf.name || user.displayName, user.email);
+        const myName     = myProf.name || user.displayName || myUsername;
+        dbNotifStore.add(db, {
+          recipientId: uid,
+          category: 'account',
+          type: 'new_follower',
+          actorId: user.uid,
+          actorUsername: myUsername,
+          actorName: myName,
+          actorAvatarLetter: (myName[0] || 'U').toUpperCase(),
+          actorAvatarImage: user.photoURL || myProf.avatarImage || '',
+          createdAt: new Date().toISOString(),
+          link: `/user/${encodeURIComponent(myUsername)}`,
+        }).catch(() => {});
+      } else {
+        const current = await dbFollowStore.get(db, user.uid);
+        await dbFollowStore.set(db, user.uid, Array.from(new Set([...current, canonical])));
+      }
+      // Re-derive from the server so the count reflects what was persisted
+      if (targetProfile) {
+        const fresh = await getFollowers(db, [
+          targetProfile.username, ...(targetProfile.aliases ?? []), targetProfile.name, slug,
+        ]);
+        setFollowers(fresh);
+      }
+    } catch {
+      setMyFollowing(myFollowing); // roll back to the pre-click list
+    }
+  };
+
+  /* ── Loading / not found ── */
+  if (loading || (isMe && !myProfile)) {
     return (
       <Frame><Screen>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, padding: 32 }}>
           <div style={{ width: 88, height: 88, borderRadius: 44, background: 'var(--c-glass-bg)', animation: 'pulse 1.5s ease-in-out infinite' }} />
           <div style={{ width: 140, height: 16, borderRadius: 8, background: 'var(--c-glass-bg)' }} />
+          <div style={{ width: 100, height: 12, borderRadius: 6, background: 'var(--c-input-bg)' }} />
         </div>
       </Screen></Frame>
     );
   }
 
-  const activeProfile   = isMe ? profile : targetProfile;
-  const displayName     = activeProfile?.name || username;
-  const displayUsername = activeProfile?.username || username;
+  if (!isMe && notFound) {
+    return (
+      <Frame><Screen>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 12, padding: 32, textAlign: 'center' }}>
+          <div style={{ width: 64, height: 64, borderRadius: 32, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="user" size={28} color={T.t4} />
+          </div>
+          <Txt size={16} weight={700} color={T.t1} style={{ display: 'block' }}>{t('userNotFound')}</Txt>
+          <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.6 }}>@{slug}</Txt>
+          <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.6 }}>{t('userNotFoundDetail')}</Txt>
+          <button onClick={() => navigateBack(router)} style={{ marginTop: 8, padding: '10px 24px', borderRadius: 24, background: T.pink, border: 'none', cursor: 'pointer' }}>
+            <Txt size={13} weight={700} color="#fff">{t('goBack')}</Txt>
+          </button>
+        </div>
+      </Screen></Frame>
+    );
+  }
+
+  const displayName     = activeProfile?.name || slug;
+  const displayUsername = activeProfile?.username || slug;
   const displayAvatar   = activeProfile?.avatarImage || '';
   const displayGradient = activeProfile?.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`;
   const bio             = activeProfile?.bio || '';
-  const followingCount  = isMe ? followingNames.length : (targetProfile?.following ?? 0);
-  const followersVal    = isMe ? (profile?.followers ?? 0) : followersCount;
-  const topPct          = isMe && stats.watched > 0 ? Math.max(1, Math.round(100 / (stats.watched + 1))) : null;
+  // Both counts are derived: profile.followers is never written (cross-user
+  // writes are denied) and profile.following drifts out of sync with the list.
+  const followingCount  = isMe ? followingNames.length : targetFollowing;
+  const followersVal    = followers.length;
+  const topPct          = concluidos.length > 0 ? Math.max(1, Math.round(100 / (concluidos.length + 1))) : null;
 
-  const collageSources     = [...favoritos, ...wantList];
+  const collageSources     = [...favoritos, ...minhaLista];
   const collagePosterItems = collageSources.filter(x => !!x.poster_path).slice(0, 6);
 
   return (
     <Frame>
       <Screen>
         <ScrollArea>
-          <GlassHeader
-            left={
-              <button onClick={() => router.back()}
-                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                <Icon name="chevronL" size={16} color="#fff" />
-              </button>
-            }
-            right={
-              isMe ? (
-                <button onClick={() => router.push('/settings')}
-                  style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                  <Icon name="settings" size={16} color="#fff" />
-                </button>
-              ) : (
-                <button style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                  <Icon name="flag" size={15} color="#fff" />
-                </button>
-              )
-            }
-          />
 
           {/* ── Capa com collage ── */}
           <div style={{ position: 'relative' }}>
@@ -228,6 +396,8 @@ function UserProfileInner() {
               {collagePosterItems.map((item, idx) => {
                 const slot = COLLAGE_SLOTS[idx];
                 if (!slot || !item.poster_path) return null;
+                const url = tmdbImg(item.poster_path, 'w185');
+                if (!url) return null;
                 const posStyle: React.CSSProperties = {
                   position: 'absolute', top: slot.top, width: slot.width,
                   borderRadius: 12, overflow: 'hidden',
@@ -239,16 +409,39 @@ function UserProfileInner() {
                 return (
                   <div key={item.id} style={posStyle}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`https://image.tmdb.org/t/p/w185${item.poster_path}`} alt="" style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }} />
+                    <img src={url} alt="" style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }} />
                   </div>
                 );
               })}
               <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.50) 65%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
 
+              {/* Ações no topo */}
+              <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 14px)', left: 14, right: 14, display: 'flex', alignItems: 'center', zIndex: 10 }}>
+                {!isMe && (
+                  <button onClick={() => navigateBack(router)}
+                    style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <Icon name="chevronL" size={16} color="#fff" />
+                  </button>
+                )}
+                <div style={{ flex: 1 }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {!isMe && (
+                    <button title="Reportar usuário" style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Icon name="flag" size={16} color="#fff" />
+                    </button>
+                  )}
+                  {isMe && (
+                    <button onClick={() => router.push(withProfileOrigin('/settings'))}
+                      style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Icon name="settings" size={18} color="#fff" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* ── Avatar + Nome + Seguir ── */}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, padding: '0 16px 8px', marginTop: -48, position: 'relative', zIndex: 20 }}>
+            {/* ── Avatar + Nome ── */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, padding: '0 16px 8px', marginTop: isDark ? -48 : -20, position: 'relative', zIndex: 20 }}>
               <div style={{
                 width: 88, height: 88, borderRadius: 44, flexShrink: 0,
                 background: displayAvatar ? `url(${displayAvatar}) center/cover no-repeat` : displayGradient,
@@ -257,16 +450,16 @@ function UserProfileInner() {
                 boxShadow: '0 0 0 2px #C069FF, 0 8px 28px rgba(0,0,0,0.7)',
                 overflow: 'hidden',
               }}>
-                {!displayAvatar && <Txt size={32} weight={900} color={T.white}>{displayName[0]?.toUpperCase() || '?'}</Txt>}
+                {!displayAvatar && <Txt size={32} weight={900} color={T.white}>{displayName[0]?.toUpperCase() || 'U'}</Txt>}
               </div>
+
               <div style={{ paddingBottom: 6, flex: 1, minWidth: 0 }}>
                 <Txt size={24} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {displayName}
                 </Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block' }}>
-                  @{displayUsername}
-                </Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block' }}>@{displayUsername}</Txt>
               </div>
+
               {!isMe && (
                 <button onClick={toggleFollow} style={{
                   flexShrink: 0, marginBottom: 6,
@@ -277,7 +470,7 @@ function UserProfileInner() {
                   boxShadow: isFollowing ? 'none' : `0 4px 14px ${T.pinkGlow}`,
                 }}>
                   <Txt size={13} weight={700} color={isFollowing ? T.t2 : '#fff'}>
-                    {isFollowing ? 'Seguindo ✓' : 'Seguir'}
+                    {isFollowing ? `${t('followingButton')} ✓` : t('followButton')}
                   </Txt>
                 </button>
               )}
@@ -286,36 +479,32 @@ function UserProfileInner() {
 
           {/* ── Bio ── */}
           {bio && (
-            <div style={{ padding: '10px 16px 0' }}>
+            <div style={{ padding: '18px 16px 0' }}>
               <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.6 }}>{bio}</Txt>
             </div>
           )}
 
           {/* ── Seguindo / Seguidores ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px 16px 0' }}>
-            <button
-              onClick={() => setSocialSheet('following')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '28px 16px 0' }}>
+            <button onClick={() => setSocialSheet('following')}
               style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
-              <Txt size={17} weight={900} color={T.t1}>{followingCount}</Txt>
-              <Txt size={12} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>Seguindo</Txt>
+              <Txt size={14} weight={900} color={T.t1}>{followingCount}</Txt>
+              <Txt size={11} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>{t('followingLabel')}</Txt>
             </button>
-            <div style={{ width: 1, height: 16, background: T.border, margin: '0 6px' }} />
-            <button
-              onClick={() => setSocialSheet('followers')}
+            <div style={{ width: 1, height: 14, background: T.border, margin: '0 6px' }} />
+            <button onClick={() => setSocialSheet('followers')}
               style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
-              <Txt size={17} weight={900} color={T.t1}>{followersVal}</Txt>
-              <Txt size={12} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>Seguidores</Txt>
+              <Txt size={14} weight={900} color={T.t1}>{followersVal}</Txt>
+              <Txt size={11} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>{t('followersLabel')}</Txt>
             </button>
           </div>
 
-          {/* ── Boxes de estatísticas ── */}
-          <div style={{ display: 'flex', gap: 12, padding: '24px 16px 0' }}>
+          {/* ── Boxes de stats ── */}
+          <div style={{ display: 'flex', gap: 12, padding: '28px 16px 0' }}>
             {[
-              { value: isMe ? String(totalHours) : '—', label: 'h assistidas', icon: 'clock' as const },
-              { value: isMe ? String(stats.reviews) : '—', label: 'avaliações', icon: 'star' as const },
-              ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: 'ranking', icon: 'award' as const }] : [
-                { value: '—', label: 'ranking', icon: 'award' as const },
-              ]),
+              { value: `${realStats?.totalHours ?? 0}h`, label: t('stats.hoursLabel'),   icon: 'clock' as const },
+              ...(isMe ? [{ value: String(reviewCount), label: t('stats.ratingsLabel'), icon: 'star' as const }] : []),
+              ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: t('stats.rankingLabel'), icon: 'award' as const }] : []),
             ].map(({ value, label, icon }) => (
               <div key={label} style={{
                 flex: 1,
@@ -335,38 +524,150 @@ function UserProfileInner() {
 
           {/* ── Favoritos ── */}
           <PosterRow
-            title="Favoritos"
+            title={t('favorites')}
+            seeAllLabel={t('seeAll')}
             items={favoritos}
-            onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
+            onItem={(x) => router.push(withProfileOrigin(`/title/${x.type}/${x.id}`))}
+            onSeeAll={isMe ? () => router.push(withProfileOrigin('/lists')) : undefined}
           />
 
-          {/* ── Assistindo ── */}
+          {/* ── Listas ── */}
           <div style={{ margin: '16px 16px 0' }}>
             <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px' }}>
-                <Txt size={16} weight={800}>Maratonando agora</Txt>
+                <Txt size={16} weight={800}>{isMe ? t('myLists') : t('maratonandoNow')}</Txt>
+                {isMe && (
+                  <button onClick={() => router.push(withProfileOrigin('/lists'))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    <Txt size={12} color={T.pink} weight={600}>{t('seeAll')}</Txt>
+                  </button>
+                )}
               </div>
-              <ListSection
-                label="Assistindo"
-                icon="play"
-                items={watchingList}
-                onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
-              />
-              <ListSection
-                label="Quero ver"
-                icon="bookmark"
-                items={wantList}
-                onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
-              />
-              <ListSection
-                label="Concluídos"
-                icon="check"
-                items={watchedList}
-                onItem={(x) => router.push(`/title/${x.type}/${x.id}`)}
-                last
-              />
+
+              <ListSection label={t('want')}       emptyLabel={t('emptyList')} icon="bookmark" items={minhaLista}
+                onItem={(x) => router.push(withProfileOrigin(`/title/${x.type}/${x.id}`))} />
+              <ListSection label={t('watching')}   emptyLabel={t('emptyList')} icon="play"     items={assistindo}
+                onItem={(x) => router.push(withProfileOrigin(`/title/${x.type}/${x.id}`))} />
+              <ListSection label={t('concluidos')} emptyLabel={t('emptyList')} icon="check"    items={concluidos}
+                onItem={(x) => router.push(withProfileOrigin(`/title/${x.type}/${x.id}`))} last />
             </div>
           </div>
+
+          {/* ── Grid: Estatísticas + Streaming (dono do perfil) ── */}
+          {isMe && (() => {
+            type Sub = { streamId?: string; name: string; color: string; price: number; active: boolean };
+            const activeSubs: Sub[] = (() => {
+              try { return (JSON.parse(localStorage.getItem('sec_expenses_v1') || '[]') as Sub[]).filter(s => s.active !== false); }
+              catch { return []; }
+            })();
+            const userPlatforms = activeSubs.slice(0, 5);
+            const totalItems = (realStats?.moviesCount ?? 0) + (realStats?.tvCount ?? 0);
+
+            return (
+              <div style={{ margin: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                {/* Bloco 1 — Estatísticas */}
+                <button onClick={() => router.push(withProfileOrigin('/stats'))}
+                  style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 142, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <Txt size={16} weight={800} color="#fff">{t('stats.title')}</Txt>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                      <Txt size={11} weight={700} color={T.pink}>{t('seeMore')}</Txt>
+                      <Icon name="chevronR" size={11} color={T.pink} />
+                    </div>
+                  </div>
+
+                  <div data-summary-layout="stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8, width: '100%' }}>
+                    <Txt size={11} color="rgba(255,255,255,0.38)" style={{ whiteSpace: 'nowrap' }}>
+                      {realStats ? t('stats.titlesCount', { h: realStats.totalHours, n: totalItems }) : '—'}
+                    </Txt>
+
+                    {(() => {
+                      const tv = realStats?.tvCount ?? 0;
+                      const mv = realStats?.moviesCount ?? 0;
+                      const total = tv + mv || 1;
+                      const tvPct = tv / total;
+                      const r = 26, cx = 34, cy = 34, circ = 2 * Math.PI * r;
+                      const tvLen = circ * tvPct;
+                      const mvLen = circ * (1 - tvPct);
+                      return (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%', minWidth: 0 }}>
+                          <svg width={60} height={60} viewBox="0 0 68 68" style={{ flexShrink: 0 }}>
+                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={9} />
+                            {tv > 0 && (
+                              <circle cx={cx} cy={cy} r={r} fill="none" stroke="#C069FF" strokeWidth={9}
+                                strokeDasharray={`${tvLen} ${circ}`} strokeDashoffset={circ / 4}
+                                style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
+                            )}
+                            {mv > 0 && (
+                              <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FF6B2B" strokeWidth={9}
+                                strokeDasharray={`${mvLen} ${circ}`} strokeDashoffset={circ / 4 - tvLen}
+                                style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
+                            )}
+                            <text x={cx} y={cy + 4} textAnchor="middle" fill="#fff" fontSize={11} fontWeight={800} fontFamily="'Area','Inter',sans-serif">{total}</text>
+                          </svg>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <div style={{ width: 7, height: 7, borderRadius: 2, background: '#C069FF', flexShrink: 0 }} />
+                              <Txt size={10} color="rgba(255,255,255,0.55)">{tv} {t('stats.seriesLabel')}</Txt>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <div style={{ width: 7, height: 7, borderRadius: 2, background: '#FF6B2B', flexShrink: 0 }} />
+                              <Txt size={10} color="rgba(255,255,255,0.55)">{mv} {t('stats.moviesLabel')}</Txt>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </button>
+
+                {/* Bloco 2 — Gastos de streaming */}
+                <button onClick={() => router.push(withProfileOrigin('/expenses'))}
+                  style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 126, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <Txt size={16} weight={800} color="#fff">{t('streaming')}</Txt>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                      <Txt size={11} weight={700} color={T.pink}>{t('seeAll')}</Txt>
+                      <Icon name="chevronR" size={11} color={T.pink} />
+                    </div>
+                  </div>
+
+                  <div data-summary-layout="stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8, width: '100%' }}>
+                    <Txt size={11} color="rgba(255,255,255,0.38)" style={{ whiteSpace: 'nowrap' }}>{t('monthlyExpenses')}</Txt>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 7, overflow: 'hidden' }}>
+                        {userPlatforms.length > 0
+                          ? userPlatforms.map((p) => {
+                              const logo = STREAMING_LOGOS[p.streamId ?? ''] ?? STREAMING_LOGOS_BY_NAME[p.name];
+                              return (
+                                <div key={p.name} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                                  {logo ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={`/${logo}_logo.png`} alt={p.name} style={{ width: '74%', height: '70%', objectFit: 'contain', display: 'block' }} />
+                                  ) : (
+                                    <Txt size={10} weight={800} color="#fff">{p.name.slice(0, 1)}</Txt>
+                                  )}
+                                </div>
+                              );
+                            })
+                          : <Txt size={11} color="rgba(255,255,255,0.28)">{t('noExpenses')}</Txt>
+                        }
+                      </div>
+
+                      <div style={{ height: 5, marginTop: 7, borderRadius: 4, overflow: 'hidden', display: 'flex', gap: 2 }}>
+                        {userPlatforms.length > 0
+                          ? userPlatforms.map((p) => (
+                              <div key={p.name} style={{ height: '100%', flex: 1, background: p.color ?? 'rgba(255,255,255,0.15)' }} />
+                            ))
+                          : <div style={{ height: '100%', width: '100%', background: 'rgba(255,255,255,0.08)', borderRadius: 4 }} />
+                        }
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            );
+          })()}
 
           <div style={{ height: 90 }} />
         </ScrollArea>
@@ -384,12 +685,13 @@ function UserProfileInner() {
               <div style={{ padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
                 <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, margin: '0 auto 12px' }} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Txt size={15} weight={700}>{socialSheet === 'followers' ? 'Seguidores' : 'Seguindo'}</Txt>
+                  <Txt size={15} weight={700}>{socialSheet === 'followers' ? t('followersLabel') : t('followingLabel')}</Txt>
                   <button onClick={() => setSocialSheet(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
                     <Icon name="close" size={18} color={T.t3} />
                   </button>
                 </div>
               </div>
+
               <div style={{ display: 'flex', padding: '10px 16px', gap: 8, flexShrink: 0, borderBottom: `1px solid ${T.border}` }}>
                 {(['followers', 'following'] as const).map(tab => (
                   <button key={tab} onClick={() => setSocialSheet(tab)} style={{
@@ -400,18 +702,17 @@ function UserProfileInner() {
                     fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     fontFamily: "'Area','Inter',sans-serif",
                   }}>
-                    {tab === 'followers' ? `Seguidores · ${followersVal}` : `Seguindo · ${isMe ? followingNames.length : followingCount}`}
+                    {tab === 'followers' ? `${t('followersLabel')} · ${followersVal}` : `${t('followingLabel')} · ${followingCount}`}
                   </button>
                 ))}
               </div>
+
               <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
                 {socialSheet === 'following' && isMe && followingNames.length > 0 ? (
                   followingNames.map((name, i) => (
-                    <div
-                      key={name}
+                    <div key={name}
                       onClick={() => { setSocialSheet(null); router.push(`/user/${encodeURIComponent(name)}`); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followingNames.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}
-                    >
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followingNames.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}>
                       <div style={{ width: 44, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Txt size={16} weight={800} color="#fff">{name[0]?.toUpperCase() || '?'}</Txt>
                       </div>
@@ -422,18 +723,39 @@ function UserProfileInner() {
                       <Icon name="chevronR" size={14} color={T.t4} />
                     </div>
                   ))
+                ) : socialSheet === 'followers' && followers.length > 0 ? (
+                  followers.map((f, i) => {
+                    const label = f.name || f.username || '?';
+                    return (
+                      <div key={f.uid}
+                        onClick={() => { if (!f.username) return; setSocialSheet(null); router.push(`/user/${encodeURIComponent(f.username)}`); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followers.length - 1 ? `1px solid ${T.border}` : 'none', cursor: f.username ? 'pointer' : 'default' }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', background: f.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {f.avatarImage
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            ? <img src={f.avatarImage} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            : <Txt size={16} weight={800} color="#fff">{(f.avatarLetter || label[0] || '?').toUpperCase()}</Txt>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Txt size={14} weight={700} color={T.t1} style={{ display: 'block' }}>{label}</Txt>
+                          {f.username && <Txt size={12} color={T.t3}>@{f.username}</Txt>}
+                        </div>
+                        {f.username && <Icon name="chevronR" size={14} color={T.t4} />}
+                      </div>
+                    );
+                  })
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
                     <div style={{ width: 56, height: 56, borderRadius: 28, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
                       <Icon name="user" size={24} color={T.t4} />
                     </div>
                     <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginBottom: 6 }}>
-                      {socialSheet === 'followers' ? 'Nenhum seguidor ainda' : 'Ninguém sendo seguido'}
+                      {socialSheet === 'followers' ? t('emptyFollowers') : (isMe ? t('emptyFollowing') : t('noFollowingYet'))}
                     </Txt>
                     <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>
                       {socialSheet === 'followers'
-                        ? 'Quando alguém seguir este perfil, aparecerá aqui.'
-                        : 'Explore perfis e comece a seguir pessoas.'}
+                        ? (isMe ? t('followersEmptyDetail') : t('publicFollowersEmptyDetail'))
+                        : t('followingEmptyDetail')}
                     </Txt>
                   </div>
                 )}
@@ -448,10 +770,11 @@ function UserProfileInner() {
 }
 
 /* ── Horizontal poster row ── */
-function PosterRow({ title, items, onItem, onSeeAll }: {
+function PosterRow({ title, seeAllLabel, items, onItem, onSeeAll }: {
   title: string;
-  items: Array<{ id: number; title: string; type: string; poster_path?: string | null }>;
-  onItem: (x: { id: number; title: string; type: string; poster_path?: string | null }) => void;
+  seeAllLabel?: string;
+  items: ListItem[];
+  onItem: (x: ListItem) => void;
   onSeeAll?: () => void;
 }) {
   const placeholders = [{} as any, {} as any, {} as any, {} as any];
@@ -464,7 +787,7 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
           <Txt size={16} weight={800}>{title}</Txt>
           {onSeeAll && (
             <button onClick={onSeeAll} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <Txt size={12} color={T.pink} weight={600}>Ver tudo</Txt>
+              <Txt size={12} color={T.pink} weight={600}>{seeAllLabel ?? 'Ver tudo'}</Txt>
             </button>
           )}
         </div>
@@ -472,7 +795,7 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
           {list.map((x, i) => (
             <div key={x.id ?? i} onClick={() => x.id && onItem(x)} style={{ flexShrink: 0, cursor: x.id ? 'pointer' : 'default' }}>
               <ImgWithSkeleton
-                src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
+                src={tmdbImg(x.poster_path, 'w185')}
                 alt={x.title} width={84} height={126} radius={10}
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               />
@@ -484,12 +807,13 @@ function PosterRow({ title, items, onItem, onSeeAll }: {
   );
 }
 
-/* ── List section row ── */
-function ListSection({ label, icon, items, onItem, last }: {
+/* ── Compact list section row ── */
+function ListSection({ label, emptyLabel, icon, items, onItem, last }: {
   label: string;
+  emptyLabel?: string;
   icon: import('@/lib/tokens').IconName;
-  items: Array<{ id: number; title: string; type: string; poster_path?: string | null }>;
-  onItem: (x: { id: number; title: string; type: string; poster_path?: string | null }) => void;
+  items: ListItem[];
+  onItem: (x: ListItem) => void;
   last?: boolean;
 }) {
   return (
@@ -504,7 +828,7 @@ function ListSection({ label, icon, items, onItem, last }: {
           {items.slice(0, 10).map(x => (
             <div key={x.id} onClick={() => onItem(x)} style={{ flexShrink: 0, cursor: 'pointer' }}>
               <ImgWithSkeleton
-                src={x.poster_path ? `https://image.tmdb.org/t/p/w185${x.poster_path}` : null}
+                src={tmdbImg(x.poster_path, 'w185')}
                 alt={x.title} width={84} height={126} radius={10}
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               />
@@ -513,7 +837,7 @@ function ListSection({ label, icon, items, onItem, last }: {
         </div>
       ) : (
         <div style={{ padding: `4px 16px ${last ? 16 : 10}px` }}>
-          <Txt size={12} color={T.t4}>Nenhum item ainda</Txt>
+          <Txt size={12} color={T.t4}>{emptyLabel ?? 'Nenhum item ainda'}</Txt>
         </div>
       )}
     </div>

@@ -3,8 +3,10 @@ import React, { CSSProperties, ReactNode, useState, useEffect } from 'react';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { Txt, Skeleton } from './primitives';
-import { tmdbImg, normalize, type TMDBItem } from '@/lib/tmdb';
+import { tmdbImg, normalizeTMDBImageUrl, normalize, type TMDBItem } from '@/lib/tmdb';
 import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 
 const POSTER_GRADIENTS = [
   'linear-gradient(160deg,#c8b8a0,#a09080)',
@@ -182,6 +184,11 @@ export const SkeletonCards = ({ count = 5, size = 'md' }: { count?: number; size
    Imagem no topo + título/info abaixo no fundo do card
    Busca poster sem texto (iso_639_1 = null) via TMDB images API
    ───────────────────────────────────────────────────────────── */
+
+/* título localizado + poster textless por `${type}_${id}_${lang}` —
+   sobrevive a remontagens, então revisitar uma página não refaz fetches */
+const cardMetaCache = new Map<string, { title: string | null; textless: string | null }>();
+
 export const TMDBGridCard = ({
   item, onClick, tag,
 }: {
@@ -191,11 +198,13 @@ export const TMDBGridCard = ({
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { i18n, t } = useTranslation('home');
 
   const [imgLoaded,    setImgLoaded]    = useState(false);
   const [imgErr,       setImgErr]       = useState(false);
   const [textlessSrc,  setTextlessSrc]  = useState<string | null>(null);
   const [fetchDone,    setFetchDone]    = useState(false);
+  const [localTitle,   setLocalTitle]   = useState<string | null>(null);
 
   const n        = normalize(item);
   // normalize() usa media_type ou first_air_date para detectar TV.
@@ -210,26 +219,41 @@ export const TMDBGridCard = ({
   const isTV    = resolvedType === 'tv';
   const seasons = (item as any).number_of_seasons as number | undefined;
   const subtitle = isTV
-    ? (seasons ? `${seasons} temporada${seasons !== 1 ? 's' : ''}` : 'Série')
-    : `Filme${n.year ? ` · ${n.year}` : ''}`;
+    ? (seasons ? t('seasons', { count: seasons, ns: 'title' }) : t('streamingPage.seriesType'))
+    : `${t('streamingPage.movieType')}${n.year ? ` · ${n.year}` : ''}`;
 
-  /* Lazy-fetch textless poster (iso_639_1 === null) */
+  /* One round-trip per card: localized title + language-neutral poster come
+     together via append_to_response. The card previously fired TWO fetches
+     and held the image hidden until the second returned — with big grids
+     that doubled the request storm and how long content took to appear.
+     Results are memoized at module scope so revisiting a page renders
+     instantly instead of refetching every card. */
   useEffect(() => {
     if (!item.id) return;
     let alive = true;
-    const url = `/api/tmdb?endpoint=/${apiType}/${item.id}/images&include_image_language=null`;
-    fetch(url)
+    const lang = i18n.language || 'pt-BR';
+    const cacheKey = `${apiType}_${item.id}_${lang}`;
+    const hit = cardMetaCache.get(cacheKey);
+    if (hit) {
+      if (hit.title) setLocalTitle(hit.title);
+      setTextlessSrc(normalizeTMDBImageUrl(hit.textless));
+      setFetchDone(true);
+      return;
+    }
+    fetch(`/api/tmdb?endpoint=/${apiType}/${item.id}&language=${lang}&append_to_response=images&include_image_language=null`)
       .then(r => r.json())
       .then(data => {
         if (!alive) return;
+        const title: string | null = data?.title || data?.name || null;
         const posters: Array<{ file_path: string; iso_639_1: string | null; vote_average: number }> =
-          data?.posters ?? [];
+          data?.images?.posters ?? [];
         const best = posters
           .filter(p => p.iso_639_1 === null)
           .sort((a, b) => b.vote_average - a.vote_average)[0];
-        if (best?.file_path) {
-          setTextlessSrc(tmdbImg(best.file_path, 'w342') ?? null);
-        }
+        const textless = best?.file_path ? (tmdbImg(best.file_path, 'w342') ?? null) : null;
+        cardMetaCache.set(cacheKey, { title, textless });
+        if (title) setLocalTitle(title);
+        setTextlessSrc(textless);
         setFetchDone(true); // revela a imagem (textless ou fallback) só agora
       })
       .catch(() => {
@@ -238,7 +262,7 @@ export const TMDBGridCard = ({
       });
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, apiType]);
+  }, [item.id, apiType, i18n.language]);
 
   /* ── Light mode: full-image card com cor puxada da própria imagem ── */
   if (!isDark) {
@@ -270,7 +294,7 @@ export const TMDBGridCard = ({
             <img
               key={src}
               src={src}
-              alt={n.title}
+              alt={localTitle ?? n.title}
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgErr(true)}
               style={{
@@ -343,7 +367,7 @@ export const TMDBGridCard = ({
               fontFamily: "'Area','Inter',sans-serif",
               lineHeight: 1.4, marginBottom: 3,
               textShadow: '0 1px 4px rgba(0,0,0,0.55)',
-            }}>{n.title}</div>
+            }}>{localTitle ?? n.title}</div>
             <div style={{
               fontSize: 11,
               color: 'rgba(255,255,255,0.72)',
@@ -385,7 +409,7 @@ export const TMDBGridCard = ({
           <img
             key={src}
             src={src}
-            alt={n.title}
+            alt={localTitle ?? n.title}
             onLoad={() => setImgLoaded(true)}
             onError={() => setImgErr(true)}
             style={{
@@ -442,7 +466,7 @@ export const TMDBGridCard = ({
           fontFamily: "'Area','Inter',sans-serif",
           lineHeight: 1.4,
           marginBottom: 3,
-        }}>{n.title}</div>
+        }}>{localTitle ?? n.title}</div>
         <div style={{
           fontSize: 11,
           color: 'var(--c-t3)',

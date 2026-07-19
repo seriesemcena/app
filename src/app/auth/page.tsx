@@ -1,6 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
 import { Screen, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
@@ -69,7 +71,8 @@ const GoogleIconDark = () => (
 
 export default function AuthPage() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, offline } = useAuth();
+  const { t } = useTranslation('auth');
+  const { user, loading: sessionLoading, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, offline } = useAuth();
 
   const { data: trendingData } = useTMDB(() => tmdb.trending('all', 'week'), []);
   const posters: TMDBItem[] = ((trendingData as any)?.results ?? []).filter((i: TMDBItem) => i.poster_path).slice(0, 21);
@@ -86,23 +89,35 @@ export default function AuthPage() {
   const [error,     setError]     = useState('');
   const [resetSent, setResetSent] = useState(false);
 
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (offline) {
+      router.replace('/home');
+      return;
+    }
+    if (user) {
+      const done = localStorage.getItem('onboarding_done');
+      router.replace(done ? '/home' : '/onboarding');
+    }
+  }, [offline, router, sessionLoading, user]);
+
   const clearError = () => setError('');
 
   const friendlyError = (code: string) => {
     const map: Record<string, string> = {
-      'auth/user-not-found':          'E-mail não encontrado',
-      'auth/wrong-password':          'Senha incorreta',
-      'auth/email-already-in-use':    'E-mail já cadastrado',
-      'auth/weak-password':           'Senha precisa ter pelo menos 6 caracteres',
-      'auth/invalid-email':           'E-mail inválido',
-      'auth/popup-closed-by-user':    'Login cancelado',
-      'auth/cancelled-popup-request': 'Login cancelado',
+      'auth/user-not-found':          t('errors.userNotFound'),
+      'auth/wrong-password':          t('errors.wrongPassword'),
+      'auth/email-already-in-use':    t('errors.emailInUse'),
+      'auth/weak-password':           t('errors.weakPassword'),
+      'auth/invalid-email':           t('errors.invalidCredentials'),
+      'auth/popup-closed-by-user':    t('errors.popupClosed'),
+      'auth/cancelled-popup-request': t('errors.popupClosed'),
     };
-    return map[code] ?? 'Ocorreu um erro. Tente novamente.';
+    return map[code] ?? t('errors.generic');
   };
 
   const handleEmail = async () => {
-    if (!email || !pass) { setError('Preencha todos os campos'); return; }
+    if (!email || !pass) { setError(t('errors.fillAll')); return; }
     setLoading(true); setError('');
     try {
       if (mode === 'login') await signInWithEmail(email, pass);
@@ -125,14 +140,14 @@ export default function AuthPage() {
   };
 
   const handleReset = async () => {
-    if (!email) { setError('Digite seu e-mail acima'); return; }
+    if (!email) { setError(t('errors.enterEmail')); return; }
     setLoading(true);
     try { await resetPassword(email); setResetSent(true); }
-    catch { setError('Não foi possível enviar o e-mail de redefinição'); }
+    catch { setError(t('errors.cantSendReset')); }
     finally { setLoading(false); }
   };
 
-  if (offline) { router.replace('/home'); return null; }
+  if (offline || user) return null;
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '14px 16px', borderRadius: 14,
@@ -180,13 +195,13 @@ export default function AuthPage() {
             <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'rgba(13,13,15,0.28)' }} />
 
             {/* Logo */}
-            <div style={{ position: 'absolute', top: 58, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 2 }}>
+            <div style={{ position: 'absolute', top: 'max(58px, calc(var(--safe-area-top) + 12px))', left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 2 }}>
               <Logo height={22} />
             </div>
           </div>
 
           {/* ── Bottom sheet ── */}
-          <div style={{ background: '#161619', borderRadius: '36px 36px 0 0', marginTop: -36, zIndex: 10, position: 'relative', boxShadow: '0 -2px 40px rgba(0,0,0,0.6)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 36px)' }}>
+          <div style={{ background: '#161619', borderRadius: '36px 36px 0 0', marginTop: -36, zIndex: 10, position: 'relative', boxShadow: '0 -2px 40px rgba(0,0,0,0.6)', paddingBottom: 'calc(var(--safe-area-bottom) + 36px)' }}>
 
             {/* Drag handle */}
             <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 2 }}>
@@ -197,10 +212,10 @@ export default function AuthPage() {
 
               {/* Title + subtitle */}
               <div style={{ fontSize: 24, fontWeight: 900, color: 'rgba(255,255,255,0.93)', fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.5px', marginBottom: 6 }}>
-                Comece agora
+                {t('landing.title')}
               </div>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.42)', fontFamily: "'Area','Inter',sans-serif", lineHeight: 1.5, marginBottom: 26 }}>
-                Acompanhe séries e filmes, avalie e descubra novidades.
+                {t('landing.subtitle')}
               </div>
 
               {/* CTA: email */}
@@ -208,7 +223,7 @@ export default function AuthPage() {
                 onClick={() => { setView('email'); setMode('register'); }}
                 style={{ ...pillBtn(true), marginBottom: 10, display: 'block' }}
               >
-                Continuar com E-mail
+                {t('landing.continueEmail')}
               </button>
 
               {/* CTA: already have account */}
@@ -216,7 +231,7 @@ export default function AuthPage() {
                 onClick={() => { setView('email'); setMode('login'); }}
                 style={{ ...pillBtn(false), marginBottom: 18, display: 'block' }}
               >
-                Já tenho conta
+                {t('landing.alreadyHaveAccount')}
               </button>
 
               {/* Social row */}
@@ -262,11 +277,11 @@ export default function AuthPage() {
           {/* Back button */}
           <button
             onClick={() => { setView('landing'); clearError(); setError(''); }}
-            style={{ position: 'absolute', top: 56, left: 20, width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2 }}
+            style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 12px)', left: 20, width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2 }}
           >
             <Icon name="chevronL" size={16} color="rgba(255,255,255,0.8)" />
           </button>
-          <div style={{ position: 'absolute', top: 56, left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', height: 34, zIndex: 2 }}>
+          <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 12px)', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', height: 34, zIndex: 2 }}>
             <Logo height={20} />
           </div>
         </div>
@@ -277,14 +292,14 @@ export default function AuthPage() {
             <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.14)' }} />
           </div>
 
-          <div style={{ padding: '16px 24px calc(env(safe-area-inset-bottom) + 40px)' }}>
+          <div style={{ padding: '16px 24px calc(var(--safe-area-bottom) + 40px)' }}>
 
             {/* Tab switcher */}
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 4, marginBottom: 22, border: '1px solid rgba(255,255,255,0.09)' }}>
               {(['login', 'register'] as const).map(m => (
                 <button key={m} onClick={() => { setMode(m); clearError(); }}
                   style={{ flex: 1, padding: '10px 0', borderRadius: 11, background: mode === m ? 'rgba(255,255,255,0.12)' : 'transparent', border: mode === m ? '1px solid rgba(255,255,255,0.22)' : '1px solid transparent', color: mode === m ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
-                  {m === 'login' ? 'Entrar' : 'Cadastrar'}
+                  {m === 'login' ? t('loginTab') : t('registerTabShort')}
                 </button>
               ))}
             </div>
@@ -292,18 +307,18 @@ export default function AuthPage() {
             {/* Name (register) */}
             {mode === 'register' && (
               <div style={{ marginBottom: 10 }}>
-                <input style={inputStyle} placeholder="Seu nome" value={name} onChange={e => { setName(e.target.value); clearError(); }} />
+                <input style={inputStyle} placeholder={t('namePlaceholder')} value={name} onChange={e => { setName(e.target.value); clearError(); }} />
               </div>
             )}
 
             {/* Email */}
             <div style={{ marginBottom: 10 }}>
-              <input style={inputStyle} placeholder="E-mail" type="email" value={email} onChange={e => { setEmail(e.target.value); clearError(); }} />
+              <input style={inputStyle} placeholder={t('email')} type="email" value={email} onChange={e => { setEmail(e.target.value); clearError(); }} />
             </div>
 
             {/* Password */}
             <div style={{ marginBottom: error ? 8 : 18 }}>
-              <input style={inputStyle} placeholder="Senha" type="password" value={pass} onChange={e => { setPass(e.target.value); clearError(); }} onKeyDown={e => e.key === 'Enter' && handleEmail()} />
+              <input style={inputStyle} placeholder={t('password')} type="password" value={pass} onChange={e => { setPass(e.target.value); clearError(); }} onKeyDown={e => e.key === 'Enter' && handleEmail()} />
             </div>
 
             {/* Error */}
@@ -315,21 +330,21 @@ export default function AuthPage() {
 
             {resetSent && (
               <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 10, background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)' }}>
-                <span style={{ fontSize: 12, color: '#4ade80', fontFamily: "'Area','Inter',sans-serif" }}>E-mail de redefinição enviado ✓</span>
+                <span style={{ fontSize: 12, color: '#4ade80', fontFamily: "'Area','Inter',sans-serif" }}>{t('errors.resetSent')}</span>
               </div>
             )}
 
             {/* Primary CTA */}
             <button onClick={handleEmail} disabled={loading}
               style={{ ...pillBtn(true), display: 'block', marginBottom: 14 }}>
-              {loading ? 'Aguarde...' : (mode === 'login' ? 'Entrar' : 'Criar conta')}
+              {loading ? t('loading') : (mode === 'login' ? t('loginButton') : t('registerButton'))}
             </button>
 
             {/* Forgot password */}
             {mode === 'login' && (
               <div style={{ textAlign: 'center', marginBottom: 24 }}>
                 <button onClick={handleReset} disabled={loading} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', fontFamily: "'Area','Inter',sans-serif" }}>Esqueceu a senha?</span>
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', fontFamily: "'Area','Inter',sans-serif" }}>{t('forgotPassword')}</span>
                 </button>
               </div>
             )}
@@ -337,7 +352,7 @@ export default function AuthPage() {
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.09)' }} />
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', fontFamily: "'Area','Inter',sans-serif" }}>ou</span>
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', fontFamily: "'Area','Inter',sans-serif" }}>{t('or', { ns: 'common' })}</span>
               <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.09)' }} />
             </div>
 

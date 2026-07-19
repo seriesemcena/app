@@ -8,8 +8,9 @@ import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, normalize, type TMDBItem } from '@/lib/tmdb';
 import { revStore, profileStore, PROFILE_KEY_BASE } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
-import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { firebaseConfigured, getDB, authHeader } from '@/lib/firebase';
 import { dbProfileStore } from '@/lib/db';
+import { navigateBack } from '@/lib/navigation';
 
 type Suggestion = { title: string; year: string; type: 'movie' | 'tv'; reason: string };
 type Result     = { suggestion: Suggestion; tmdb: TMDBItem | null };
@@ -171,7 +172,7 @@ export default function CuradoriaPage() {
     try {
       const res  = await fetch('/api/curadoria', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({
           mode: 'discover',
           likedTitles,
@@ -192,7 +193,7 @@ export default function CuradoriaPage() {
     try {
       const res  = await fetch('/api/curadoria', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({ mode: 'search', query: q.trim() }),
       });
       const data = await res.json();
@@ -214,7 +215,7 @@ export default function CuradoriaPage() {
       <Screen>
         <GlassHeader
           left={
-            <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+            <button onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
               <Icon name="chevronL" size={16} color="#fff" />
             </button>
           }

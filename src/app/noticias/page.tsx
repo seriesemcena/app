@@ -5,6 +5,7 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
+import { navigateBack } from '@/lib/navigation';
 
 type NewsPost = {
   id: number;
@@ -183,7 +184,7 @@ export default function NoticiasPage() {
         }}>
           {/* Back */}
           <button
-            onClick={() => router.back()}
+            onClick={() => navigateBack(router)}
             style={{ width: 36, height: 36, borderRadius: 18, background: 'var(--c-glass-bg)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <Icon name="chevronL" size={18} color={T.t2} />
@@ -192,7 +193,7 @@ export default function NoticiasPage() {
           {/* Logo */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="https://seriesemcena.com.br/wp-content/uploads/2025/02/logo-seriesemcena-021.png"
+            src="/api/news-image?path=%2Fwp-content%2Fuploads%2F2025%2F02%2Flogo-seriesemcena-021.png"
             alt="Séries em Cena"
             style={{ height: 28, width: 'auto', objectFit: 'contain' }}
           />

@@ -1,0 +1,45 @@
+{
+  "title": "Notificações",
+  "unread_one": "{{count}} não lida",
+  "unread_other": "{{count}} não lidas",
+  "tabs": {
+    "account": "Minha conta",
+    "app": "Do app"
+  },
+  "markAll": "Marcar tudo",
+  "allRead": "Tudo marcado como lido",
+  "empty": {
+    "account": {
+      "title": "Nenhuma notificação",
+      "body": "Quando alguém te seguir ou interagir com seus comentários, você verá aqui."
+    },
+    "app": {
+      "title": "Sem notificações",
+      "body": "Adicione séries e filmes às suas listas para receber notificações sobre novos episódios e lançamentos."
+    }
+  },
+  "types": {
+    "newFollower": "@{{username}} começou a te seguir",
+    "commentReply": "@{{username}} respondeu seu comentário",
+    "commentLike": "@{{username}} curtiu seu comentário",
+    "newEpisode": "Novo episódio disponível",
+    "release": "Chegou ao streaming!",
+    "general": "Novidade"
+  },
+  "footer": "Notificações removidas automaticamente após 7 dias",
+  "groups": {
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "daysAgo_one": "{{count}} dia atrás",
+    "daysAgo_other": "{{count}} dias atrás",
+    "thisWeek": "Esta semana"
+  },
+  "seeds": {
+    "newEpisodeTitle": "Novo episódio disponível",
+    "newEpisodeBody": "Um novo episódio de \"{{title}}\" está disponível para assistir.",
+    "releaseTitle": "Chegou ao streaming!",
+    "releaseBody": "\"{{title}}\" agora está disponível em uma das plataformas que você usa.",
+    "welcomeTitle": "Bem-vindo ao Maratonou! 🎉",
+    "welcomeBody": "Adicione séries e filmes às suas listas para receber notificações sobre novos episódios e lançamentos."
+  }
+}

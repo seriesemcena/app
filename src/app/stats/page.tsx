@@ -10,6 +10,11 @@ import { listStore, revStore, prefsStore, epWatchedStore, profileStore } from '@
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
+import { navigateBack } from '@/lib/navigation';
+import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
+import '@/lib/i18n';
+import { tmdbImg } from '@/lib/tmdb';
 
 const GENRE_COLORS: Record<string, string> = {
   'Drama':'#C069FF','Ação':'#FF6B2B','Action':'#FF6B2B','Comédia':'#F5C518','Comedy':'#F5C518',
@@ -20,7 +25,8 @@ const GENRE_COLORS: Record<string, string> = {
   'Mistério':'#7c3aed','Mystery':'#7c3aed','Western':'#a16207','Guerra':'#dc2626','War':'#dc2626',
 };
 const DONUT_COLORS = ['#C069FF', '#FF6B2B', '#3b82f6', '#F5C518', '#10b981'];
-const MONTH_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const getMonthShort = (date: Date) =>
+  new Intl.DateTimeFormat(i18next.language || 'pt-BR', { month: 'short' }).format(date).replace('.', '');
 
 function timeParts(totalMins: number) {
   const months = Math.floor(totalMins / (60 * 24 * 30));
@@ -82,7 +88,7 @@ function DayBarChart({ data, labels, unit, barColor = '#22c55e', todayColor = '#
         })}
       </div>
       <div style={{ textAlign: 'center', marginTop: 10 }}>
-        <Txt size={9} weight={700} color={T.t4} style={{ textTransform: 'uppercase', letterSpacing: 1 }}>POR SEMANA · {unit}</Txt>
+        <Txt size={9} weight={700} color={T.t4} style={{ textTransform: 'uppercase', letterSpacing: 1 }}>{i18next.t('statsPage.perWeekUnit', { ns: 'home', unit })}</Txt>
       </div>
     </div>
   );
@@ -122,7 +128,7 @@ function MultiSegmentDonut({ segments, centerLabel, isDark = true }: {
         </g>
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-        <Txt size={8} weight={700} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)'} style={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>GÊNERO Nº1</Txt>
+        <Txt size={8} weight={700} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.45)'} style={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>{i18next.t('statsPage.topGenreCenter', { ns: 'home' })}</Txt>
         <Txt size={10} weight={800} color={T.t1} style={{ textAlign: 'center', lineHeight: 1.2, marginTop: 2, maxWidth: 56 }}>{centerLabel}</Txt>
       </div>
     </div>
@@ -160,7 +166,7 @@ function MonthlyLineChart({ data, isDark = true }: { data: Array<{ label: string
 
   if (data.length < 2) return (
     <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <Txt size={12} color={T.t3}>Assista mais para ver o histórico</Txt>
+      <Txt size={12} color={T.t3}>{i18next.t('statsPage.watchMoreHistory', { ns: 'home' })}</Txt>
     </div>
   );
 
@@ -246,7 +252,7 @@ function MonthlyLineChart({ data, isDark = true }: { data: Array<{ label: string
           <circle cx={ax} cy={ay} r={5} fill="#22c55e" stroke={isDark ? '#141416' : '#fff'} strokeWidth={2.5} />
           <rect x={tipX} y={tipY} width={TIP_W} height={TIP_H} rx={8} fill={isDark ? 'rgba(14,14,16,0.96)' : 'rgba(250,250,252,0.96)'} stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)'} strokeWidth={1} />
           <text x={tipX + TIP_W / 2} y={tipY + 16} textAnchor="middle" fill={isDark ? '#ffffff' : '#111111'} fontSize={10} fontFamily="'Area','Inter',sans-serif" fontWeight={700}>{active.label}</text>
-          <text x={tipX + TIP_W / 2} y={tipY + 30} textAnchor="middle" fill="#22c55e" fontSize={10} fontFamily="'Area','Inter',sans-serif" fontWeight={700}>Horas: {active.hours}</text>
+          <text x={tipX + TIP_W / 2} y={tipY + 30} textAnchor="middle" fill="#22c55e" fontSize={10} fontFamily="'Area','Inter',sans-serif" fontWeight={700}>{i18next.t('statsPage.hrsTooltip', { ns: 'home', hours: active.hours })}</text>
         </g>
       )}
     </svg>
@@ -270,6 +276,7 @@ export default function StatsPage() {
   const { user, loading } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { t } = useTranslation('home');
 
   const [tab, setTab]                 = useState<'series' | 'filmes'>('series');
   const [statsLoading, setStatsLoading] = useState(true);
@@ -368,7 +375,7 @@ export default function StatsPage() {
           else { const last = (d.seasons||[]).filter((s:any)=>s.season_number>0).at(-1); tvMins += epRuntime*(last?.episode_count ?? Math.min(d.number_of_episodes||6,12)); }
         }
         const idx = marathons.findIndex(m => m.id === String(item.id));
-        if (idx >= 0 && d.poster_path) marathons[idx].poster = `https://image.tmdb.org/t/p/w92${d.poster_path}`;
+        if (idx >= 0 && d.poster_path) marathons[idx].poster = tmdbImg(d.poster_path, 'w92') ?? undefined;
       });
 
       const toGenreList = (map: Record<string,number>) => {
@@ -397,7 +404,7 @@ export default function StatsPage() {
         const months: Array<{ label: string; key: string; episodes: number }> = [];
         for (let i = 5; i >= 0; i--) {
           const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
-          months.push({ label: MONTH_SHORT[d.getMonth()], key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, episodes: 0 });
+          months.push({ label: getMonthShort(d), key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, episodes: 0 });
         }
         mine.forEach(a => {
           if (!a.createdAt) return;
@@ -432,7 +439,7 @@ export default function StatsPage() {
   const btnStyle: React.CSSProperties = { width:34,height:34,borderRadius:17, background: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(0,0,0,0.12)', cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' };
   const btnIcon = isDark ? '#fff' : 'rgba(0,0,0,0.70)';
   const backBtn = (
-    <button onClick={() => router.back()} style={btnStyle}>
+    <button onClick={() => navigateBack(router)} style={btnStyle}>
       <Icon name="chevronL" size={16} color={btnIcon} />
     </button>
   );
@@ -447,10 +454,10 @@ export default function StatsPage() {
     return (
       <Frame><Screen>
         <ScrollArea style={{ padding: '0 0 32px' }}>
-          <GlassHeader left={backBtn} right={bellBtn} navTitle="Estatísticas" showNavTitle={showNavTitle} />
+          <GlassHeader left={backBtn} right={bellBtn} navTitle={t('statsPage.title')} showNavTitle={showNavTitle} />
           <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,gap:12,minHeight:300 }}>
             <div style={{ width:40,height:40,borderRadius:20,border:`3px solid ${T.pink}`,borderTopColor:'transparent',animation:'spin 0.8s linear infinite' }} />
-            <Txt size={13} color={T.t3}>Calculando suas estatísticas...</Txt>
+            <Txt size={13} color={T.t3}>{t('statsPage.loading')}</Txt>
           </div>
         </ScrollArea>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -483,15 +490,15 @@ export default function StatsPage() {
     <Frame>
       <Screen style={{ background: T.bg }}>
         <ScrollArea style={{ padding: '0 0 32px' }}>
-          <GlassHeader left={backBtn} right={bellBtn} navTitle="Estatísticas" showNavTitle={showNavTitle} />
+          <GlassHeader left={backBtn} right={bellBtn} navTitle={t('statsPage.title')} showNavTitle={showNavTitle} />
 
           <div ref={titleRef} style={{ padding: '20px 16px 4px' }}>
-            <Txt size={22} weight={900} color={T.t1} style={{ display:'block', letterSpacing:'-0.4px' }}>Estatísticas</Txt>
+            <Txt size={22} weight={900} color={T.t1} style={{ display:'block', letterSpacing:'-0.4px' }}>{t('statsPage.title')}</Txt>
           </div>
 
           {/* ── Tabs ── */}
           <div style={{ display:'flex', gap:8, margin:'12px 16px 0' }}>
-            {([{ id:'series', label:'Séries' },{ id:'filmes', label:'Filmes' }] as const).map(({ id, label }) => (
+            {([{ id:'series', label: t('statsPage.series') },{ id:'filmes', label: t('statsPage.moviesTab') }] as const).map(({ id, label }) => (
               <button key={id} onClick={() => setTab(id)} style={{ padding:'8px 20px', borderRadius:24, background: tab===id ? T.pink : 'transparent', border: tab===id ? 'none' : `1px solid ${T.border}`, color: tab===id ? '#fff' : T.t2, fontSize:14, fontWeight: tab===id ? 800 : 600, fontFamily:"'Area','Inter',sans-serif", cursor:'pointer', transition:'all 0.2s' } as React.CSSProperties}>
                 {label}
               </button>
@@ -501,32 +508,32 @@ export default function StatsPage() {
           {/* ── 1. Tempo gasto ── */}
           <StatCard>
             <Txt size={10} weight={700} color={statLabelColor} style={LBL}>
-              Tempo gasto assistindo {tab === 'series' ? 'episódios' : 'filmes'}
+              {tab === 'series' ? t('statsPage.timeSpentSeries') : t('statsPage.timeSpentMovies')}
             </Txt>
             <div style={{ display:'flex', alignItems:'flex-end', gap:12, marginBottom: 6 }}>
               <div style={{ display:'flex', alignItems:'flex-end', gap:3 }}>
                 <Txt size={36} weight={900} color={T.white} style={{ lineHeight:1 }}>{tp.months}</Txt>
-                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>meses</Txt>
+                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>{t('statsPage.months')}</Txt>
               </div>
               <div style={{ display:'flex', alignItems:'flex-end', gap:3 }}>
                 <Txt size={36} weight={900} color={T.white} style={{ lineHeight:1 }}>{tp.days}</Txt>
-                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>dias</Txt>
+                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>{t('statsPage.days')}</Txt>
               </div>
               <div style={{ display:'flex', alignItems:'flex-end', gap:3 }}>
                 <Txt size={36} weight={900} color={T.white} style={{ lineHeight:1 }}>{tp.hours}</Txt>
-                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>horas</Txt>
+                <Txt size={13} weight={500} color="rgba(255,255,255,0.38)" style={{ paddingBottom:3 }}>{t('statsPage.hours')}</Txt>
               </div>
             </div>
             {tab === 'series' && hours7d > 0 && (
               <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1, display:'block', marginBottom:14 }}>
-                {hours7d} horas nos últimos 7 dias
+                {t('statsPage.last7dHours', { count: hours7d })}
               </Txt>
             )}
             {tab === 'series' && (
-              <DayBarChart data={weekHoursData} labels={dateLabels} unit="horas" barColor="#22c55e" todayColor={T.pink} isDark={isDark} />
+              <DayBarChart data={weekHoursData} labels={dateLabels} unit={t('statsPage.hours')} barColor="#22c55e" todayColor={T.pink} isDark={isDark} />
             )}
             {tab === 'filmes' && (active?.minutesTotal ?? 0) === 0 && (
-              <Txt size={12} color="rgba(255,255,255,0.28)">Adicione filmes assistidos para ver seu tempo</Txt>
+              <Txt size={12} color="rgba(255,255,255,0.28)">{t('statsPage.noMovieTime')}</Txt>
             )}
           </StatCard>
 
@@ -534,26 +541,26 @@ export default function StatsPage() {
           {tab === 'series' && (
             <StatCard>
               <Txt size={10} weight={700} color={statLabelColor} style={LBL}>
-                Total de episódios assistidos
+                {t('statsPage.totalEps')}
               </Txt>
               <Txt size={52} weight={900} color={T.white} style={{ display:'block', lineHeight:1, marginBottom:6 }}>
                 {active?.totalEpisodes ?? 0}
               </Txt>
               {eps7d > 0 && (
                 <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1, display:'block', marginBottom:14 }}>
-                  {eps7d} nos últimos 7 dias
+                  {t('statsPage.last7dEps', { count: eps7d })}
                 </Txt>
               )}
-              <DayBarChart data={weekEpData} labels={dateLabels} unit="episódios" barColor="#a78bfa" todayColor={T.pink} isDark={isDark} />
+              <DayBarChart data={weekEpData} labels={dateLabels} unit={t('statsPage.episodesUnit')} barColor="#a78bfa" todayColor={T.pink} isDark={isDark} />
             </StatCard>
           )}
 
           {/* ── 3. Mini stats row ── */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, margin:'10px 16px 0' }}>
             {[
-              { value: active?.watchedCount ?? 0, label: tab === 'series' ? 'SÉRIES VISTAS' : 'FILMES VISTOS' },
-              { value: active?.reviewsCount ?? 0, label: 'AVALIAÇÕES' },
-              { value: avgRating > 0 ? avgRating : '—', label: 'MÉDIA ★' },
+              { value: active?.watchedCount ?? 0, label: tab === 'series' ? t('statsPage.seriesWatched') : t('statsPage.moviesWatched') },
+              { value: active?.reviewsCount ?? 0, label: t('statsPage.reviewsCount') },
+              { value: avgRating > 0 ? avgRating : '—', label: t('statsPage.avgRating') },
             ].map((s, i) => (
               <div key={i} style={{ background: isDark ? '#141416' : 'var(--c-card)', borderRadius: 16, border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid var(--c-border)', padding: '14px 10px', textAlign:'center', position:'relative', overflow:'hidden' }}>
                 <div style={{ position:'absolute', inset:0, backgroundImage:`radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.04)'} 1px, transparent 1px)`, backgroundSize:'18px 18px', pointerEvents:'none' }} />
@@ -566,7 +573,7 @@ export default function StatsPage() {
           {/* ── 4. Gêneros prediletos ── */}
           {activeGenres.length > 0 && (
             <StatCard>
-              <Txt size={10} weight={700} color={statLabelColor} style={LBL}>Gêneros prediletos (top 5)</Txt>
+              <Txt size={10} weight={700} color={statLabelColor} style={LBL}>{t('statsPage.topGenres')}</Txt>
               <div style={{ display:'flex', gap:16, alignItems:'center' }}>
                 <MultiSegmentDonut segments={donutSegments} centerLabel={topGenre} isDark={isDark} />
                 <div style={{ flex:1, display:'flex', flexDirection:'column', gap:8 }}>
@@ -585,7 +592,7 @@ export default function StatsPage() {
           {/* ── 5. Distribuição de avaliações ── */}
           <StatCard>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
-              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1.1 }}>Distribuição de avaliações</Txt>
+              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1.1 }}>{t('statsPage.ratingDist')}</Txt>
             </div>
             <RatingDistribution dist={activeRatingDist} isDark={isDark} />
           </StatCard>
@@ -593,7 +600,7 @@ export default function StatsPage() {
           {/* ── 6. Histórico de consumo ── */}
           <StatCard>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
-              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1.1 }}>Histórico de consumo (horas)</Txt>
+              <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1.1 }}>{t('statsPage.consumptionHistory')}</Txt>
             </div>
             <MonthlyLineChart data={monthlyHoursData} isDark={isDark} />
           </StatCard>

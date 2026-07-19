@@ -1,8 +1,66 @@
 'use client';
 
-export type Prefs = { genres?: string[]; streams?: string[]; notifications?: string[] };
+export type Prefs = { genres?: string[]; streams?: string[]; notifications?: string[]; locale?: string; country?: string };
 
 const PREFS_KEY = 'sec_prefs';
+
+/* ─── Account switching ───────────────────────────────────────
+   These caches hold the signed-in user's *content* and are NOT
+   uid-scoped, so they must be wiped when the account changes —
+   otherwise the next user inherits (and, via migrateLocalToFirestore,
+   even uploads) the previous user's lists. ─────────────────── */
+const ACTIVE_UID_KEY = 'sec_active_uid';
+
+const USER_SCOPED_KEYS = [
+  'sec_lists_v1',        // want / watching / watched / favorites
+  'sec_reviews_v1',      // reviews + replies
+  'sec_ep_watched_v1',   // watched episodes
+  'sec_prefs',           // genres / streamings / notifications
+  'sec_following',       // following usernames
+  'sec_expenses_v1',     // streaming subscriptions
+  'sec_notified_releases_v1',
+];
+
+/** uid that currently owns the local cache, or null when unknown. */
+export function getActiveUser(): string | null {
+  if (typeof window === 'undefined') return null;
+  try { return localStorage.getItem(ACTIVE_UID_KEY); } catch { return null; }
+}
+
+/** Drop every cached per-user content key. */
+export function clearUserScopedCache() {
+  if (typeof window === 'undefined') return;
+  for (const k of USER_SCOPED_KEYS) {
+    try { localStorage.removeItem(k); } catch {}
+  }
+}
+
+/**
+ * Record which account owns the local cache. When the uid changes from a
+ * previously recorded one, the cache is wiped first.
+ *
+ * A *missing* previous uid is deliberately not treated as a switch: that's
+ * the first login on this device, where the local data belongs to this user
+ * and migrateLocalToFirestore still needs to upload it.
+ *
+ * Returns true when the cache was cleared.
+ */
+export function switchActiveUser(uid: string | null): boolean {
+  if (typeof window === 'undefined') return false;
+  let prev: string | null = null;
+  try { prev = localStorage.getItem(ACTIVE_UID_KEY); } catch {}
+  const next = uid ?? '';
+  if (prev === next) return false;
+
+  const switched = !!prev && prev !== next;
+  if (switched) clearUserScopedCache();
+
+  try {
+    if (uid) localStorage.setItem(ACTIVE_UID_KEY, uid);
+    else localStorage.removeItem(ACTIVE_UID_KEY);
+  } catch {}
+  return switched;
+}
 
 export const prefsStore = {
   get(): Prefs {
@@ -16,8 +74,8 @@ export const prefsStore = {
 };
 
 export type Review = {
-  id: string; user: string; avatar: string; photoUrl?: string; rating: number; text: string;
-  gifUrl?: string; date: string; likes?: number; likedBy?: string[];
+  id: string; user: string; uid?: string; avatar: string; photoUrl?: string; rating: number; text: string;
+  gifUrl?: string; imageUrl?: string; spoiler?: boolean; date: string; likes?: number; likedBy?: string[];
   replies?: Array<{ id: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
 };
 
@@ -133,6 +191,12 @@ export type Profile = {
   genres: string[];
   followers: number;
   following: number;
+  /** Previous usernames — keeps old /user/<slug> links resolvable. */
+  aliases?: string[];
+  /** True once the username has been derived from the name. */
+  usernameMigrated?: boolean;
+  /** True when the user picked the username by hand — never auto-derive again. */
+  usernameCustom?: boolean;
 };
 
 export const PROFILE_KEY_BASE = 'sec_profile_v1';
@@ -153,6 +217,9 @@ const PROFILE_DEFAULT: Profile = {
   genres: [],
   followers: 0,
   following: 0,
+  aliases: [],
+  usernameMigrated: false,
+  usernameCustom: false,
 };
 
 export const profileStore = {
@@ -257,6 +324,29 @@ export const listStore = {
   },
 };
 
+/* ─── Feed reactions store (local mirror of Firestore reactions) ───
+   Shape: { [feedItemId]: { [uid]: emoji } }
+   localStorage primary so reactions survive refresh even when the
+   shared Firestore `reactions` collection isn't writable. ─────── */
+const REACTIONS_KEY = 'sec_reactions_v1';
+
+export const reactionStore = {
+  getMap(feedItemId: string): Record<string, string> {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}')[feedItemId] || {}; } catch { return {}; }
+  },
+  set(feedItemId: string, uid: string, emoji: string | null) {
+    if (typeof window === 'undefined') return;
+    try {
+      const all = JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}');
+      all[feedItemId] = all[feedItemId] || {};
+      if (emoji === null) delete all[feedItemId][uid];
+      else all[feedItemId][uid] = emoji;
+      localStorage.setItem(REACTIONS_KEY, JSON.stringify(all));
+    } catch {}
+  },
+};
+
 /* ─── Notification inbox store ─── */
 export type InboxNotif = {
   id: string;
@@ -266,6 +356,7 @@ export type InboxNotif = {
   time: string;    // ISO date
   read: boolean;
   link?: string;   // optional route to open on tap
+  poster?: string; // TMDB poster image URL
 };
 
 // Per-user key: sec_notif_inbox_v1_<uid>

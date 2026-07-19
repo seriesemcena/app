@@ -7,6 +7,8 @@ import { Icon } from '@/components/Icon';
 import { ActorCircle, TMDBPosterCard } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, tmdbImg, type TMDBItem } from '@/lib/tmdb';
+import { navigateBack } from '@/lib/navigation';
+import { AppErrorState } from '@/components/AppStates';
 
 const BIO_LIMIT = 180;
 
@@ -15,7 +17,7 @@ export default function ActorPage() {
   const params = useParams<{ id: string }>();
   const personId = params.id;
 
-  const { data, loading } = useTMDB<any>(() => tmdb.personDetail(personId), [personId]);
+  const { data, loading, error, retry } = useTMDB<any>(() => tmdb.personDetail(personId), [personId]);
   const person = data || {};
   const movieCredits = ((person.movie_credits?.cast || []) as any[]).sort((a, b) => b.popularity - a.popularity).slice(0, 20);
   const tvCredits = ((person.tv_credits?.cast || []) as any[]).sort((a, b) => b.popularity - a.popularity).slice(0, 20);
@@ -42,8 +44,8 @@ export default function ActorPage() {
   return (
     <Frame>
       <Screen>
-        <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 30 }}>
-          <button onClick={() => router.back()} style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+        <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 12px)', left: 12, zIndex: 30 }}>
+          <button onClick={() => navigateBack(router)} style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
             <Icon name="chevronL" size={18} color={T.white} />
           </button>
         </div>
@@ -56,6 +58,12 @@ export default function ActorPage() {
               <Skeleton w={120} h={14} />
             </div>
           </div>
+        ) : error || !data ? (
+          <AppErrorState
+            title="Não foi possível carregar esta pessoa"
+            message="Confira sua conexão e tente novamente."
+            onRetry={retry}
+          />
         ) : (
           <ScrollArea>
             <div style={{ height: 260, position: 'relative', overflow: 'hidden', background: 'linear-gradient(160deg,#2a1a2a,#1a1a2a)' }}>

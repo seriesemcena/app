@@ -5,9 +5,9 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, AppBar, Chip, Txt, VIPBadge } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-
-const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
+import '@/lib/i18n';
 
 type CalEvent = { date: number; month: number; title: string; type: 'cinema' | 'streaming'; stream?: string; isVIP?: boolean };
 
@@ -25,10 +25,20 @@ const CAL_EVENTS: CalEvent[] = [
 
 export default function CalendarPage() {
   const router = useRouter();
-  const [view, setView] = useState<'semana' | 'mês'>('semana');
+  const { t } = useTranslation('home');
+  const [view, setView] = useState<'week' | 'month'>('week');
   const [month, setMonth] = useState(3);
   const [year] = useState(2025);
   const [selDay, setSelDay] = useState(29);
+
+  const lang = i18next.language || 'pt-BR';
+  const DAYS = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(2024, 0, 7 + i); // Jan 7 2024 = Sunday
+    return new Intl.DateTimeFormat(lang, { weekday: 'short' }).format(d)
+      .replace('.', '').slice(0, 3).toUpperCase();
+  });
+  const getMonthName = (m: number) =>
+    new Intl.DateTimeFormat(lang, { month: 'long' }).format(new Date(year, m, 1));
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
@@ -39,24 +49,29 @@ export default function CalendarPage() {
     return d >= 1 && d <= daysInMonth ? d : null;
   });
 
+  const VIEW_OPTIONS: { id: 'week' | 'month'; label: string }[] = [
+    { id: 'week', label: t('calendar.week') },
+    { id: 'month', label: t('calendar.month') },
+  ];
+
   return (
     <Frame>
       <Screen>
         <AppBar
-          title={`${MONTHS[month]} ${year}`}
+          title={`${getMonthName(month)} ${year}`}
           left={<button onClick={() => setMonth((m) => (m === 0 ? 11 : m - 1))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>}
           right={<button onClick={() => setMonth((m) => (m === 11 ? 0 : m + 1))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronR" size={20} color={T.t2} /></button>}
         />
 
         <div style={{ padding: '10px 16px', display: 'flex', gap: 8, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-          {(['semana', 'mês'] as const).map((v) => (
-            <Chip key={v} label={v.charAt(0).toUpperCase() + v.slice(1)} active={view === v} onClick={() => setView(v)} />
+          {VIEW_OPTIONS.map(({ id, label }) => (
+            <Chip key={id} label={label} active={view === id} onClick={() => setView(id)} />
           ))}
           <div style={{ flex: 1 }} />
         </div>
 
         <ScrollArea>
-          {view === 'semana' ? (
+          {view === 'week' ? (
             <>
               <div style={{ display: 'flex', padding: '12px 16px', gap: 6, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
                 {weekDays.map((d, i) => {
@@ -75,12 +90,12 @@ export default function CalendarPage() {
 
               <div style={{ padding: '16px' }}>
                 <Txt size={13} weight={600} color={T.t3} style={{ display: 'block', marginBottom: 12 }}>
-                  {selDay} de {MONTHS[month]} · {selectedEvents.length} estreia{selectedEvents.length !== 1 ? 's' : ''}
+                  {t('calendar.dayOf', { day: selDay, month: getMonthName(month) })} · {t('calendar.eventCount', { count: selectedEvents.length })}
                 </Txt>
                 {selectedEvents.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 0' }}>
                     <Icon name="calendar" size={40} color={T.t4} style={{ marginBottom: 12 }} />
-                    <Txt size={14} color={T.t3} style={{ display: 'block' }}>Nenhuma estreia neste dia</Txt>
+                    <Txt size={14} color={T.t3} style={{ display: 'block' }}>{t('calendar.noEvents')}</Txt>
                   </div>
                 ) : selectedEvents.map((ev, i) => (
                   <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '14px 16px', background: T.card, borderRadius: T.radiusSm, border: `1px solid ${ev.isVIP ? 'rgba(245,197,24,0.2)' : T.border}`, marginBottom: 10 }}>
@@ -93,7 +108,7 @@ export default function CalendarPage() {
                         {ev.isVIP && <VIPBadge />}
                       </div>
                       <div style={{ padding: '2px 8px', borderRadius: 5, background: ev.type === 'cinema' ? T.redDim : T.surface, display: 'inline-flex' }}>
-                        <Txt size={10} weight={700} color={ev.type === 'cinema' ? T.red : T.t3}>{ev.type === 'cinema' ? 'Cinema' : ev.stream}</Txt>
+                        <Txt size={10} weight={700} color={ev.type === 'cinema' ? T.red : T.t3}>{ev.type === 'cinema' ? t('calendar.cinema') : ev.stream}</Txt>
                       </div>
                     </div>
                     <Icon name="bell" size={16} color={T.t4} />
