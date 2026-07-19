@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { dbActivityStore, dbRevStore, dbReportStore, dbReactionStore } from '@/lib/db';
+import { isAdminUser } from '@/lib/admin';
 import { tmdbImg } from '@/lib/tmdb';
 
 type FeedTab = 'para_voce' | 'seguindo';
@@ -470,7 +471,10 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
     { label: 'Compartilhar', icon: 'share' as const, color: T.t2, action: handleShare },
     { label: 'Denunciar',  icon: 'flag'  as const, color: T.red ?? '#ff4444', action: handleReport },
     ...(!isMyPost ? [{ label: 'Ocultar conteúdo deste usuário', icon: 'eye' as const, color: T.t2, action: () => { setShowMenu(false); showToast('Conteúdo ocultado.'); } }] : []),
-    ...(isMyPost  ? [{ label: 'Excluir comentário', icon: 'close' as const, color: T.red ?? '#ff4444', action: handleDelete }] : []),
+    // Own posts — or any post when moderating as admin (rules allow both)
+    ...(isMyPost || isAdminUser(user)
+      ? [{ label: isMyPost ? 'Excluir comentário' : 'Excluir (moderação)', icon: 'close' as const, color: T.red ?? '#ff4444', action: handleDelete }]
+      : []),
   ];
 
   return (

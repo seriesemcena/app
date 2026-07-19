@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbNotifStore } from '@/lib/db';
+import { isAdminUser } from '@/lib/admin';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 
@@ -227,6 +228,19 @@ function CommentsPageInner() {
     }
   };
 
+  /* Author or admin — the Firestore rules enforce the same pair server-side,
+     so the doc really goes away for every user and device. */
+  const deleteComment = async (id: string) => {
+    if (!window.confirm('Excluir este comentário?')) return;
+    const updated = reviews.filter(r => r.id !== id);
+    setReviews(updated);
+    revStore.set(storageKey, updated);
+    if (firebaseConfigured) {
+      try { await dbRevStore.remove(getDB(), storageKey, id); } catch {}
+    }
+    showToast('Comentário excluído.');
+  };
+
   const toggleLike = async (id: string) => {
     // Anonymous likes shared one identity ('anon') — one visitor's like
     // removed another's. Liking now requires a signed-in account.
@@ -379,6 +393,9 @@ function CommentsPageInner() {
                     onReplyChange={setReplyText}
                     onSubmitReply={() => submitReply(rev.id)}
                     replyInputRef={replyOpenId === rev.id ? replyInputRef : undefined}
+                    onDelete={(rev.uid && rev.uid === user?.uid) || isAdminUser(user)
+                      ? () => deleteComment(rev.id)
+                      : undefined}
                   />
                 ))}
               </div>
@@ -536,7 +553,7 @@ function CommentsPageInner() {
 }
 
 /* ── Comment card ── */
-function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply, replyText, onReplyChange, onSubmitReply, replyInputRef }: {
+function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply, replyText, onReplyChange, onSubmitReply, replyInputRef, onDelete }: {
   rev: Review & { liked?: boolean };
   timeAgo: (d: string) => string;
   onLike: () => void;
@@ -547,6 +564,8 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
   onReplyChange: (v: string) => void;
   onSubmitReply: () => void;
   replyInputRef?: React.RefObject<HTMLInputElement | null>;
+  /** Present for the comment's author and for admins (moderation). */
+  onDelete?: () => void;
 }) {
   const { t }         = useTranslation('title');
   const liked         = !!(rev as any).liked;
@@ -601,6 +620,12 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
         <SocialAction icon={liked ? 'heart' : 'heartO'} active={liked} onClick={onLike} ariaLabel="Curtir comentário">
           <Txt size={12} weight={700} color="currentColor">{(rev.likes || 0) + (liked ? 1 : 0)}</Txt>
         </SocialAction>
+        {onDelete && (
+          <button onClick={onDelete} aria-label="Excluir comentário"
+            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '7px 4px' }}>
+            <Icon name="close" size={14} color={T.red ?? '#ff4444'} />
+          </button>
+        )}
         <div style={{ flex: 1 }} />
         {replyCount > 0 && (
           <button onClick={() => setShowReplies(s => !s)}

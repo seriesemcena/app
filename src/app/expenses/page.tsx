@@ -9,6 +9,9 @@ import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { navigateBack } from '@/lib/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { dbExpensesStore } from '@/lib/db';
 
 type Plan = { label: string; price: number };
 type Stream = { id: string; name: string; color: string; plans: Plan[] };
@@ -103,6 +106,7 @@ export default function ExpensesPage() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { t } = useTranslation('settings');
+  const { user, loading } = useAuth();
   const [subs, setSubs] = useState<Sub[]>([]);
   const [addSheet, setAddSheet] = useState(false);
   const [selStream, setSelStream] = useState<Stream | null>(null);
@@ -122,22 +126,48 @@ export default function ExpensesPage() {
     return () => obs.disconnect();
   }, []);
 
+  const migrateStar = (list: Sub[]) => list.map((sub) => sub.streamId === 'star' || sub.name === 'Star+'
+    ? { ...sub, streamId: 'mgm', name: 'MGM+', color: '#B59A62' }
+    : sub);
+
+  /* Load: localStorage first (instant paint), then Firestore. The cloud copy
+     is authoritative when it exists — the local cache is wiped on every
+     account switch, which is why expenses vanished between sessions. When the
+     account has never synced but this device has local data, push it up once. */
   useEffect(() => {
+    if (loading) return;
+    let local: Sub[] = [];
     try {
       const stored: Sub[] = JSON.parse(localStorage.getItem(KEY) || '[]');
-      const migrated = stored.map((sub) => sub.streamId === 'star' || sub.name === 'Star+'
-        ? { ...sub, streamId: 'mgm', name: 'MGM+', color: '#B59A62' }
-        : sub);
-      setSubs(migrated);
-      if (migrated.some((sub, index) => sub !== stored[index])) {
-        localStorage.setItem(KEY, JSON.stringify(migrated));
+      local = migrateStar(stored);
+      setSubs(local);
+      if (local.some((sub, index) => sub !== stored[index])) {
+        localStorage.setItem(KEY, JSON.stringify(local));
       }
     } catch {}
-  }, []);
+
+    if (!user || !firebaseConfigured) return;
+    let alive = true;
+    dbExpensesStore.get(getDB(), user.uid).then(cloud => {
+      if (!alive) return;
+      if (cloud !== null) {
+        const merged = migrateStar(cloud as Sub[]);
+        setSubs(merged);
+        try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch {}
+      } else if (local.length > 0) {
+        // Account predates cloud sync — claim this device's data for it
+        dbExpensesStore.set(getDB(), user.uid, local).catch(() => {});
+      }
+    });
+    return () => { alive = false; };
+  }, [user, loading]);
 
   const save = (next: Sub[]) => {
     setSubs(next);
     try { localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
+    if (user && firebaseConfigured) {
+      dbExpensesStore.set(getDB(), user.uid, next).catch(() => {});
+    }
   };
 
   const addSub = () => {

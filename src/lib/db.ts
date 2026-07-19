@@ -412,6 +412,25 @@ export const dbReactionStore = {
   },
 };
 
+// ── Streaming expenses ───────────────────────────────────────
+// Firestore: users/{uid}.expenses — the localStorage cache
+// (sec_expenses_v1) is uid-scoped-wiped on account switch, so without
+// this cloud copy every new session started from zero.
+
+export const dbExpensesStore = {
+  /** null = the field was never written for this account (≠ empty list). */
+  async get(db: Firestore, uid: string): Promise<unknown[] | null> {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      const v = snap.data()?.expenses;
+      return Array.isArray(v) ? v : null;
+    } catch { return null; }
+  },
+  async set(db: Firestore, uid: string, subs: unknown[]) {
+    await setField(db, ['users', uid], 'expenses', subs);
+  },
+};
+
 // ── Real-time subscription: users/{uid} → localStorage ───────
 // Call on login; returns an Unsubscribe function.
 // Whenever the user's doc changes in Firestore (other device wrote),
@@ -458,6 +477,11 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
     // ── Following list ─────────────────────────────────────
     if (Array.isArray(data.following_list)) {
       try { localStorage.setItem('sec_following', JSON.stringify(data.following_list)); } catch {}
+    }
+
+    // ── Streaming expenses ─────────────────────────────────
+    if (Array.isArray(data.expenses)) {
+      try { localStorage.setItem('sec_expenses_v1', JSON.stringify(data.expenses)); } catch {}
     }
 
     // Notify all listening components
@@ -655,6 +679,9 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
       const data = userSnap.data();
       if (data?.ep_watched && typeof data.ep_watched === 'object') {
         localStorage.setItem('sec_ep_watched_v1', JSON.stringify(data.ep_watched));
+      }
+      if (Array.isArray(data?.expenses)) {
+        localStorage.setItem('sec_expenses_v1', JSON.stringify(data.expenses));
       }
       if (Array.isArray(data?.following_list)) {
         localStorage.setItem('sec_following', JSON.stringify(data.following_list));

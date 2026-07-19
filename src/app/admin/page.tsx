@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { isAdminUser } from '@/lib/admin';
 import { Txt, Btn, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
@@ -79,21 +80,11 @@ const NAV: { id: AdminSection; icon: string; label: string }[] = [
   { id: 'moderacao',    icon: 'flag',   label: 'Moderação'        },
 ];
 
-/* ── access control ──
-   Deny-by-default allowlist: NEXT_PUBLIC_ADMIN_EMAILS (comma-separated).
-   Exposing the list in the client bundle is fine — access is granted by
-   BEING signed in as one of these accounts, not by knowing the list.
-   Unset (e.g. env var missing in prod) ⇒ nobody gets in. */
-const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
-  .split(',')
-  .map(e => e.trim().toLowerCase())
-  .filter(Boolean);
-
 /* ══════════════════════════════════════════════════════════════════════ */
 export default function AdminPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const allowed = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+  const allowed = isAdminUser(user);
 
   useEffect(() => {
     if (!authLoading && !allowed) router.replace('/home');
