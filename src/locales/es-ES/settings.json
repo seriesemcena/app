@@ -25,7 +25,9 @@
     "logout": "Cerrar sesión",
     "deleteAccount": "Eliminar mi cuenta",
     "vip": "Maratonou VIP",
-    "vipSub": "Desbloquea funciones exclusivas"
+    "vipSub": "Desbloquea funciones exclusivas",
+    "notifPrefs": "Preferencias de notificaciones",
+    "notifPrefsSub": "Elige lo que quieres recibir"
   },
   "vip": {
     "bannerTitle": "Hazte VIP",
@@ -173,5 +175,23 @@
     "importing": "Importando...",
     "success": "¡{{count}} series importadas con éxito!",
     "error": "Error al importar el archivo. Por favor verifica el formato."
+  },
+  "notifPrefs": {
+    "title": "Preferencias de notificaciones",
+    "intro": "Activa o desactiva los tipos de notificación que quieres recibir. Los cambios se aplican en todos tus dispositivos.",
+    "activitySection": "Actividad de la cuenta",
+    "contentSection": "Estrenos y episodios",
+    "mentions": "Citas y menciones",
+    "mentionsSub": "Cuando alguien te mencione en un comentario",
+    "likes": "Me gusta",
+    "likesSub": "Cuando les guste tus comentarios",
+    "replies": "Respuestas",
+    "repliesSub": "Cuando respondan a tus comentarios",
+    "followers": "Nuevos seguidores",
+    "followersSub": "Cuando alguien empiece a seguirte",
+    "premieres": "Estrenos",
+    "premieresSub": "Avisos de lanzamiento de títulos de tu lista",
+    "episodes": "Nuevos episodios",
+    "episodesSub": "Cuando salga un episodio de tus series"
   }
 }

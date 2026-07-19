@@ -25,7 +25,9 @@
     "logout": "Sair da conta",
     "deleteAccount": "Excluir minha conta",
     "vip": "Séries em Cena VIP",
-    "vipSub": "Desbloqueie recursos exclusivos"
+    "vipSub": "Desbloqueie recursos exclusivos",
+    "notifPrefs": "Preferências de notificações",
+    "notifPrefsSub": "Escolha o que você quer receber"
   },
   "vip": {
     "bannerTitle": "Seja VIP",
@@ -173,5 +175,23 @@
     "importing": "Importando...",
     "success": "{{count}} séries importadas com sucesso!",
     "error": "Erro ao importar arquivo. Verifique o formato."
+  },
+  "notifPrefs": {
+    "title": "Preferências de notificações",
+    "intro": "Ative ou desative os tipos de notificação que você quer receber. As mudanças valem para todos os seus dispositivos.",
+    "activitySection": "Atividade da conta",
+    "contentSection": "Estreias e episódios",
+    "mentions": "Citações e menções",
+    "mentionsSub": "Quando alguém citar você em um comentário",
+    "likes": "Curtidas",
+    "likesSub": "Quando curtirem seus comentários",
+    "replies": "Respostas",
+    "repliesSub": "Quando responderem seus comentários",
+    "followers": "Novos seguidores",
+    "followersSub": "Quando alguém começar a seguir você",
+    "premieres": "Estreias",
+    "premieresSub": "Avisos de lançamento de títulos da sua lista",
+    "episodes": "Novos episódios",
+    "episodesSub": "Quando sair episódio de séries que você acompanha"
   }
 }

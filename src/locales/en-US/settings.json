@@ -25,7 +25,9 @@
     "logout": "Sign out",
     "deleteAccount": "Delete my account",
     "vip": "Maratonou VIP",
-    "vipSub": "Unlock exclusive features"
+    "vipSub": "Unlock exclusive features",
+    "notifPrefs": "Notification preferences",
+    "notifPrefsSub": "Choose what you want to receive"
   },
   "vip": {
     "bannerTitle": "Go VIP",
@@ -173,5 +175,23 @@
     "importing": "Importing...",
     "success": "{{count}} series imported successfully!",
     "error": "Error importing file. Please check the format."
+  },
+  "notifPrefs": {
+    "title": "Notification preferences",
+    "intro": "Turn the notification types you want on or off. Changes apply across all your devices.",
+    "activitySection": "Account activity",
+    "contentSection": "Premieres & episodes",
+    "mentions": "Mentions",
+    "mentionsSub": "When someone mentions you in a comment",
+    "likes": "Likes",
+    "likesSub": "When your comments get liked",
+    "replies": "Replies",
+    "repliesSub": "When someone replies to your comments",
+    "followers": "New followers",
+    "followersSub": "When someone starts following you",
+    "premieres": "Premieres",
+    "premieresSub": "Release alerts for titles on your list",
+    "episodes": "New episodes",
+    "episodesSub": "When shows you follow release an episode"
   }
 }

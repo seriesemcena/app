@@ -8,7 +8,7 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, GlassHeader, Txt, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { notifInboxStore, listStore, type InboxNotif } from '@/lib/store';
+import { notifInboxStore, listStore, prefsStore, isNotifEnabled, type InboxNotif, type NotifPrefKey } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack, navigateTo } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
@@ -200,13 +200,32 @@ export default function NotificationsPage() {
   };
 
   /* ── Unread counts ── */
-  const accountUnread = accountNotifs.filter(n => !n.read).length;
-  const appUnread     = appNotifs.filter(n => !n.read).length;
+  /* ── Notification preferences: hide disabled categories ──
+     'general' app notices always show; unknown types default to visible. */
+  const [prefs] = useState(() => prefsStore.get());
+  const ACCOUNT_PREF: Record<NotifDoc['type'], NotifPrefKey> = {
+    comment_like: 'likes', comment_reply: 'replies', new_follower: 'followers',
+  };
+  const APP_PREF: Partial<Record<InboxNotif['type'], NotifPrefKey>> = {
+    like: 'likes', reply: 'replies', follow: 'followers',
+    release: 'premieres', new_episode: 'episodes',
+  };
+  const visibleAccount = accountNotifs.filter(n => {
+    const key = ACCOUNT_PREF[n.type];
+    return !key || isNotifEnabled(prefs, key);
+  });
+  const visibleApp = appNotifs.filter(n => {
+    const key = APP_PREF[n.type];
+    return !key || isNotifEnabled(prefs, key);
+  });
+
+  const accountUnread = visibleAccount.filter(n => !n.read).length;
+  const appUnread     = visibleApp.filter(n => !n.read).length;
   const currentUnread = tab === 'account' ? accountUnread : appUnread;
 
   /* ── Grouped lists ── */
-  const accountGrouped = groupByDay(accountNotifs.map(n => ({ ...n, _ts: n.createdAt })));
-  const appGrouped     = groupByDay(appNotifs.map(n => ({ ...n, _ts: n.time })));
+  const accountGrouped = groupByDay(visibleAccount.map(n => ({ ...n, _ts: n.createdAt })));
+  const appGrouped     = groupByDay(visibleApp.map(n => ({ ...n, _ts: n.time })));
 
   return (
     <Frame>
@@ -275,7 +294,7 @@ export default function NotificationsPage() {
                   </div>
                 )}
 
-                {!accountLoading && accountNotifs.length === 0 && (
+                {!accountLoading && visibleAccount.length === 0 && (
                   <EmptyState
                     icon="user"
                     title={t('empty.account.title')}
@@ -303,7 +322,7 @@ export default function NotificationsPage() {
             {/* ══ DO APP tab ══ */}
             {tab === 'app' && (
               <>
-                {appNotifs.length === 0 && (
+                {visibleApp.length === 0 && (
                   <EmptyState
                     icon="bell"
                     title={t('empty.app.title')}
@@ -326,7 +345,7 @@ export default function NotificationsPage() {
                   </DayGroup>
                 ))}
 
-                {appNotifs.length > 0 && (
+                {visibleApp.length > 0 && (
                   <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
                     <Txt size={11} color={T.t4} style={{ display: 'block', lineHeight: 1.5 }}>
                       {t('footer')}

@@ -1,6 +1,16 @@
 'use client';
 
-export type Prefs = { genres?: string[]; streams?: string[]; notifications?: string[]; locale?: string; country?: string };
+export type Prefs = { genres?: string[]; streams?: string[]; notifications?: string[]; locale?: string; country?: string; notifPrefs?: Record<string, boolean> };
+
+/* ── Notification preference keys ──
+   Missing key = enabled (all notifications default ON). `notifPrefs` only
+   stores explicit choices, so new categories are opt-out automatically. */
+export const NOTIF_PREF_KEYS = ['mentions', 'likes', 'replies', 'followers', 'premieres', 'episodes'] as const;
+export type NotifPrefKey = (typeof NOTIF_PREF_KEYS)[number];
+
+export function isNotifEnabled(prefs: Prefs, key: NotifPrefKey): boolean {
+  return prefs.notifPrefs?.[key] !== false;
+}
 
 const PREFS_KEY = 'sec_prefs';
 

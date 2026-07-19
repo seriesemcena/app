@@ -208,6 +208,7 @@ export default function SettingsPage() {
             <Group rows={[
               { icon: 'lock', label: t('items.changePassword'), onClick: () => router.push(withProfileOrigin('/settings/change-password')) },
               { icon: 'bell', label: t('items.notifications'),  onClick: () => router.push(withProfileOrigin('/notifications')) },
+              { icon: 'settings', label: t('items.notifPrefs'), sub: t('items.notifPrefsSub'), onClick: () => router.push(withProfileOrigin('/settings/notifications')) },
             ]} />
 
             {/* ══ Conteúdo & preferências ══ */}
@@ -241,6 +242,15 @@ export default function SettingsPage() {
             <Group rows={[
               { icon: 'logout', label: t('items.logout'), onClick: signOut, danger: true, right: null },
             ]} />
+
+            {/* ══ Atribuição TMDB (exigida pelos termos da API) ══ */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '18px 24px 6px' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/tmdb.svg" alt="TMDB" style={{ height: 13, width: 'auto', display: 'block' }} />
+              <Txt size={11} color={T.t3} style={{ display: 'block', textAlign: 'center', lineHeight: 1.5 }}>
+                This product uses the TMDB API but is not endorsed or certified by TMDB.
+              </Txt>
+            </div>
           </div>
         </div>
       </Screen>
