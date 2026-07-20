@@ -77,6 +77,9 @@ export function formatNumber(value: unknown) {
 export function humanize(value: string) {
   const labels: Record<string, string> = {
     usersTotal: 'Usuários',
+    activeUsers7d: 'Ativos nos últimos 7 dias',
+    activeUsers14d: 'Ativos nos últimos 14 dias',
+    activeUsers30d: 'Ativos nos últimos 30 dias',
     proMembersTotal: 'Membros PRO',
     activityTotal: 'Atividades',
     commentsTotal: 'Comentários',

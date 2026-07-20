@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { User } from 'firebase/auth';
 import { firebaseConfigured, getFirebaseAuth, getDB } from '@/lib/firebase';
-import { migrateLocalToFirestore, syncFromFirestore, subscribeUserDoc } from '@/lib/db';
+import { dbPresenceStore, migrateLocalToFirestore, syncFromFirestore, subscribeUserDoc } from '@/lib/db';
 import { switchActiveUser, getActiveUser } from '@/lib/store';
 
 interface AuthState {
@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Holds the Firestore real-time subscription for the current user
     let unsubDoc: (() => void) | null = null;
     let unsubMessages: (() => void) | null = null;
+    let removePresenceListener: (() => void) | null = null;
     let unsubAuth = () => {};
     let active = true;
 
@@ -53,6 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unsubDoc = null;
         unsubMessages?.();
         unsubMessages = null;
+        removePresenceListener?.();
+        removePresenceListener = null;
 
         // Wipe the previous account's cached content BEFORE anything reads
         // or uploads it. Without this the new user inherits the old user's
@@ -79,6 +82,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (u) {
           const db = getDB();
+
+          const touchPresence = () => {
+            if (document.visibilityState === 'visible') dbPresenceStore.touch(db, u.uid).catch(() => {});
+          };
+          touchPresence();
+          document.addEventListener('visibilitychange', touchPresence);
+          window.addEventListener('focus', touchPresence);
+          removePresenceListener = () => {
+            document.removeEventListener('visibilitychange', touchPresence);
+            window.removeEventListener('focus', touchPresence);
+          };
 
           // 1. Migrate localStorage → Firestore (one-time, first login).
           //    Only when the cache provably belongs to this account: an
@@ -143,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubAuth();
       unsubDoc?.();
       unsubMessages?.();
+      removePresenceListener?.();
     };
   }, []);
 

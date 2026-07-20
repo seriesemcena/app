@@ -156,6 +156,25 @@ p { color: var(--muted); line-height: 1.55; }
 .metric-card-empty strong { font-size: 1.05rem; }
 .metric-skeleton { height: 122px; border: 1px solid var(--border); border-radius: 16px; background: linear-gradient(90deg, var(--surface), var(--surface-soft), var(--surface)); background-size: 200% 100%; animation: shimmer 1.35s infinite; }
 
+.ranking-panel { display: grid; gap: 15px; }
+.ranking-heading { align-items: flex-end; margin-bottom: 0; }
+.period-tabs { display: inline-flex; gap: 4px; border: 1px solid var(--border); border-radius: 11px; padding: 4px; background: var(--surface-soft); }
+.period-tabs button { border: 0; border-radius: 8px; padding: 8px 12px; background: transparent; color: var(--muted); font: inherit; font-size: .68rem; font-weight: 750; cursor: pointer; }
+.period-tabs button.active { background: var(--text); color: var(--bg); }
+.ranking-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ranking-columns > div { min-width: 0; border: 1px solid var(--border); border-radius: 14px; padding: 15px; background: var(--surface-soft); }
+.ranking-columns h3 { margin-bottom: 2px; font-size: .84rem; }
+.ranking-columns > div > p { margin-bottom: 12px; font-size: .67rem; }
+.ranking-list { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.ranking-list li { min-width: 0; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; border-top: 1px solid var(--border); padding: 10px 2px; }
+.ranking-position { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; background: var(--surface); color: var(--accent); font-size: .68rem; font-weight: 850; }
+.ranking-copy { min-width: 0; display: grid; }
+.ranking-copy strong { overflow: hidden; color: var(--text); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-copy small { color: var(--subtle); font-size: .6rem; }
+.ranking-count { color: var(--muted); font-size: .66rem; font-weight: 700; white-space: nowrap; }
+.ranking-updated { color: var(--subtle); font-size: .61rem; text-align: right; }
+.notification-info { background: var(--accent-soft); }
+
 .feedback { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px; background: var(--surface); }
 .feedback p { margin: 3px 0 0; font-size: .76rem; }
 .feedback small { display: block; margin-top: 4px; color: var(--subtle); }
@@ -288,6 +307,10 @@ td small { display: block; margin-top: 2px; color: var(--subtle); font-size: .63
   .page-intro { margin-bottom: 19px; }
   .metric-grid { grid-template-columns: 1fr; }
   .metric-card-empty { grid-column: auto; }
+  .ranking-heading { align-items: flex-start; flex-direction: column; }
+  .ranking-columns { grid-template-columns: 1fr; }
+  .period-tabs { width: 100%; }
+  .period-tabs button { flex: 1; }
   .toolbar { align-items: flex-start; flex-direction: column; }
   .page-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .panel { padding: 14px; }

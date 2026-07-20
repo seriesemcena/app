@@ -14,6 +14,7 @@ const {
   encodeCursor, isAdminRole, isPermission, requireConfirmation, roleCan,
   safeHttpsUrl, stableHash, verifyCloudflareJwtWithJwks,
 } = require('./admin-security');
+const { PERIODS, buildTitleRankings } = require('./admin-analytics');
 
 if (!getApps().length) initializeApp();
 const db = getFirestore();
@@ -247,12 +248,58 @@ async function listQuery(collection, query, cursor, limit = 25) {
 }
 
 async function dashboard() {
-  const [metricSnap, auditSnap] = await Promise.all([
+  const [metricSnap, rankingsSnap, auditSnap] = await Promise.all([
     db.doc('metrics/global').get(),
+    db.doc('metrics/titleRankings').get(),
     db.collection('auditLogs').orderBy('createdAt', 'desc').limit(8).get().catch(() => ({ docs: [] })),
   ]);
   const metrics = metricSnap.exists ? Object.fromEntries(Object.entries(metricSnap.data()).filter(([, value]) => typeof value === 'number')) : null;
-  return { metrics, metricsUpdatedAt: toIso(metricSnap.data()?.updatedAt), recentAudit: auditSnap.docs.map(documentData), unavailable: metricSnap.exists ? [] : ['metrics/global'] };
+  const rankings = rankingsSnap.exists ? cleanForAudit(rankingsSnap.data()?.periods || {}) : null;
+  return {
+    metrics,
+    metricsUpdatedAt: toIso(metricSnap.data()?.updatedAt),
+    rankings,
+    rankingsUpdatedAt: toIso(rankingsSnap.data()?.updatedAt),
+    rankingsPartial: rankingsSnap.data()?.partial === true,
+    recentAudit: auditSnap.docs.map(documentData),
+    unavailable: [
+      ...(!metricSnap.exists ? ['metrics/global'] : []),
+      ...(!rankingsSnap.exists ? ['metrics/titleRankings'] : []),
+    ],
+  };
+}
+
+async function activeUserCounts(now = Date.now()) {
+  const active = {
+    activeUsers7d: new Set(),
+    activeUsers14d: new Set(),
+    activeUsers30d: new Set(),
+  };
+  const addActivity = (uid, value) => {
+    const timestamp = value instanceof Date ? value.getTime() : new Date(value || 0).getTime();
+    if (!Number.isFinite(timestamp)) return;
+    if (timestamp >= now - PERIODS.weekly) active.activeUsers7d.add(uid);
+    if (timestamp >= now - 14 * 86400000) active.activeUsers14d.add(uid);
+    if (timestamp >= now - PERIODS.monthly) active.activeUsers30d.add(uid);
+  };
+
+  // Auth metadata covers existing accounts before the app heartbeat existed.
+  // Firestore's lastActiveAt then makes continued app use visible even when a
+  // long-lived Firebase session does not perform a fresh sign-in.
+  let pageToken;
+  do {
+    const page = await auth.listUsers(1000, pageToken);
+    page.users.forEach((user) => addActivity(user.uid, user.metadata.lastSignInTime));
+    pageToken = page.pageToken;
+  } while (pageToken);
+
+  const recentPresence = await db.collection('users')
+    .where('lastActiveAt', '>=', Timestamp.fromMillis(now - PERIODS.monthly))
+    .limit(10000)
+    .get();
+  recentPresence.docs.forEach((doc) => addActivity(doc.id, doc.data().lastActiveAt?.toDate?.() || doc.data().lastActiveAt));
+
+  return Object.fromEntries(Object.entries(active).map(([key, users]) => [key, users.size]));
 }
 
 async function rebuildDashboardMetrics() {
@@ -268,6 +315,8 @@ async function rebuildDashboardMetrics() {
     openReportsTotal,
     notificationsTotal,
     pendingNotificationJobs,
+    activeUsers,
+    yearlyActivity,
   ] = await Promise.all([
     count(db.collection('users')),
     count(db.collection('users').where('profile.proMember', '==', true)),
@@ -277,6 +326,12 @@ async function rebuildDashboardMetrics() {
     count(db.collection('reports').where('status', '==', 'open')),
     count(db.collection('app_notifications')),
     count(db.collection('notification_jobs').where('status', '==', 'pending')),
+    activeUserCounts(),
+    db.collection('activity')
+      .where('createdAt', '>=', new Date(Date.now() - PERIODS.yearly).toISOString())
+      .orderBy('createdAt', 'desc')
+      .limit(10000)
+      .get(),
   ]);
   const metrics = {
     usersTotal,
@@ -287,8 +342,19 @@ async function rebuildDashboardMetrics() {
     openReportsTotal,
     notificationsTotal,
     pendingNotificationJobs,
+    ...activeUsers,
   };
-  await db.doc('metrics/global').set({ ...metrics, updatedAt: FieldValue.serverTimestamp(), source: 'admin-aggregate-rebuild' }, { merge: true });
+  const rankings = buildTitleRankings(yearlyActivity.docs.map((doc) => doc.data()));
+  const batch = db.batch();
+  batch.set(db.doc('metrics/global'), { ...metrics, updatedAt: FieldValue.serverTimestamp(), source: 'admin-aggregate-rebuild' }, { merge: true });
+  batch.set(db.doc('metrics/titleRankings'), {
+    periods: rankings,
+    scannedActivities: yearlyActivity.size,
+    partial: yearlyActivity.size === 10000,
+    updatedAt: FieldValue.serverTimestamp(),
+    source: 'admin-aggregate-rebuild',
+  });
+  await batch.commit();
   return metrics;
 }
 

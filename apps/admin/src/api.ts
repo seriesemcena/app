@@ -19,6 +19,23 @@ export type AdminActor = {
 export type Dashboard = {
   metrics: Record<string, number> | null;
   metricsUpdatedAt: string | null;
+  rankings: Record<DashboardPeriod, DashboardRankingGroup> | null;
+  rankingsUpdatedAt: string | null;
+  rankingsPartial: boolean;
   recentAudit: Array<Record<string, unknown>>;
   unavailable: string[];
+};
+
+export type DashboardPeriod = 'weekly' | 'monthly' | 'yearly';
+export type DashboardRankingItem = {
+  titleKey: string;
+  titleId: string;
+  titleName: string;
+  titleType: 'movie' | 'tv';
+  poster: string | null;
+  count: number;
+};
+export type DashboardRankingGroup = {
+  added: DashboardRankingItem[];
+  watched: DashboardRankingItem[];
 };

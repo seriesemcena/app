@@ -188,12 +188,14 @@ async function deliver(uid, eventKey, notification) {
       createdAt: FieldValue.serverTimestamp(),
     });
   } catch (error) {
-    if (error?.code === 6 || error?.code === 'already-exists') return false;
+    if (error?.code === 6 || error?.code === 'already-exists') return { created: false, pushSuccess: 0, pushFailure: 0 };
     throw error;
   }
 
   const tokenSnap = await db.doc(`users/${uid}/private/push`).get();
   const tokens = tokenSnap.data()?.tokens || [];
+  let pushSuccess = 0;
+  let pushFailure = 0;
   if (tokens.length) {
     const response = await getMessaging().sendEachForMulticast({
       tokens,
@@ -202,6 +204,8 @@ async function deliver(uid, eventKey, notification) {
       webpush: { fcmOptions: { link: notification.link || '/notifications' } },
     });
     const invalid = [];
+    pushSuccess = response.successCount;
+    pushFailure = response.failureCount;
     response.responses.forEach((result, index) => {
       if (!result.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(result.error?.code)) {
         invalid.push(tokens[index]);
@@ -211,7 +215,7 @@ async function deliver(uid, eventKey, notification) {
       await tokenSnap.ref.set({ tokens: tokens.filter((token) => !invalid.includes(token)) }, { merge: true });
     }
   }
-  return true;
+  return { created: true, pushSuccess, pushFailure };
 }
 
 async function forEachUserPage(handler) {
@@ -586,6 +590,8 @@ exports.processNotificationJobs = onSchedule({
     await jobDoc.ref.update({ status: 'processing', startedAt: FieldValue.serverTimestamp() });
     try {
       let deliveries = 0;
+      let pushDeliveries = 0;
+      let pushFailures = 0;
       await forEachUserPage(async (users) => {
         for (const userDoc of users) {
           const profile = userDoc.data().profile || {};
@@ -594,10 +600,12 @@ exports.processNotificationJobs = onSchedule({
           const delivered = await deliver(userDoc.id, `manual-${jobDoc.id}`, {
             type: 'general', title: job.title, body: job.body || '', link: job.link || '/notifications',
           });
-          if (delivered) deliveries += 1;
+          if (delivered.created) deliveries += 1;
+          pushDeliveries += delivered.pushSuccess;
+          pushFailures += delivered.pushFailure;
         }
       });
-      await jobDoc.ref.update({ status: 'sent', sentAt: FieldValue.serverTimestamp(), deliveries });
+      await jobDoc.ref.update({ status: 'sent', sentAt: FieldValue.serverTimestamp(), deliveries, pushDeliveries, pushFailures });
     } catch (error) {
       await jobDoc.ref.update({ status: 'failed', failedAt: FieldValue.serverTimestamp(), error: String(error).slice(0, 500) });
       logger.error('Notification job failed', { jobId: jobDoc.id, error });

@@ -718,6 +718,19 @@ export const dbActivityStore = {
   },
 };
 
+const ACTIVE_TOUCH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+/** Records authenticated app use at most once every six hours per browser. */
+export const dbPresenceStore = {
+  async touch(db: Firestore, uid: string): Promise<void> {
+    const key = `maratonou:last-active-write:${uid}`;
+    const previous = Number(localStorage.getItem(key) || 0);
+    if (Date.now() - previous < ACTIVE_TOUCH_INTERVAL_MS) return;
+    await setDoc(doc(db, 'users', uid), { lastActiveAt: serverTimestamp() }, { merge: true });
+    localStorage.setItem(key, String(Date.now()));
+  },
+};
+
 // ── Reports ──────────────────────────────────────────────────
 // Firestore: reports/{auto-id}
 
