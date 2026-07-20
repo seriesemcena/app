@@ -8,7 +8,7 @@ import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
 import { listStore, revStore, prefsStore, epWatchedStore, profileStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbActivityStore } from '@/lib/db';
+import { dbUserStatsStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
 import { useTranslation } from 'react-i18next';
@@ -395,34 +395,23 @@ export default function StatsPage() {
     if (loading || !user || !firebaseConfigured) return;
     (async () => {
       try {
-        const db   = getDB();
-        const acts = await dbActivityStore.getRecent(db, 500);
-        const mine = acts.filter(a => a.uid === user.uid);
-        const today = new Date();
+        const aggregate = await dbUserStatsStore.get(getDB(), user.uid);
         const weekEp: number[]  = Array(7).fill(0);
         const weekAct: number[] = Array(7).fill(0);
-        const months: Array<{ label: string; key: string; episodes: number }> = [];
+        for (let index = 0; index < 7; index += 1) {
+          const date = new Date(Date.now() - (6 - index) * 86_400_000).toISOString().slice(0, 10);
+          weekEp[index] = aggregate.recentDays[date]?.watched || 0;
+          weekAct[index] = aggregate.recentDays[date]?.activities || 0;
+        }
+        const months: Array<{ label: string; key: string; minutes: number }> = [];
         for (let i = 5; i >= 0; i--) {
           const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
-          months.push({ label: getMonthShort(d), key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, episodes: 0 });
+          const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+          months.push({ label: getMonthShort(d), key, minutes: aggregate.months[key]?.watchedMinutes || 0 });
         }
-        mine.forEach(a => {
-          if (!a.createdAt) return;
-          const d = new Date(a.createdAt);
-          const diff = Math.floor((today.getTime() - d.getTime()) / 86400000);
-          if (diff >= 0 && diff < 7) {
-            weekAct[6 - diff]++;
-            if (a.action === 'watched') weekEp[6 - diff]++;
-          }
-          if (a.action === 'watched') {
-            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-            const m = months.find(m => m.key === key);
-            if (m) m.episodes++;
-          }
-        });
         setWeekEpData(weekEp);
         setWeekActData(weekAct);
-        setMonthlyHoursData(months.map(m => ({ label: m.label, hours: Math.round(m.episodes * 45 / 60) })));
+        setMonthlyHoursData(months.map(m => ({ label: m.label, hours: Math.round(m.minutes / 60) })));
       } catch {}
     })();
   }, [loading, user]);

@@ -83,16 +83,18 @@ export async function removeFCMToken(db: Firestore, uid: string) {
 /* ── Handle foreground messages (show toast / badge) ────────── */
 export async function listenForegroundMessages(
   callback: (title: string, body: string) => void
-) {
-  if (typeof window === 'undefined') return;
+): Promise<(() => void) | null> {
+  if (typeof window === 'undefined') return null;
   try {
     const messaging = await getFirebaseMessaging();
-    if (!messaging) return;
+    if (!messaging) return null;
     const { onMessage } = await import('firebase/messaging');
-    onMessage(messaging, (payload) => {
+    return onMessage(messaging, (payload) => {
       const title = payload.notification?.title ?? 'SEC TIME';
       const body  = payload.notification?.body  ?? '';
       callback(title, body);
     });
-  } catch {}
+  } catch {
+    return null;
+  }
 }

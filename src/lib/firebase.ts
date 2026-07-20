@@ -13,8 +13,15 @@
      NEXT_PUBLIC_FIREBASE_VAPID_KEY   (for FCM web push)
    ───────────────────────────────────────────────────────────── */
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
-import { getFirestore,  type Firestore  } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore';
 import { initializeAuth, browserLocalPersistence, getAuth, type Auth } from 'firebase/auth';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -32,9 +39,18 @@ export const firebaseConfigured = Boolean(
   firebaseConfig.appId
 );
 
+/** Cloud Storage requires Blaze, so Spark projects keep uploads opt-in. */
+export const firebaseStorageEnabled = Boolean(
+  firebaseConfigured
+  && firebaseConfig.storageBucket
+  && process.env.NEXT_PUBLIC_FIREBASE_STORAGE_ENABLED === 'true'
+);
+
 let _app:  FirebaseApp | null = null;
 let _db:   Firestore   | null = null;
 let _auth: Auth        | null = null;
+let _storage: FirebaseStorage | null = null;
+let _appCheckStarted = false;
 
 function ensureApp(): FirebaseApp {
   if (!firebaseConfigured) throw new Error('[Firebase] env vars missing — check .env.local');
@@ -42,9 +58,54 @@ function ensureApp(): FirebaseApp {
   return _app;
 }
 
+/** Starts App Check in monitor-ready mode. Enforcement remains a backend
+ * setting and must only be enabled after telemetry confirms token coverage. */
+export async function initializeFirebaseAppCheck(): Promise<void> {
+  if (_appCheckStarted || typeof window === 'undefined' || !firebaseConfigured) return;
+  if (process.env.NEXT_PUBLIC_APPCHECK_ENABLED !== 'true') return;
+  const siteKey = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY;
+  if (!siteKey) return;
+  _appCheckStarted = true;
+  try {
+    if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN) {
+      Object.assign(globalThis, { FIREBASE_APPCHECK_DEBUG_TOKEN: process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN });
+    }
+    const { initializeAppCheck, ReCaptchaEnterpriseProvider } = await import('firebase/app-check');
+    initializeAppCheck(ensureApp(), {
+      provider: new ReCaptchaEnterpriseProvider(siteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch {
+    _appCheckStarted = false;
+  }
+}
+
 export function getDB(): Firestore {
-  if (!_db) _db = getFirestore(ensureApp());
+  if (!_db) {
+    const app = ensureApp();
+    if (typeof window !== 'undefined') {
+      try {
+        _db = initializeFirestore(app, {
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        });
+      } catch {
+        // Hot reload or another Firebase module may have initialized the
+        // instance first. Reuse it instead of creating duplicate caches.
+        _db = getFirestore(app);
+      }
+    } else {
+      _db = getFirestore(app);
+    }
+  }
   return _db;
+}
+
+export function getFirebaseStorage(): FirebaseStorage {
+  if (!firebaseStorageEnabled) {
+    throw new Error('O envio de imagens está temporariamente indisponível.');
+  }
+  if (!_storage) _storage = getStorage(ensureApp());
+  return _storage;
 }
 
 export function getFirebaseAuth(): Auth {

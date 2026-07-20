@@ -1,11 +1,13 @@
 'use client';
 
+import { notificationTemplateStore, renderNotificationTemplate } from './notificationTemplates';
+
 export type Prefs = { genres?: string[]; streams?: string[]; notifications?: string[]; locale?: string; country?: string; notifPrefs?: Record<string, boolean> };
 
 /* ── Notification preference keys ──
    Missing key = enabled (all notifications default ON). `notifPrefs` only
    stores explicit choices, so new categories are opt-out automatically. */
-export const NOTIF_PREF_KEYS = ['mentions', 'likes', 'replies', 'followers', 'premieres', 'episodes'] as const;
+export const NOTIF_PREF_KEYS = ['mentions', 'likes', 'replies', 'followers', 'premieres', 'episodes', 'reminders'] as const;
 export type NotifPrefKey = (typeof NOTIF_PREF_KEYS)[number];
 
 export function isNotifEnabled(prefs: Prefs, key: NotifPrefKey): boolean {
@@ -110,6 +112,11 @@ export const revStore = {
     revStore.set(itemKey, list);
     return list;
   },
+  removeReview(itemKey: string, reviewId: string) {
+    const updated = revStore.get(itemKey).filter(review => review.id !== reviewId);
+    revStore.set(itemKey, updated);
+    return updated;
+  },
   countAll(): number {
     if (typeof window === 'undefined') return 0;
     try {
@@ -194,8 +201,10 @@ export type Profile = {
   bio: string;
   avatarLetter: string;
   avatarGradient: string;
-  avatarImage: string;   // base64 data URL
-  coverImage: string;    // base64 data URL
+  avatarImage: string;   // Firebase Storage URL (legacy base64 may still exist until migration)
+  /** Small public avatar used by feeds, comments and follower lists. */
+  avatarThumbImage?: string;
+  coverImage: string;    // Firebase Storage URL (legacy base64 may still exist until migration)
   social: { instagram: string; twitter: string; letterboxd: string };
   streamings: string[];
   genres: string[];
@@ -213,6 +222,26 @@ export type Profile = {
   proTheme?: ProProfileTheme;
   /** Public monthly emblems. Their final visual taxonomy is still evolving. */
   proBadges?: string[];
+  /** Server-maintained derived values. Clients must never write this map. */
+  counters?: ProfileCounters;
+};
+
+export type ProfileCounters = {
+  followersCount: number;
+  followingCount: number;
+  commentsCount: number;
+  ratingsCount: number;
+  listsCount: number;
+  watchedCount: number;
+};
+
+export const EMPTY_PROFILE_COUNTERS: ProfileCounters = {
+  followersCount: 0,
+  followingCount: 0,
+  commentsCount: 0,
+  ratingsCount: 0,
+  listsCount: 0,
+  watchedCount: 0,
 };
 
 export type ProProfileTheme = {
@@ -242,6 +271,7 @@ const PROFILE_DEFAULT: Profile = {
   avatarLetter: '',
   avatarGradient: 'linear-gradient(135deg,#C069FF,#c030a0)',
   avatarImage: '',
+  avatarThumbImage: '',
   coverImage: '',
   social: { instagram: '', twitter: '', letterboxd: '' },
   streamings: [],
@@ -254,6 +284,7 @@ const PROFILE_DEFAULT: Profile = {
   proMember: false,
   proTheme: DEFAULT_PRO_THEME,
   proBadges: [],
+  counters: EMPTY_PROFILE_COUNTERS,
 };
 
 export const profileStore = {
@@ -484,13 +515,14 @@ export const reactionStore = {
 /* ─── Notification inbox store ─── */
 export type InboxNotif = {
   id: string;
-  type: 'new_episode' | 'like' | 'reply' | 'follow' | 'release' | 'general';
+  type: 'new_episode' | 'like' | 'reply' | 'follow' | 'release' | 'pro_reminder' | 'general';
   title: string;
   body: string;
   time: string;    // ISO date
   read: boolean;
   link?: string;   // optional route to open on tap
   poster?: string; // TMDB poster image URL
+  cloudId?: string; // Firestore app_notifications document id
 };
 
 // Per-user key: sec_notif_inbox_v1_<uid>
@@ -565,6 +597,7 @@ export const notifInboxStore = {
  */
 export function syncProReminderNotifications(uid?: string | null): ProSettings | null {
   if (typeof window === 'undefined' || !uid) return null;
+  if (!isNotifEnabled(prefsStore.get(), 'reminders')) return null;
   const settings = proSettingsStore.get(uid);
   const now = Date.now();
   const soon = now + 3 * 24 * 60 * 60 * 1000;
@@ -576,11 +609,19 @@ export function syncProReminderNotifications(uid?: string | null): ProSettings |
     const due = new Date(`${reminder.remindAt}T12:00:00`).getTime();
     if (reminder.notifiedAt || Number.isNaN(due) || due > soon || due < oldest) return reminder;
 
+    const template = notificationTemplateStore.get().pro_reminder;
+    if (!template.enabled) return reminder;
+    const rendered = renderNotificationTemplate(template, {
+      title: reminder.title,
+      listName: reminder.listName,
+      date: reminder.remindAt,
+      days: Math.max(0, Math.ceil((due - now) / (24 * 60 * 60 * 1000))),
+    });
     notifInboxStore.add({
       id: `pro_reminder_${reminder.id}`,
-      type: 'general',
-      title: reminder.listName,
-      body: `${reminder.title} está chegando na data que você escolheu.`,
+      type: 'pro_reminder',
+      title: rendered.title,
+      body: rendered.body,
       time: new Date().toISOString(),
       read: false,
       poster: reminder.posterPath || undefined,

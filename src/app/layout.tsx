@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { LocaleProvider } from '@/context/LocaleContext';
 import { AppRuntimeProvider } from '@/context/AppRuntimeContext';
 import { AppBootstrap } from '@/components/AppBootstrap';
+import { AppSettingsProvider } from '@/context/AppSettingsContext';
 
 export const metadata: Metadata = {
   title: {
@@ -71,9 +72,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <AppRuntimeProvider>
             <AuthProvider>
-              <LocaleProvider>
-                <AppBootstrap>{children}</AppBootstrap>
-              </LocaleProvider>
+              <AppSettingsProvider>
+                <LocaleProvider>
+                  <AppBootstrap>{children}</AppBootstrap>
+                </LocaleProvider>
+              </AppSettingsProvider>
             </AuthProvider>
           </AppRuntimeProvider>
         </ThemeProvider>

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useTheme } from '@/context/ThemeContext';
+import { useAppSettings } from '@/context/AppSettingsContext';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, Btn, MetaChip, Toast, BottomSheet, Stars } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
@@ -14,7 +15,7 @@ import { AppErrorState } from '@/components/AppStates';
 import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRevStore, dbListStore, dbActivityStore, dbEpWatchedStore } from '@/lib/db';
+import { dbRevStore, dbListStore, dbActivityStore, dbEpWatchedStore, dbRatingSummaryStore, type RatingSummary } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
@@ -37,6 +38,7 @@ type GiphyGif = {
 export default function TitleDetailPage() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { settings: appSettings } = useAppSettings();
   const isDark = theme === 'dark';
   const { user } = useAuth();
   const params = useParams<{ type: string; id: string }>();
@@ -60,6 +62,7 @@ export default function TitleDetailPage() {
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
   const [reviewText, setReviewText] = useState('');
   const [reviewRating, setReviewRating] = useState(0);
   const [showForm, setShowForm] = useState(false);
@@ -81,6 +84,7 @@ export default function TitleDetailPage() {
     const local = revStore.get(itemKey);
     setReviews(local);
     if (!firebaseConfigured) return;
+    dbRatingSummaryStore.get(getDB(), itemKey).then(setRatingSummary).catch(() => {});
     dbRevStore.get(getDB(), itemKey).then(cloud => {
       if (cloud.length > 0) {
         const cloudIds = new Set(cloud.map(r => r.id));
@@ -244,6 +248,7 @@ export default function TitleDetailPage() {
   };
 
   const submitReview = async () => {
+    if (!appSettings.reviewsEnabled) { showToast('As avaliações estão temporariamente desativadas.'); return; }
     if (reviewRating === 0 && !reviewText.trim() && !selectedGif) { showToast(t('addRatingOrComment')); return; }
     const prof         = profileStore.get(user?.uid);
     const displayName  = prof.username || prof.name || user?.displayName || user?.email?.split('@')[0] || 'Você';
@@ -285,9 +290,12 @@ export default function TitleDetailPage() {
     }
   };
 
-  const avgRating = reviews.length > 0
-    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : null;
+  const ratedReviews = reviews.filter((review) => review.rating > 0);
+  const avgRating = ratingSummary?.total
+    ? ratingSummary.average.toFixed(1)
+    : ratedReviews.length
+      ? (ratedReviews.reduce((sum, review) => sum + review.rating, 0) / ratedReviews.length).toFixed(1)
+      : null;
 
   return (
     <Frame>
@@ -624,8 +632,9 @@ export default function TitleDetailPage() {
               <MovieReviewsTab
                 reviews={reviews}
                 avgRating={avgRating}
-                onAddReview={() => setShowForm(true)}
-                onViewComments={() => router.push(`/comments?key=${encodeURIComponent(itemKey)}&title=${encodeURIComponent(title)}&showName=${encodeURIComponent(title)}`)}
+                totalRatings={ratingSummary?.total ?? ratedReviews.length}
+                onAddReview={() => appSettings.reviewsEnabled ? setShowForm(true) : showToast('As avaliações estão temporariamente desativadas.')}
+                onViewComments={() => appSettings.commentsEnabled ? router.push(`/comments?key=${encodeURIComponent(itemKey)}&title=${encodeURIComponent(title)}&showName=${encodeURIComponent(title)}`) : showToast('Os comentários estão temporariamente desativados.')}
                 onLike={toggleLike}
               />
             )}
@@ -840,9 +849,15 @@ export default function TitleDetailPage() {
                   const prof2        = profileStore.get(user.uid);
                   const displayName  = prof2.username || prof2.name || user.displayName || user.email?.split('@')[0] || 'Usuário';
                   await dbActivityStore.add(db, {
-                    uid: user.uid, username: displayName, avatar: displayName[0]?.toUpperCase() || 'U',
-                    photoUrl: user.photoURL || prof2.avatarImage || '',
-                    titleKey: `${isTV ? 'tv' : 'movie'}_${detail.id}`, titleName: title,
+                    uid: user.uid, userId: user.uid,
+                    username: displayName, authorUsername: prof2.username || displayName,
+                    authorName: prof2.name || user.displayName || displayName,
+                    avatar: displayName[0]?.toUpperCase() || 'U',
+                    photoUrl: prof2.avatarThumbImage || user.photoURL || prof2.avatarImage || '',
+                    authorAvatarUrl: prof2.avatarThumbImage || user.photoURL || prof2.avatarImage || '',
+                    titleKey: `${isTV ? 'tv' : 'movie'}_${detail.id}`,
+                    titleId: String(detail.id), titleName: title, titleType: isTV ? 'tv' : 'movie',
+                    titleImageUrl: detail.poster_path ?? null,
                     poster: detail.poster_path ?? null, action, rating: 0, text: '',
                     createdAt: new Date().toISOString(),
                   });
@@ -892,9 +907,10 @@ export default function TitleDetailPage() {
 }
 
 /* ── Movie reviews tab ── */
-function MovieReviewsTab({ reviews, avgRating, onAddReview, onViewComments, onLike }: {
+function MovieReviewsTab({ reviews, avgRating, totalRatings, onAddReview, onViewComments, onLike }: {
   reviews: Review[];
   avgRating: string | null;
+  totalRatings: number;
   onAddReview: () => void;
   onViewComments: () => void;
   onLike: (id: string) => void;
@@ -914,7 +930,6 @@ function MovieReviewsTab({ reviews, avgRating, onAddReview, onViewComments, onLi
     } catch { return dateStr; }
   }
 
-  const ratedReviews = reviews.filter(r => r.rating > 0);
   const sorted = [...reviews].sort((a, b) => {
     if (sort === 'melhores') return b.rating - a.rating;
     if (sort === 'piores')   return a.rating - b.rating;
@@ -939,7 +954,7 @@ function MovieReviewsTab({ reviews, avgRating, onAddReview, onViewComments, onLi
           <div style={{ width: 1, height: 40, background: 'rgba(26,20,0,0.15)' }} />
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1400', fontFamily: "'Area',sans-serif" }}>
-              {t('reviewCount', { count: ratedReviews.length })}
+              {t('reviewCount', { count: totalRatings })}
             </div>
             <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
               {[1,2,3,4,5].map(i => (

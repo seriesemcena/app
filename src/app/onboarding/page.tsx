@@ -59,10 +59,18 @@ export default function OnboardingPage() {
   };
 
   const finish = async () => {
+    const notifOptions = STEPS[2].options;
+    const chosenNotifications = new Set(selected[2]);
     const prefs = {
       streams:       selected[0],
       genres:        selected[1],
       notifications: selected[2],
+      notifPrefs: {
+        // Cinema and streaming share the existing "premieres" category.
+        premieres: chosenNotifications.has(notifOptions[0]) || chosenNotifications.has(notifOptions[1]),
+        episodes: chosenNotifications.has(notifOptions[2]),
+        reminders: chosenNotifications.has(notifOptions[3]),
+      },
     };
     prefsStore.set(prefs);
     if (firebaseConfigured && user) {

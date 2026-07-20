@@ -3,13 +3,12 @@ rules_version = '2';
 // ═══════════════════════════════════════════════════════════════
 // Séries em Cena — Firestore security rules
 //
-// This file is the versioned source of truth. Deploy by pasting in
-// Firebase Console → Firestore Database → Rules (the project has no
-// firebase-tools setup, so the console is the deploy path).
+// This file is the versioned source of truth. It can be deployed with the
+// Firebase CLI configuration in firebase.json or pasted in the console.
 //
 // Design notes:
-// • Follower counts are DERIVED client-side from following_list
-//   queries — there is deliberately no cross-user counter write.
+// • Aggregate counters and mirrored follow relations are maintained only by
+//   trusted Cloud Functions; browser clients cannot forge derived data.
 // • reviews/{titleKey} legacy docs (the old `items` array model)
 //   are frozen read-only; new reviews live in the items/
 //   subcollection where authorUid can be enforced per doc.
@@ -18,12 +17,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Admin ────────────────────────────────────────────────
-    // Moderation account(s): may edit/delete any review, reply or
-    // feed post. Must stay in sync with NEXT_PUBLIC_ADMIN_EMAILS.
-    function isAdmin() {
-      return request.auth != null
-        && request.auth.token.email in ['igorsatierf1998@gmail.com'];
+    function accountIsActive(uid) {
+      return !exists(/databases/$(database)/documents/users/$(uid))
+        || !get(/databases/$(database)/documents/users/$(uid)).data.keys().hasAny(['accountStatus'])
+        || get(/databases/$(database)/documents/users/$(uid)).data.accountStatus == 'active';
+    }
+
+    function activeUser() {
+      return request.auth != null && accountIsActive(request.auth.uid);
     }
 
     // ── Users ────────────────────────────────────────────────
@@ -31,37 +32,68 @@ service cloud.firestore {
     // follower lookups) → any signed-in account may read.
     // Only the owner writes.
     match /users/{uid} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && !request.resource.data.keys().hasAny(['adminAccess', 'accountStatus', 'counters']);
+      allow update: if activeUser()
+                    && request.auth.uid == uid
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                         .hasAny(['adminAccess', 'accountStatus', 'counters']);
+      allow delete: if false;
 
       // Owner-only data (FCM push tokens live here — they must NOT
       // sit on the public doc above).
       match /private/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if activeUser() && request.auth.uid == uid;
+      }
+
+      // Canonical social graph. The owner controls only who they follow.
+      // Cloud Functions mirror this edge under the target's followers path.
+      match /following/{targetUid} {
+        allow read: if request.auth != null;
+        allow create: if activeUser()
+                      && request.auth.uid == uid
+                      && targetUid != uid
+                      && request.resource.data.userId == targetUid
+                      && request.resource.data.keys().hasOnly([
+                        'userId', 'username', 'name', 'avatarImage',
+                        'avatarLetter', 'avatarGradient', 'createdAt'
+                      ]);
+        allow update: if activeUser()
+                      && request.auth.uid == uid
+                      && request.resource.data.userId == targetUid
+                      && resource.data.userId == targetUid;
+        allow delete: if activeUser() && request.auth.uid == uid;
+      }
+
+      match /followers/{followerUid} {
+        allow read: if request.auth != null;
+        allow write: if false;
       }
     }
 
     // ── Reviews ──────────────────────────────────────────────
     match /reviews/{titleKey} {
-      // Legacy array docs: readable history, frozen for writes.
-      allow read:  if true;
-      allow write: if false;
+      // Legacy array documents are frozen. Any exceptional migration or
+      // moderation is executed by the authorized backend, never a client.
+      allow read:   if true;
+      allow create, update, delete: if false;
 
       // One doc per review; authorUid pins it to its creator.
       match /items/{reviewId} {
         allow read:   if true;
-        allow create: if request.auth != null
+        allow create: if activeUser()
                       && request.resource.data.authorUid == request.auth.uid;
-        allow delete: if isAdmin()
-                      || (request.auth != null
-                          && resource.data.authorUid == request.auth.uid);
-        // The author (or an admin) may edit the review; anyone signed in
+        allow delete: if activeUser()
+                      && resource.data.authorUid == request.auth.uid;
+        // The author may edit the review; anyone signed in
         // may ONLY touch likes/replies (and may not reassign authorship).
-        allow update: if request.auth != null
+        allow update: if activeUser()
                       && request.resource.data.authorUid == resource.data.authorUid
                       && (
-                           isAdmin()
-                           || resource.data.authorUid == request.auth.uid
+                           resource.data.authorUid == request.auth.uid
                            || request.resource.data.diff(resource.data)
                                 .affectedKeys()
                                 .hasOnly(['likedBy', 'likes', 'replies'])
@@ -69,16 +101,49 @@ service cloud.firestore {
       }
     }
 
+    // One active rating per user/title. Public screens read only the compact
+    // summary; the per-user docs stay available for authenticated detail UIs.
+    match /ratings/{titleKey} {
+      allow read, write: if false;
+
+      match /userRatings/{uid} {
+        allow read: if request.auth != null;
+        allow create: if activeUser()
+                      && request.auth.uid == uid
+                      && request.resource.data.authorUid == uid
+                      && request.resource.data.rating is int
+                      && request.resource.data.rating >= 1
+                      && request.resource.data.rating <= 10;
+        allow update: if activeUser()
+                      && request.auth.uid == uid
+                      && resource.data.authorUid == uid
+                      && request.resource.data.authorUid == uid
+                      && request.resource.data.rating is int
+                      && request.resource.data.rating >= 1
+                      && request.resource.data.rating <= 10;
+        allow delete: if activeUser() && request.auth.uid == uid;
+      }
+    }
+
+    match /ratingSummaries/{titleKey} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /userStats/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     // ── Activity feed ────────────────────────────────────────
     // Posts carry the author's uid; only that author may create
     // them under their name, and only they may delete.
     match /activity/{id} {
       allow read:   if request.auth != null;
-      allow create: if request.auth != null
+      allow create: if activeUser()
                     && request.resource.data.uid == request.auth.uid;
-      allow delete: if isAdmin()
-                    || (request.auth != null
-                        && resource.data.uid == request.auth.uid);
+      allow delete: if activeUser()
+                    && resource.data.uid == request.auth.uid;
       allow update: if false;
     }
 
@@ -89,14 +154,26 @@ service cloud.firestore {
     match /notifications/{id} {
       allow read:   if request.auth != null
                     && resource.data.recipientId == request.auth.uid;
-      allow create: if request.auth != null
+      allow create: if activeUser()
                     && request.resource.data.recipientId is string;
-      allow update: if request.auth != null
+      allow update: if activeUser()
                     && resource.data.recipientId == request.auth.uid
                     && request.resource.data.diff(resource.data)
                          .affectedKeys().hasOnly(['read']);
-      allow delete: if request.auth != null
+      allow delete: if activeUser()
                     && resource.data.recipientId == request.auth.uid;
+    }
+
+    // Automated content notifications are produced by Cloud Functions.
+    // The client may only read its own documents and mark them as read.
+    match /app_notifications/{id} {
+      allow read: if request.auth != null
+                  && resource.data.recipientId == request.auth.uid;
+      allow create, delete: if false;
+      allow update: if activeUser()
+                    && resource.data.recipientId == request.auth.uid
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly(['read']);
     }
 
     // ── Feed reactions ───────────────────────────────────────
@@ -104,11 +181,11 @@ service cloud.firestore {
     // Each account may only add/change/remove ITS OWN map entry.
     match /reactions/{feedItemId} {
       allow read:   if true;
-      allow create: if request.auth != null
+      allow create: if activeUser()
                     && request.resource.data.keys().hasOnly(['users'])
                     && request.resource.data.users.keys()
                          .hasOnly([request.auth.uid]);
-      allow update: if request.auth != null
+      allow update: if activeUser()
                     && request.resource.data.keys().hasOnly(['users'])
                     && request.resource.data.users.diff(resource.data.users)
                          .affectedKeys().hasOnly([request.auth.uid]);
@@ -122,12 +199,74 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Manual/scheduled jobs created in the admin panel and consumed by the
+    // trusted notification worker. Regular accounts never see this queue.
+    match /notification_jobs/{id} {
+      allow create, read, update, delete: if false;
+    }
+
     // ── Reports (moderation inbox) ───────────────────────────
     // Any signed-in user files reports (comment/profile/problem);
     // only the admin reads and manages them (/admin → Moderação).
     match /reports/{id} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if isAdmin();
+      allow create: if activeUser();
+      allow read, update, delete: if false;
+    }
+
+    // Administrative data is accessible only through the central API. The
+    // Admin SDK bypasses these rules, so the Functions API repeats RBAC.
+    match /adminUsers/{uid} {
+      allow read, write: if false;
+    }
+
+    match /auditLogs/{id} {
+      allow read, write: if false;
+    }
+
+    match /adminRateLimits/{id} {
+      allow read, write: if false;
+    }
+
+    match /adminIdempotency/{id} {
+      allow read, write: if false;
+    }
+
+    match /content_overrides/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /admin_audit_logs/{id} {
+      allow read, write: if false;
+    }
+
+    match /notification_state/{id} {
+      allow read, write: if false;
+    }
+
+    // Materialized views and operational receipts are server-owned.
+    match /rankingMonthly/{month} {
+      allow read, write: if false;
+      match /entries/{uid} {
+        allow read: if request.auth != null;
+        allow write: if false;
+      }
+    }
+
+    match /metrics/{id} {
+      allow read, write: if false;
+    }
+
+    match /metricsDaily/{id} {
+      allow read, write: if false;
+    }
+
+    match /metricsMonthly/{id} {
+      allow read, write: if false;
+    }
+
+    match /systemEvents/{id} {
+      allow read, write: if false;
     }
   }
 }

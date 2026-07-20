@@ -12,8 +12,7 @@ import { revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbActivityStore, dbRevStore, dbNotifStore } from '@/lib/db';
-import { isAdminUser } from '@/lib/admin';
+import { dbActivityStore, dbRevStore, dbNotifStore, type ReviewPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
@@ -43,6 +42,11 @@ function CommentsPageInner() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [sort, setSort]       = useState<SortKey>('recentes');
   const [toast, setToast]     = useState<string | false>(false);
+  const [pageCursor, setPageCursor] = useState<ReviewPageCursor | null>(null);
+  const [hasMoreComments, setHasMoreComments] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const requestGeneration = useRef(0);
 
   /* fixed composer */
   const [composerExpanded, setComposerExpanded] = useState(false);
@@ -71,19 +75,54 @@ function CommentsPageInner() {
   };
 
   useEffect(() => {
-    if (!storageKey) return;
-    const local = revStore.get(storageKey);
+    const generation = ++requestGeneration.current;
+    setPageCursor(null);
+    setHasMoreComments(false);
+    setPageError('');
+    setPageLoading(false);
+    if (!storageKey) { setReviews([]); return; }
+    const local = revStore.get(storageKey).slice(0, 20);
     setReviews(local);
     if (!firebaseConfigured) return;
-    dbRevStore.get(getDB(), storageKey).then(cloud => {
-      if (cloud.length > 0) {
-        const cloudIds = new Set(cloud.map(r => r.id));
-        const merged = [...local.filter(r => !cloudIds.has(r.id)), ...cloud];
-        setReviews(merged);
-        revStore.set(storageKey, merged);
-      }
-    }).catch(() => {});
+    setPageLoading(true);
+    dbRevStore.getPage(getDB(), storageKey).then(page => {
+      if (generation !== requestGeneration.current) return;
+      const cloudIds = new Set(page.items.map(r => r.id));
+      const merged = [...page.items, ...local.filter(r => !cloudIds.has(r.id))].slice(0, 20);
+      setReviews(merged);
+      revStore.set(storageKey, merged);
+      setPageCursor(page.cursor);
+      setHasMoreComments(page.hasMore);
+    }).catch(() => {
+      if (generation === requestGeneration.current) setPageError('Não foi possível atualizar os comentários.');
+    }).finally(() => {
+      if (generation === requestGeneration.current) setPageLoading(false);
+    });
+    return () => { requestGeneration.current += 1; };
   }, [storageKey]);
+
+  const loadMoreComments = async () => {
+    if (!firebaseConfigured || !storageKey || !pageCursor || !hasMoreComments || pageLoading) return;
+    const generation = requestGeneration.current;
+    setPageLoading(true);
+    setPageError('');
+    try {
+      const page = await dbRevStore.getPage(getDB(), storageKey, pageCursor);
+      if (generation !== requestGeneration.current) return;
+      setReviews((current) => {
+        const seen = new Set(current.map((review) => review.id));
+        const merged = [...current, ...page.items.filter((review) => !seen.has(review.id))];
+        revStore.set(storageKey, merged);
+        return merged;
+      });
+      setPageCursor(page.cursor);
+      setHasMoreComments(page.hasMore);
+    } catch {
+      if (generation === requestGeneration.current) setPageError('Não foi possível carregar mais comentários.');
+    } finally {
+      if (generation === requestGeneration.current) setPageLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (composerPanel !== 'gif') return;
@@ -217,12 +256,19 @@ function CommentsPageInner() {
         try {
           await dbActivityStore.add(getDB(), {
             uid: user.uid,
+            userId: user.uid,
             reviewId: newReview.id,
             username: displayName,
+            authorUsername: prof.username || displayName,
+            authorName: prof.name || user.displayName || displayName,
             avatar: avatarLetter,
-            photoUrl: newReview.photoUrl || '',
+            photoUrl: prof.avatarThumbImage || newReview.photoUrl || '',
+            authorAvatarUrl: prof.avatarThumbImage || newReview.photoUrl || '',
             titleKey: storageKey,
+            titleId: storageKey,
             titleName: showName || title,
+            titleType: storageKey.startsWith('ep_') ? 'episode' : storageKey.startsWith('tv_') ? 'tv' : 'movie',
+            titleImageUrl: null,
             poster: null,
             action: 'reviewed',
             rating: 0,
@@ -250,12 +296,34 @@ function CommentsPageInner() {
      so the doc really goes away for every user and device. */
   const deleteComment = async (id: string) => {
     if (!window.confirm('Excluir este comentário?')) return;
+    const target = reviews.find(review => review.id === id);
+    if (firebaseConfigured) {
+      try {
+        const db = getDB();
+        await dbRevStore.remove(db, storageKey, id);
+        if (target) {
+          await dbActivityStore.deleteForReview(db, {
+            reviewId: id,
+            titleKey: storageKey,
+            uid: target.uid,
+            username: target.user,
+            text: target.text,
+            rating: target.rating || 0,
+            createdAt: target.date,
+          });
+        }
+      } catch (error) {
+        console.error('[comments] Falha ao excluir comentário:', error);
+        showToast('Não foi possível excluir o comentário.');
+        return;
+      }
+    }
+
+    // Only update local state after the cloud operation succeeds. A missing
+    // cloud document is valid for comments that exist exclusively on-device.
     const updated = reviews.filter(r => r.id !== id);
     setReviews(updated);
     revStore.set(storageKey, updated);
-    if (firebaseConfigured) {
-      try { await dbRevStore.remove(getDB(), storageKey, id); } catch {}
-    }
     showToast('Comentário excluído.');
   };
 
@@ -381,7 +449,11 @@ function CommentsPageInner() {
             </div>
 
             {/* ── Lista de comentários ── */}
-            {sorted.length === 0 ? (
+            {pageLoading && sorted.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 0' }}>
+                <Txt size={13} color={T.t3}>Carregando comentários…</Txt>
+              </div>
+            ) : sorted.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 0' }}>
                 <Icon name="message" size={40} color={T.t4} />
                 <Txt size={15} weight={700} color={T.t2} style={{ display: 'block', marginTop: 14, marginBottom: 6 }}>{t('comments.empty')}</Txt>
@@ -411,12 +483,31 @@ function CommentsPageInner() {
                     onReplyChange={setReplyText}
                     onSubmitReply={() => submitReply(rev.id)}
                     replyInputRef={replyOpenId === rev.id ? replyInputRef : undefined}
-                    onDelete={(rev.uid && rev.uid === user?.uid) || isAdminUser(user)
+                    onDelete={rev.uid && rev.uid === user?.uid
                       ? () => deleteComment(rev.id)
                       : undefined}
                     onReport={rev.uid !== user?.uid ? () => reportComment(rev) : undefined}
                   />
                 ))}
+                {pageError && (
+                  <div style={{ textAlign: 'center', padding: '4px 16px' }}>
+                    <Txt size={12} color="#FF7378">{pageError}</Txt>
+                  </div>
+                )}
+                {hasMoreComments ? (
+                  <button
+                    type="button"
+                    onClick={loadMoreComments}
+                    disabled={pageLoading}
+                    style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: pageLoading ? 'default' : 'pointer', opacity: pageLoading ? 0.65 : 1 }}
+                  >
+                    {pageLoading ? 'Carregando…' : 'Carregar mais comentários'}
+                  </button>
+                ) : !pageLoading && sorted.length > 0 ? (
+                  <Txt size={11} color={T.t4} style={{ display: 'block', textAlign: 'center', padding: '6px 0' }}>
+                    Não há mais comentários.
+                  </Txt>
+                ) : null}
               </div>
             )}
           </div>
@@ -598,7 +689,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, onToggleReply
   onReplyChange: (v: string) => void;
   onSubmitReply: () => void;
   replyInputRef?: React.RefObject<HTMLInputElement | null>;
-  /** Present for the comment's author and for admins (moderation). */
+  /** Present only for the author. Moderators act through the separate panel. */
   onDelete?: () => void;
   /** Present for everyone except the comment's author. */
   onReport?: () => void;

@@ -1,11 +1,29 @@
-/* ─────────────────────────────────────────────────────────────
-   Release Notifier — checks TMDB for upcoming releases (next
-   TV episode / movie premiere) of titles in the user's lists
-   and fires push notifications when a release is ≤ N days away.
-   ───────────────────────────────────────────────────────────── */
-import { listStore, notifiedStore } from './store';
+/* ───────────────────────────────────────────────────────────
+   Verified release notifier.
 
-/** Notify when release is within this many days (inclusive) */
+   TV: uses TMDB's next_episode_to_air and a configurable lead window.
+   Movies: never treats release_date as a streaming date. It compares
+   country-specific flatrate provider snapshots and only notifies when a
+   provider is newly added after a baseline has already been recorded.
+   ─────────────────────────────────────────────────────────── */
+import {
+  getActiveUser,
+  isNotifEnabled,
+  listStore,
+  notifInboxStore,
+  notifiedStore,
+  prefsStore,
+} from './store';
+import { firebaseConfigured, getDB } from './firebase';
+import { dbNotificationTemplateStore } from './db';
+import { tmdbImg } from './tmdb';
+import {
+  notificationTemplateStore,
+  renderNotificationTemplate,
+  type NotificationTemplates,
+} from './notificationTemplates';
+
+/** Notify when a TV episode is within this many days (inclusive). */
 export const DAYS_THRESHOLD = 3;
 
 interface ListedItem {
@@ -15,20 +33,39 @@ interface ListedItem {
   poster_path?: string | null;
 }
 
+interface Provider {
+  provider_id?: number;
+  provider_name?: string;
+}
+
 interface NotifyResult {
-  /** Number of new notifications fired this run */
   fired: number;
-  /** Number of items checked */
   checked: number;
-  /** Items that have upcoming releases but were already notified */
   skipped: number;
 }
 
-/* ── Send via service worker (works in background) or fallback ── */
-async function fireNotification(title: string, body: string, url = '/'): Promise<void> {
+type CheckOutcome = 'fired' | 'skipped' | 'none';
+type ProviderSnapshots = Record<string, string[]>;
+
+const providerSnapshotKey = (uid: string) => `sec_provider_snapshots_v1_${uid}`;
+
+function getProviderSnapshots(uid: string): ProviderSnapshots {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(localStorage.getItem(providerSnapshotKey(uid)) || '{}'); } catch { return {}; }
+}
+
+function setProviderSnapshot(uid: string, key: string, providerNames: string[]) {
   if (typeof window === 'undefined') return;
-  if (typeof Notification === 'undefined') return;
-  if (Notification.permission !== 'granted') return;
+  try {
+    const all = getProviderSnapshots(uid);
+    all[key] = providerNames;
+    localStorage.setItem(providerSnapshotKey(uid), JSON.stringify(all));
+  } catch {}
+}
+
+async function fireNotification(title: string, body: string, url = '/'): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return false;
+  if (Notification.permission !== 'granted') return false;
 
   try {
     if ('serviceWorker' in navigator) {
@@ -38,22 +75,26 @@ async function fireNotification(title: string, body: string, url = '/'): Promise
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         data: { url },
-        tag: title,
+        tag: `maratonou:${url}:${title}`,
       } as NotificationOptions);
-      return;
+      return true;
     }
   } catch { /* fall through */ }
 
-  try { new Notification(title, { body }); } catch { /* ignore */ }
+  try {
+    new Notification(title, { body });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-/* ── Days between two dates (UTC, ignoring time) ── */
 function daysBetween(target: string): number {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const t = new Date(target);
-  t.setHours(0, 0, 0, 0);
-  return Math.round((t.getTime() - today.getTime()) / 86400000);
+  const [year, month, day] = target.split('-').map(Number);
+  const targetUTC = Date.UTC(year, month - 1, day);
+  const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((targetUTC - todayUTC) / 86400000);
 }
 
 function dayLabel(days: number): string {
@@ -62,8 +103,61 @@ function dayLabel(days: number): string {
   return `em ${days} dias`;
 }
 
-/* ── Check a single TV item ── */
-async function checkTV(item: ListedItem): Promise<'fired' | 'skipped' | 'none'> {
+function normalizeName(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const PLATFORM_ALIASES: Record<string, string[]> = {
+  netflix: ['netflix'],
+  primevideo: ['primevideo', 'amazonprimevideo'],
+  disney: ['disney', 'disneyplus'],
+  hbo: ['hbo', 'hbomax', 'max'],
+  appletv: ['appletv', 'appletvplus'],
+  globoplay: ['globoplay'],
+  paramount: ['paramount', 'paramountplus'],
+  mgm: ['mgm', 'mgmplus', 'mgmamazonchannel'],
+};
+
+function isSelectedProvider(provider: string, selected: string[]): boolean {
+  const normalizedProvider = normalizeName(provider);
+  return selected.some((platform) => {
+    const normalizedSelected = normalizeName(platform);
+    const aliases = Object.values(PLATFORM_ALIASES).find((group) => group.includes(normalizedSelected))
+      ?? [normalizedSelected];
+    return aliases.some((alias) => normalizedProvider === alias || normalizedProvider.includes(alias));
+  });
+}
+
+async function deliver(
+  uid: string,
+  eventKey: string,
+  type: 'new_episode' | 'release',
+  title: string,
+  body: string,
+  link: string,
+  posterPath?: string | null,
+): Promise<void> {
+  notifInboxStore.add({
+    id: eventKey,
+    type,
+    title,
+    body,
+    time: new Date().toISOString(),
+    read: false,
+    link,
+    poster: tmdbImg(posterPath, 'w154') ?? undefined,
+  }, uid);
+  await fireNotification(title, body, link);
+}
+
+async function checkTV(
+  item: ListedItem,
+  uid: string,
+  templates: NotificationTemplates,
+): Promise<CheckOutcome> {
+  const prefs = prefsStore.get();
+  if (!isNotifEnabled(prefs, 'episodes') || !templates.new_episode.enabled) return 'none';
+
   const res = await fetch(`/api/tmdb?endpoint=/tv/${item.id}`);
   if (!res.ok) return 'none';
   const data = await res.json();
@@ -73,69 +167,100 @@ async function checkTV(item: ListedItem): Promise<'fired' | 'skipped' | 'none'> 
   const days = daysBetween(next.air_date);
   if (days < 0 || days > DAYS_THRESHOLD) return 'none';
 
-  const key = `tv-${item.id}-s${next.season_number}e${next.episode_number}`;
-  if (notifiedStore.has(key)) return 'skipped';
+  const eventKey = `tv-${item.id}-s${next.season_number}e${next.episode_number}`;
+  if (notifiedStore.has(eventKey)) return 'skipped';
 
-  const epName = next.name ? ` "${next.name}"` : '';
-  const seasonEp = `T${next.season_number}E${String(next.episode_number).padStart(2, '0')}`;
-  await fireNotification(
-    `📺 Novo episódio de ${item.title}`,
-    `${seasonEp}${epName} estreia ${dayLabel(days)} (${next.air_date})`,
-    `/title/tv/${item.id}`
-  );
-  notifiedStore.mark(key);
+  const rendered = renderNotificationTemplate(templates.new_episode, {
+    title: item.title,
+    season: next.season_number,
+    episode: String(next.episode_number).padStart(2, '0'),
+    episodeName: next.name || '',
+    date: next.air_date,
+    days: dayLabel(days),
+  });
+  await deliver(uid, eventKey, 'new_episode', rendered.title, rendered.body, `/title/tv/${item.id}`, item.poster_path);
+  notifiedStore.mark(eventKey);
   return 'fired';
 }
 
-/* ── Check a single movie item ── */
-async function checkMovie(item: ListedItem): Promise<'fired' | 'skipped' | 'none'> {
-  const res = await fetch(`/api/tmdb?endpoint=/movie/${item.id}`);
+async function checkMovie(
+  item: ListedItem,
+  uid: string,
+  templates: NotificationTemplates,
+): Promise<CheckOutcome> {
+  const prefs = prefsStore.get();
+  const selectedPlatforms = prefs.streams ?? [];
+  if (!isNotifEnabled(prefs, 'premieres') || !templates.streaming_available.enabled) return 'none';
+
+  const region = (prefs.country || 'BR').toUpperCase();
+  const res = await fetch(`/api/tmdb?endpoint=/movie/${item.id}/watch/providers`);
   if (!res.ok) return 'none';
   const data = await res.json();
-  if (!data.release_date) return 'none';
+  const flatrate = (data.results?.[region]?.flatrate ?? []) as Provider[];
+  const current = Array.from(new Set(flatrate.map((provider) => provider.provider_name).filter(Boolean) as string[]));
+  const snapshotId = `movie:${item.id}:${region}`;
+  const snapshots = getProviderSnapshots(uid);
+  const previous = snapshots[snapshotId];
 
-  const days = daysBetween(data.release_date);
-  if (days < 0 || days > DAYS_THRESHOLD) return 'none';
+  // The first successful lookup establishes the truth baseline. It must not
+  // claim that an already-available movie has just arrived.
+  setProviderSnapshot(uid, snapshotId, current);
+  if (!previous) return 'none';
 
-  const key = `movie-${item.id}-${data.release_date}`;
-  if (notifiedStore.has(key)) return 'skipped';
+  const previousNames = new Set(previous.map(normalizeName));
+  const newlyAvailable = current.filter((name) => !previousNames.has(normalizeName(name)));
+  const selectedArrival = newlyAvailable.find((name) => isSelectedProvider(name, selectedPlatforms));
+  if (!selectedArrival) return 'none';
 
-  await fireNotification(
-    `🎬 Estreia próxima: ${item.title}`,
-    `Lançamento ${dayLabel(days)} (${data.release_date})`,
-    `/title/movie/${item.id}`
-  );
-  notifiedStore.mark(key);
+  const providerKey = normalizeName(selectedArrival);
+  const eventKey = `streaming-movie-${item.id}-${region}-${providerKey}`;
+  if (notifiedStore.has(eventKey)) return 'skipped';
+
+  const rendered = renderNotificationTemplate(templates.streaming_available, {
+    title: item.title,
+    platform: selectedArrival,
+    date: new Date().toISOString().slice(0, 10),
+  });
+  await deliver(uid, eventKey, 'release', rendered.title, rendered.body, `/title/movie/${item.id}`, item.poster_path);
+  notifiedStore.mark(eventKey);
   return 'fired';
 }
 
-/* ── Main entry: scan want + watching lists ── */
-export async function checkUpcomingReleases(): Promise<NotifyResult> {
+async function currentTemplates(): Promise<NotificationTemplates> {
+  let templates = notificationTemplateStore.get();
+  if (!firebaseConfigured) return templates;
+  try {
+    templates = await dbNotificationTemplateStore.get(getDB());
+    notificationTemplateStore.set(templates);
+  } catch {}
+  return templates;
+}
+
+/** Scan the signed-in user's lists. Browser permission is optional because
+ * verified events are always added to the in-app inbox as well. */
+export async function checkUpcomingReleases(uid = getActiveUser() ?? ''): Promise<NotifyResult> {
   const result: NotifyResult = { fired: 0, checked: 0, skipped: 0 };
+  if (typeof window === 'undefined' || !uid) return result;
 
-  if (typeof window === 'undefined') return result;
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return result;
-
-  /* Combine "want" and "watching" lists, dedup by id */
+  const templates = await currentTemplates();
   const all = [...listStore.get('want'), ...listStore.get('watching')];
-  const seen = new Set<number>();
-  const items = all.filter((x) => {
-    if (seen.has(x.id)) return false;
-    seen.add(x.id);
+  const seen = new Set<string>();
+  const items = all.filter((item) => {
+    const key = `${item.type}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   }) as ListedItem[];
 
-  /* Sequential to avoid hammering TMDB / our proxy */
   for (const item of items) {
     result.checked += 1;
     try {
       const outcome = item.type === 'tv'
-        ? await checkTV(item)
-        : await checkMovie(item);
-      if (outcome === 'fired')   result.fired   += 1;
+        ? await checkTV(item, uid, templates)
+        : await checkMovie(item, uid, templates);
+      if (outcome === 'fired') result.fired += 1;
       if (outcome === 'skipped') result.skipped += 1;
-    } catch { /* ignore per-item errors */ }
+    } catch { /* one invalid title must not stop the remaining scan */ }
   }
-
   return result;
 }

@@ -8,10 +8,12 @@ import { useAuthContext } from '@/context/AuthContext';
 import { firebaseConfigured, getFirebaseAuth } from '@/lib/firebase';
 import { notifInboxStore, clearUserScopedCache, switchActiveUser } from '@/lib/store';
 import { detectAppEnvironment } from '@/lib/appEnvironment';
+import { useAppSettings } from '@/context/AppSettingsContext';
 
 export function useAuth() {
   const { user, loading, offline } = useAuthContext();
   const router = useRouter();
+  const { settings } = useAppSettings();
 
   /** After login, send new users to onboarding and returning users to home */
   const postLoginRoute = () => {
@@ -79,6 +81,7 @@ export function useAuth() {
   };
 
   const registerWithEmail = async (name: string, email: string, password: string) => {
+    if (!settings.registrationsEnabled) throw Object.assign(new Error('Novos cadastros estão temporariamente desativados.'), { code: 'auth/registrations-disabled' });
     if (!firebaseConfigured) throw new Error('Firebase not configured');
     const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
     const { user: newUser } = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
@@ -106,6 +109,14 @@ export function useAuth() {
   const signOut = async () => {
     if (!firebaseConfigured) return;
     const { signOut: fbSignOut } = await import('firebase/auth');
+    const currentUser = getFirebaseAuth().currentUser;
+    if (currentUser) {
+      try {
+        const { getDB } = await import('@/lib/firebase');
+        const { removeFCMToken } = await import('@/lib/fcm');
+        await removeFCMToken(getDB(), currentUser.uid);
+      } catch {}
+    }
     // Clear legacy unscoped keys so the next user starts with a clean slate
     try { localStorage.removeItem('sec_profile_v1'); } catch {}
     // Drop this account's cached content (lists, reviews, prefs, following…)

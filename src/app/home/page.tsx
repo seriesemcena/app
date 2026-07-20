@@ -159,9 +159,12 @@ export default function HomePage() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  /* ── init: custom slider + upcoming releases ── */
+  /* ── init: custom slider + offline-only notification fallback ── */
   useEffect(() => {
     setCustomSlider(sliderStore.get());
+    // Configured installations use the scheduled Firebase worker. Running
+    // the same detector in Home would produce a second push for one event.
+    if (firebaseConfigured) return;
     const initial = setTimeout(() => { checkUpcomingReleases().catch(() => {}); }, 4000);
     const interval = setInterval(() => { checkUpcomingReleases().catch(() => {}); }, 30 * 60 * 1000);
     return () => { clearTimeout(initial); clearInterval(interval); };

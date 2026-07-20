@@ -69,14 +69,25 @@ export function SocialAuthor({
   );
 }
 
-export function SocialMedia({ src, alt = '' }: { src: string; alt?: string }) {
+export function SocialMedia({
+  src,
+  alt = '',
+  compact = false,
+}: {
+  src: string;
+  alt?: string;
+  compact?: boolean;
+}) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={alt}
       style={{
-        width: '100%', height: 'auto',
+        width: compact ? '61%' : '100%',
+        maxWidth: '100%',
+        height: 'auto',
+        margin: compact ? '0' : undefined,
         borderRadius: 16, display: 'block',
       }}
     />

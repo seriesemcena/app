@@ -112,6 +112,7 @@ export default function AuthPage() {
       'auth/invalid-email':           t('errors.invalidCredentials'),
       'auth/popup-closed-by-user':    t('errors.popupClosed'),
       'auth/cancelled-popup-request': t('errors.popupClosed'),
+      'auth/registrations-disabled':  'Novos cadastros estão temporariamente desativados.',
     };
     return map[code] ?? t('errors.generic');
   };

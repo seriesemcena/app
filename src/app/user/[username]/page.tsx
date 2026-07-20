@@ -9,7 +9,7 @@ import { ImgWithSkeleton } from '@/components/posters';
 import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, type ProReminder, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore, dbActivityStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, dbUserStatsStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, getFollowRelationsPage, type FollowerInfo, type FollowPageCursor } from '@/lib/db';
 import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { usernameFromNameOrEmail } from '@/lib/username';
 import { useTheme } from '@/context/ThemeContext';
@@ -137,6 +137,10 @@ function UserProfileInner() {
   const [myFollowing,    setMyFollowing]    = useState<string[]>([]);
   const [followers,      setFollowers]      = useState<FollowerInfo[]>([]);
   const [targetFollowing, setTargetFollowing] = useState(0);
+  const [followingPeople, setFollowingPeople] = useState<FollowerInfo[]>([]);
+  const [socialCursor, setSocialCursor] = useState<FollowPageCursor | null>(null);
+  const [socialHasMore, setSocialHasMore] = useState(false);
+  const [socialLoading, setSocialLoading] = useState(false);
 
   /* ── My own data (localStorage) ── */
   const myLists: Lists = useMemo(() => (isMe ? {
@@ -196,7 +200,7 @@ function UserProfileInner() {
         }
         // Derive my own follower list the same way (no stored counter)
         const p = { ...local, ...(cloud ?? {}) } as Profile;
-        return getFollowers(getDB(), [p.username, ...(p.aliases ?? []), p.name, slug]);
+        return getFollowers(getDB(), [p.username, ...(p.aliases ?? []), p.name, slug], user.uid);
       }).then(f => { if (f) setFollowers(f); }).catch(() => {});
     }
   }, [isMe, user, loading, slug]);
@@ -238,7 +242,7 @@ function UserProfileInner() {
       setTargetFollowing(result.followingCount);
       // Followers are derived: match the canonical username, any alias, and
       // the display name (legacy follows stored the name, e.g. "Danilo").
-      getFollowers(db, [result.profile.username, ...(result.profile.aliases ?? []), result.profile.name, slug])
+      getFollowers(db, [result.profile.username, ...(result.profile.aliases ?? []), result.profile.name, slug], result.uid)
         .then(f => { if (alive) setFollowers(f); }).catch(() => {});
       try {
         const [watching, want, watched, favorites] = await Promise.all([
@@ -262,6 +266,37 @@ function UserProfileInner() {
     }
     return () => { alive = false; };
   }, [slug, isMe, user, loading]);
+
+  useEffect(() => {
+    if (!socialSheet || !firebaseConfigured) return;
+    const profileUid = isMe ? user?.uid : targetUid;
+    if (!profileUid) return;
+    let alive = true;
+    setSocialLoading(true);
+    setSocialCursor(null);
+    getFollowRelationsPage(getDB(), profileUid, socialSheet).then((page) => {
+      if (!alive) return;
+      if (socialSheet === 'followers' && page.items.length) setFollowers(page.items);
+      if (socialSheet === 'following') setFollowingPeople(page.items);
+      setSocialCursor(page.cursor);
+      setSocialHasMore(page.hasMore);
+    }).finally(() => { if (alive) setSocialLoading(false); });
+    return () => { alive = false; };
+  }, [socialSheet, isMe, user?.uid, targetUid]);
+
+  const loadMoreSocial = async () => {
+    if (!socialSheet || socialLoading || !socialHasMore || !socialCursor) return;
+    const profileUid = isMe ? user?.uid : targetUid;
+    if (!profileUid) return;
+    setSocialLoading(true);
+    try {
+      const page = await getFollowRelationsPage(getDB(), profileUid, socialSheet, socialCursor);
+      if (socialSheet === 'followers') setFollowers((current) => [...current, ...page.items]);
+      else setFollowingPeople((current) => [...current, ...page.items]);
+      setSocialCursor(page.cursor);
+      setSocialHasMore(page.hasMore);
+    } finally { setSocialLoading(false); }
+  };
 
   /* ── Real stats from the watched list (works for any profile) ── */
   const [realStats, setRealStats] = useState<{
@@ -315,11 +350,10 @@ function UserProfileInner() {
       return () => { alive = false; };
     }
 
-    dbActivityStore.getRecent(getDB(), 500)
-      .then((activities) => {
-        const watchedDates = activities
-          .filter((activity) => activity.uid === user.uid && activity.action === 'watched')
-          .map((activity) => activity.createdAt);
+    dbUserStatsStore.get(getDB(), user.uid)
+      .then((aggregate) => {
+        const watchedDates = Object.entries(aggregate.recentDays)
+          .flatMap(([date, value]) => Array.from({ length: value.watched || 0 }, () => date));
         applyDates(watchedDates.length > 0 ? watchedDates : reviewDates);
       })
       .catch(() => applyDates(reviewDates));
@@ -353,12 +387,18 @@ function UserProfileInner() {
         // Drop the canonical entry and any legacy display-name entry
         const current = await dbFollowStore.get(db, user.uid);
         const next = current.filter(u => !targetIdentities.includes(u));
-        await dbFollowStore.set(db, user.uid, next);
+        await dbFollowStore.unfollow(db, user.uid, targetIdentities, uid ?? undefined);
         setMyFollowing(next);
         try { localStorage.setItem('sec_following', JSON.stringify(next)); } catch {}
       } else if (uid) {
         setTargetUid(uid);
-        await dbFollowStore.follow(db, user.uid, canonical);
+        await dbFollowStore.follow(db, user.uid, canonical, uid, {
+          name: targetProfile?.name || canonical,
+          username: targetProfile?.username || canonical,
+          avatarImage: targetProfile?.avatarThumbImage || targetProfile?.avatarImage || '',
+          avatarLetter: targetProfile?.avatarLetter || '',
+          avatarGradient: targetProfile?.avatarGradient || '',
+        });
         const myProf     = profileStore.get(user.uid);
         const myUsername = myProf.username || usernameFromNameOrEmail(myProf.name || user.displayName, user.email);
         const myName     = myProf.name || user.displayName || myUsername;
@@ -382,7 +422,7 @@ function UserProfileInner() {
       if (targetProfile) {
         const fresh = await getFollowers(db, [
           targetProfile.username, ...(targetProfile.aliases ?? []), targetProfile.name, slug,
-        ]);
+        ], uid ?? undefined);
         setFollowers(fresh);
       }
     } catch {
@@ -431,11 +471,21 @@ function UserProfileInner() {
   const proAccent       = isProProfile ? proTheme.accent : T.pink;
   const proThemeCover   = isProProfile ? tmdbImg(proTheme.posterPath, 'w780') : null;
   const profileCover    = isProProfile ? (activeProfile?.coverImage || proThemeCover || '') : '';
-  // Both counts are derived: profile.followers is never written (cross-user
-  // writes are denied) and profile.following drifts out of sync with the list.
-  const followingCount  = isMe ? followingNames.length : targetFollowing;
-  const followersVal    = followers.length;
+  // Aggregated counters are the source of truth after migration. Loaded lists
+  // remain a safe fallback for accounts that have not been backfilled yet.
+  const followingCount  = Math.max(
+    activeProfile?.counters?.followingCount ?? 0,
+    isMe ? followingNames.length : targetFollowing,
+  );
+  const followersVal    = Math.max(activeProfile?.counters?.followersCount ?? 0, followers.length);
   const topPct          = concluidos.length > 0 ? Math.max(1, Math.round(100 / (concluidos.length + 1))) : null;
+  const legacyFollowingPeople: FollowerInfo[] = followingNames.map((name) => ({
+    uid: `legacy:${name}`, username: name, name,
+    avatarImage: '', avatarLetter: name[0]?.toUpperCase() || '?', avatarGradient: '',
+  }));
+  const socialPeople = socialSheet === 'followers'
+    ? followers
+    : (followingPeople.length ? followingPeople : (isMe ? legacyFollowingPeople : []));
 
   const collageSources     = [...favoritos, ...minhaLista];
   const collagePosterItems = collageSources.filter(x => !!x.poster_path).slice(0, 6);
@@ -871,28 +921,13 @@ function UserProfileInner() {
               </div>
 
               <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
-                {socialSheet === 'following' && isMe && followingNames.length > 0 ? (
-                  followingNames.map((name, i) => (
-                    <div key={name}
-                      onClick={() => { setSocialSheet(null); router.push(`/user/${encodeURIComponent(name)}`); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followingNames.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Txt size={16} weight={800} color="#fff">{name[0]?.toUpperCase() || '?'}</Txt>
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <Txt size={14} weight={700} color={T.t1} style={{ display: 'block' }}>{name}</Txt>
-                        <Txt size={12} color={T.t3}>@{name}</Txt>
-                      </div>
-                      <Icon name="chevronR" size={14} color={T.t4} />
-                    </div>
-                  ))
-                ) : socialSheet === 'followers' && followers.length > 0 ? (
-                  followers.map((f, i) => {
+                {socialPeople.length > 0 ? (
+                  socialPeople.map((f, i) => {
                     const label = f.name || f.username || '?';
                     return (
                       <div key={f.uid}
                         onClick={() => { if (!f.username) return; setSocialSheet(null); router.push(`/user/${encodeURIComponent(f.username)}`); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < followers.length - 1 ? `1px solid ${T.border}` : 'none', cursor: f.username ? 'pointer' : 'default' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < socialPeople.length - 1 ? `1px solid ${T.border}` : 'none', cursor: f.username ? 'pointer' : 'default' }}>
                         <div style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', background: f.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           {f.avatarImage
                             /* eslint-disable-next-line @next/next/no-img-element */
@@ -921,6 +956,11 @@ function UserProfileInner() {
                         : t('followingEmptyDetail')}
                     </Txt>
                   </div>
+                )}
+                {socialHasMore && (
+                  <button type="button" onClick={loadMoreSocial} disabled={socialLoading} style={{ display: 'block', margin: '12px auto', padding: '9px 18px', borderRadius: 20, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontWeight: 700, cursor: socialLoading ? 'default' : 'pointer' }}>
+                    {socialLoading ? 'Carregando…' : 'Carregar mais'}
+                  </button>
                 )}
               </div>
               <div style={{ height: 28 }} />

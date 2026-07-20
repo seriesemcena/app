@@ -2,6 +2,10 @@
   "name": "series-em-cena-web",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=22.0.0"
   },
@@ -11,6 +15,15 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "node --test tests/*.test.mjs",
+    "test:security": "node --test tests/security/*.test.mjs",
+    "test:functions": "node --test tests/security/*.test.mjs",
+    "test:rules": "CI=true XDG_CONFIG_HOME=/tmp/maratonou-firebase-config firebase emulators:exec --project demo-maratonou --only firestore \"node --test tests/emulator/*.test.mjs\"",
+    "admin:dev": "npm run dev --workspace @maratonou/admin",
+    "admin:build": "npm run build --workspace @maratonou/admin",
+    "admin:bootstrap": "node scripts/admin/bootstrap-admin.mjs",
+    "firebase:emulators": "firebase emulators:start --project demo-maratonou",
+    "migrate:firebase:dry": "node scripts/migrations/optimize-firestore.mjs",
+    "migrate:firebase:apply": "node scripts/migrations/optimize-firestore.mjs --apply",
     "build:mobile": "PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH NEXT_MOBILE=1 next build --webpack && PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH npx cap copy",
     "cap:sync": "PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH npx cap sync",
     "cap:android": "PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH npx cap open android",
@@ -25,6 +38,7 @@
     "@solar-icons/react": "^1.1.1",
     "@types/jszip": "^3.4.0",
     "firebase": "^12.12.1",
+    "firebase-admin": "^13.10.0",
     "i18next": "^26.3.6",
     "jszip": "^3.10.1",
     "next": "^16.2.10",
@@ -34,12 +48,14 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.3.1",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "^20",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.10",
+    "firebase-tools": "^15.24.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2"

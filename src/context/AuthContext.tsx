@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Holds the Firestore real-time subscription for the current user
     let unsubDoc: (() => void) | null = null;
+    let unsubMessages: (() => void) | null = null;
     let unsubAuth = () => {};
     let active = true;
 
@@ -50,6 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Clean up previous user's real-time subscription
         unsubDoc?.();
         unsubDoc = null;
+        unsubMessages?.();
+        unsubMessages = null;
 
         // Wipe the previous account's cached content BEFORE anything reads
         // or uploads it. Without this the new user inherits the old user's
@@ -88,6 +91,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // 2. Initial pull: Firestore → localStorage (catches up any offline changes)
           try { await syncFromFirestore(db, u.uid, u.email, u.displayName); } catch {}
 
+          // 2b. Register this already-authorized browser for real background
+          // push. Permission is never requested automatically here; the user
+          // remains in control through the notification settings/browser UI.
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              const { initFCM, listenForegroundMessages } = await import('@/lib/fcm');
+              await initFCM(db, u.uid);
+              unsubMessages = await listenForegroundMessages(async (title, body) => {
+                try {
+                  if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.ready;
+                    await registration.showNotification(title, {
+                      body,
+                      icon: '/icons/icon-192.png',
+                      badge: '/icons/icon-192.png',
+                      tag: `maratonou:fcm:${title}`,
+                    } as NotificationOptions);
+                  } else {
+                    new Notification(title, { body });
+                  }
+                } catch {}
+              });
+            } catch (error) {
+              console.warn('[FCM] Push registration deferred', error);
+            }
+          }
+
           // 3. Real-time subscription: whenever Firestore changes (other device or
           //    server-side update), localStorage is refreshed automatically and
           //    components listening to 'maratonou:sync' re-render.
@@ -112,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false;
       unsubAuth();
       unsubDoc?.();
+      unsubMessages?.();
     };
   }, []);
 

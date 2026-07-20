@@ -13,12 +13,22 @@
 import {
   doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, increment, writeBatch,
   collection, addDoc, getDocs, deleteDoc, query, orderBy, limit, onSnapshot, where,
-  deleteField,
-  type Firestore, type Unsubscribe,
+  deleteField, startAfter, runTransaction, serverTimestamp,
+  type Firestore, type Unsubscribe, type QueryDocumentSnapshot, type DocumentData,
+  type QueryConstraint,
 } from 'firebase/firestore';
-import type { Profile, Review, SliderItem, Prefs, ProSettings } from './store';
+import { EMPTY_PROFILE_COUNTERS, type Profile, type Review, type SliderItem, type Prefs, type ProSettings } from './store';
+import type { InboxNotif } from './store';
+import {
+  DEFAULT_NOTIFICATION_TEMPLATES,
+  normalizeNotificationTemplates,
+  type NotificationTemplates,
+} from './notificationTemplates';
 import { profileKey, proSettingsKey } from './store';
 import { slugifyUsername, usernameFromNameOrEmail, usernameCandidate, USERNAME_FALLBACK } from './username';
+import { cachedRequest, invalidateCache } from './cache';
+import { CACHE_TTL, FIRESTORE_PAGE_SIZE, boundedPageSize } from './dataPolicy';
+import { dataCostDebug } from './devDataMetrics';
 
 type ListType = 'want' | 'watching' | 'watched' | 'favorites';
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
@@ -41,30 +51,41 @@ async function setField(db: Firestore, path: string[], field: string, value: unk
 
 const PROFILE_DEFAULT: Profile = {
   name: '', username: '', bio: '',
-  avatarLetter: '', avatarGradient: '', avatarImage: '', coverImage: '',
+  avatarLetter: '', avatarGradient: '', avatarImage: '', avatarThumbImage: '', coverImage: '',
   social: { instagram: '', twitter: '', letterboxd: '' },
   streamings: [], genres: [],
   followers: 0, following: 0,
   proMember: false,
   proBadges: [],
+  counters: EMPTY_PROFILE_COUNTERS,
 };
 
 export const dbProfileStore = {
   async getOptional(db: Firestore, uid: string): Promise<Profile | null> {
-    try {
-      const snap = await getDoc(doc(db, 'users', uid));
-      const profile = snap.data()?.profile;
-      return profile && typeof profile === 'object'
-        ? { ...PROFILE_DEFAULT, ...profile } as Profile
-        : null;
-    } catch { return null; }
+    return cachedRequest(`profile:${uid}`, CACHE_TTL.publicProfile, async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid));
+        dataCostDebug.query('profile:get', snap.exists() ? 1 : 0);
+        const data = snap.data();
+        const profile = data?.profile;
+        return profile && typeof profile === 'object'
+          ? {
+              ...PROFILE_DEFAULT,
+              ...profile,
+              counters: { ...EMPTY_PROFILE_COUNTERS, ...(data?.counters ?? {}) },
+            } as Profile
+          : null;
+      } catch { return null; }
+    }, { staleIfError: true });
   },
   async get(db: Firestore, uid: string): Promise<Profile> {
     return (await dbProfileStore.getOptional(db, uid)) ?? PROFILE_DEFAULT;
   },
   async set(db: Firestore, uid: string, p: Partial<Profile>) {
     const current = (await dbProfileStore.getOptional(db, uid)) ?? PROFILE_DEFAULT;
-    await setField(db, ['users', uid], 'profile', { ...current, ...p });
+    const { counters: _derivedCounters, ...safeProfile } = { ...current, ...p };
+    await setField(db, ['users', uid], 'profile', safeProfile);
+    invalidateCache(`profile:${uid}`);
   },
 };
 
@@ -115,10 +136,16 @@ export async function getUserByUsername(
 ): Promise<{ uid: string; profile: Profile; followingCount: number } | null> {
   const build = (d: { id: string; data: () => any }) => ({
     uid: d.id,
-    profile: { ...PROFILE_DEFAULT, ...(d.data()?.profile ?? {}) } as Profile,
-    // following_list is the source of truth — profile.following drifts out
-    // of sync (accounts exist with 3 entries but a stored count of 0).
-    followingCount: (d.data()?.following_list ?? []).length as number,
+    profile: {
+      ...PROFILE_DEFAULT,
+      ...(d.data()?.profile ?? {}),
+      counters: { ...EMPTY_PROFILE_COUNTERS, ...(d.data()?.counters ?? {}) },
+    } as Profile,
+    followingCount: Number(
+      d.data()?.counters?.followingCount
+      ?? (d.data()?.following_list ?? []).length
+      ?? 0,
+    ),
   });
   const tryQuery = async (field: string, op: '==' | 'array-contains', value: string) => {
     try {
@@ -259,22 +286,90 @@ export const dbListStore = {
 // ever touch the subcollection.
 
 const revCol = (db: Firestore, titleKey: string) => collection(db, 'reviews', titleKey, 'items');
+const reviewIsVisible = (review: Review) => !(review as Review & { moderation?: { hidden?: boolean } }).moderation?.hidden;
+
+export type ReviewPageCursor =
+  | { source: 'firestore'; document: QueryDocumentSnapshot<DocumentData> }
+  | { source: 'legacy'; offset: number; items: Review[] };
+
+export type FirestorePage<T, Cursor> = {
+  items: T[];
+  cursor: Cursor | null;
+  hasMore: boolean;
+};
 
 /** Firestore rejects `undefined` values — strip them via JSON round-trip. */
 const stripUndefined = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 export const dbRevStore = {
+  async getPage(
+    db: Firestore,
+    titleKey: string,
+    cursor: ReviewPageCursor | null = null,
+    requestedSize = FIRESTORE_PAGE_SIZE,
+  ): Promise<FirestorePage<Review, ReviewPageCursor>> {
+    const pageSize = boundedPageSize(requestedSize);
+
+    // Legacy documents keep their already-read array in the cursor. This is
+    // intentionally a compatibility path: it avoids downloading the same
+    // oversized document for every page until the migration is executed.
+    if (cursor?.source === 'legacy') {
+      const items = cursor.items.slice(cursor.offset, cursor.offset + pageSize);
+      const nextOffset = cursor.offset + items.length;
+      return {
+        items,
+        cursor: items.length ? { ...cursor, offset: nextOffset } : null,
+        hasMore: nextOffset < cursor.items.length,
+      };
+    }
+
+    try {
+      const constraints: QueryConstraint[] = [orderBy('date', 'desc')];
+      if (cursor?.source === 'firestore') constraints.push(startAfter(cursor.document));
+      constraints.push(limit(pageSize));
+      const snap = await getDocs(query(revCol(db, titleKey), ...constraints));
+      dataCostDebug.query('reviews:page', snap.size);
+      if (!snap.empty) {
+        return {
+          items: snap.docs.map((entry) => entry.data() as Review).filter(reviewIsVisible),
+          cursor: { source: 'firestore', document: snap.docs[snap.docs.length - 1] },
+          hasMore: snap.size === pageSize,
+        };
+      }
+
+      // Only the first page may fall back to the read-only array model.
+      if (!cursor) {
+        const legacySnap = await getDoc(doc(db, 'reviews', titleKey));
+        dataCostDebug.query('reviews:legacy-fallback', legacySnap.exists() ? 1 : 0);
+        const legacy = ((legacySnap.data()?.items ?? []) as Review[])
+          .filter(reviewIsVisible)
+          .slice()
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const items = legacy.slice(0, pageSize);
+        return {
+          items,
+          cursor: items.length ? { source: 'legacy', offset: items.length, items: legacy } : null,
+          hasMore: legacy.length > items.length,
+        };
+      }
+    } catch (error) {
+      if (!cursor) {
+        const legacy = (await getField<Review[]>(db, ['reviews', titleKey], 'items', [])).filter(reviewIsVisible);
+        const sorted = legacy.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const items = sorted.slice(0, pageSize);
+        return {
+          items,
+          cursor: items.length ? { source: 'legacy', offset: items.length, items: sorted } : null,
+          hasMore: sorted.length > items.length,
+        };
+      }
+      throw error;
+    }
+    return { items: [], cursor: null, hasMore: false };
+  },
+
   async get(db: Firestore, titleKey: string): Promise<Review[]> {
-    // Each source fails independently: if the console still has the old rules
-    // (no subcollection match → deny), legacy comments must keep rendering.
-    const [subSnap, legacy] = await Promise.all([
-      getDocs(revCol(db, titleKey)).catch(() => null),
-      getField<Review[]>(db, ['reviews', titleKey], 'items', []),
-    ]);
-    const subs = subSnap ? subSnap.docs.map(d => d.data() as Review) : [];
-    const seen = new Set(subs.map(r => r.id));
-    return [...subs, ...legacy.filter(r => !seen.has(r.id))]
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return (await dbRevStore.getPage(db, titleKey)).items;
   },
 
   /** `review.uid` must be the signed-in user's uid — the rules verify it. */
@@ -284,12 +379,43 @@ export const dbRevStore = {
       doc(revCol(db, titleKey), review.id),
       stripUndefined({ ...review, authorUid: review.uid }),
     );
+    if (review.rating > 0) {
+      await dbRatingStore.set(db, titleKey, review.uid, review.rating, review.id);
+    }
   },
 
-  /** Rules only let the author delete. Legacy array items are frozen; deleting
-      them is a silent no-op (the subcollection doc never existed). */
-  async remove(db: Firestore, titleKey: string, reviewId: string): Promise<void> {
-    await deleteDoc(doc(revCol(db, titleKey), reviewId));
+  /** Remove a review from the current per-document model or from the legacy
+      array model. Legacy documents must be migrated before client deletion;
+      administrative moderation goes through the central API.
+      Returning the source lets callers distinguish a real deletion from an
+      already-missing/local-only review. Firestore errors intentionally bubble
+      up so the UI never reports a false success. */
+  async remove(
+    db: Firestore,
+    titleKey: string,
+    reviewId: string,
+  ): Promise<'item' | 'legacy' | 'missing'> {
+    const itemRef   = doc(revCol(db, titleKey), reviewId);
+    const legacyRef = doc(db, 'reviews', titleKey);
+    const itemSnap  = await getDoc(itemRef);
+
+    if (itemSnap.exists()) {
+      const item = itemSnap.data() as Review & { authorUid?: string };
+      await deleteDoc(itemRef);
+      if (item.rating > 0 && item.authorUid) {
+        await dbRatingStore.removeIfSource(db, titleKey, item.authorUid, reviewId);
+      }
+      return 'item';
+    }
+
+    const legacySnap  = await getDoc(legacyRef);
+    const legacyItems = (legacySnap.data()?.items ?? []) as Review[];
+    const updated     = legacyItems.filter(review => review.id !== reviewId);
+
+    if (updated.length === legacyItems.length) return 'missing';
+
+    await updateDoc(legacyRef, { items: stripUndefined(updated) });
+    return 'legacy';
   },
 
   /** Append a reply to a review (possibly someone else's — the rules allow
@@ -299,11 +425,8 @@ export const dbRevStore = {
     reply: NonNullable<Review['replies']>[number],
   ): Promise<boolean> {
     try {
-      const ref  = doc(revCol(db, titleKey), reviewId);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) return false;
-      const current = (snap.data() as Review).replies || [];
-      await updateDoc(ref, { replies: stripUndefined([...current, reply]) });
+      const ref = doc(revCol(db, titleKey), reviewId);
+      await updateDoc(ref, { replies: arrayUnion(stripUndefined(reply)) });
       return true;
     } catch { return false; }
   },
@@ -322,6 +445,68 @@ export const dbRevStore = {
       await updateDoc(ref, { likedBy, likes: likedBy.length });
       return dbRevStore.get(db, titleKey);
     } catch { return null; }
+  },
+};
+
+// ── One active rating per user/title + aggregate summary ─────
+
+export type RatingSummary = {
+  titleId: string;
+  average: number;
+  total: number;
+  sum: number;
+  distribution: Record<string, number>;
+  updatedAt?: unknown;
+};
+
+const EMPTY_RATING_SUMMARY = (titleKey: string): RatingSummary => ({
+  titleId: titleKey,
+  average: 0,
+  total: 0,
+  sum: 0,
+  distribution: {},
+});
+
+const ratingRef = (db: Firestore, titleKey: string, uid: string) =>
+  doc(db, 'ratings', titleKey, 'userRatings', uid);
+
+export const dbRatingStore = {
+  async set(db: Firestore, titleKey: string, uid: string, rawRating: number, sourceReviewId?: string) {
+    if (!uid) return;
+    const rating = Math.max(1, Math.min(10, Math.round(rawRating)));
+    const ref = ratingRef(db, titleKey, uid);
+    await runTransaction(db, async (transaction) => {
+      const current = await transaction.get(ref);
+      transaction.set(ref, stripUndefined({
+        titleId: titleKey,
+        authorUid: uid,
+        rating,
+        sourceReviewId,
+        updatedAt: serverTimestamp(),
+        ...(!current.exists() ? { createdAt: serverTimestamp() } : {}),
+      }), { merge: true });
+    });
+    invalidateCache(`rating-summary:${titleKey}`);
+  },
+  async removeIfSource(db: Firestore, titleKey: string, uid: string, sourceReviewId: string) {
+    const ref = ratingRef(db, titleKey, uid);
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      if (snap.exists() && snap.data()?.sourceReviewId === sourceReviewId) transaction.delete(ref);
+    });
+    invalidateCache(`rating-summary:${titleKey}`);
+  },
+};
+
+export const dbRatingSummaryStore = {
+  async get(db: Firestore, titleKey: string): Promise<RatingSummary> {
+    return cachedRequest(`rating-summary:${titleKey}`, CACHE_TTL.ratingSummary, async () => {
+      const snap = await getDoc(doc(db, 'ratingSummaries', titleKey));
+      dataCostDebug.query('rating-summary:get', snap.exists() ? 1 : 0);
+      return snap.exists()
+        ? { ...EMPTY_RATING_SUMMARY(titleKey), ...snap.data() } as RatingSummary
+        : EMPTY_RATING_SUMMARY(titleKey);
+    }, { staleIfError: true });
   },
 };
 
@@ -347,17 +532,66 @@ export const dbSliderStore = {
   },
 };
 
+// ── Notification templates (admin / shared config) ───────────────────────
+
+export const dbNotificationTemplateStore = {
+  async get(db: Firestore): Promise<NotificationTemplates> {
+    const value = await getField<NotificationTemplates>(
+      db,
+      ['config', 'notification_templates'],
+      'templates',
+      DEFAULT_NOTIFICATION_TEMPLATES,
+    );
+    return normalizeNotificationTemplates(value);
+  },
+  async set(db: Firestore, templates: NotificationTemplates) {
+    await setDoc(
+      doc(db, 'config', 'notification_templates'),
+      { templates: normalizeNotificationTemplates(templates), updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
+  },
+};
+
+export type NotificationJob = {
+  title: string;
+  body: string;
+  target: 'all' | 'vip' | 'free';
+  link?: string;
+  scheduledAt: string;
+  status: 'pending';
+  createdAt: string;
+};
+
+export const dbNotificationJobStore = {
+  async enqueue(db: Firestore, job: Omit<NotificationJob, 'status' | 'createdAt'>): Promise<string> {
+    const created = await addDoc(collection(db, 'notification_jobs'), {
+      ...job,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    } satisfies NotificationJob);
+    return created.id;
+  },
+};
+
 // ── Activity feed (list actions + reviews visible to all) ────
 // Firestore: activity/{auto-id}  ordered by createdAt desc
 
 export type ActivityDoc = {
   uid:       string;
+  userId?:   string;
   reviewId?: string;       // links feed item to its exact review/replies
   username:  string;
+  authorName?: string;
+  authorUsername?: string;
   avatar:    string;
   photoUrl:  string;
+  authorAvatarUrl?: string;
   titleKey:  string;       // e.g. "tv_1396"
+  titleId?:  string;
   titleName: string;
+  titleType?: 'movie' | 'tv' | 'episode';
+  titleImageUrl?: string | null;
   poster:    string | null;
   action:    'watched' | 'watching' | 'want' | 'reviewed';
   rating:    number;       // 0 if not a review
@@ -367,21 +601,120 @@ export type ActivityDoc = {
   createdAt: string;       // ISO string
 };
 
+export type ActivityPageCursor = QueryDocumentSnapshot<DocumentData>;
+
+export type ReviewActivityTarget = {
+  docId?: string;
+  reviewId?: string;
+  titleKey: string;
+  uid?: string;
+  username: string;
+  text: string;
+  rating: number;
+  createdAt: string;
+};
+
 export const dbActivityStore = {
   async add(db: Firestore, item: ActivityDoc): Promise<void> {
     try { await addDoc(collection(db, 'activity'), item); } catch {}
   },
 
-  async getRecent(db: Firestore, limitN = 60): Promise<(ActivityDoc & { docId: string })[]> {
+  async getPage(
+    db: Firestore,
+    cursor: ActivityPageCursor | null = null,
+    requestedSize = FIRESTORE_PAGE_SIZE,
+  ): Promise<FirestorePage<ActivityDoc & { docId: string }, ActivityPageCursor>> {
+    const pageSize = boundedPageSize(requestedSize);
     try {
-      const q    = query(collection(db, 'activity'), orderBy('createdAt', 'desc'), limit(limitN));
+      const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(pageSize));
+      const q = query(collection(db, 'activity'), ...constraints);
       const snap = await getDocs(q);
-      return snap.docs.map((d) => ({ docId: d.id, ...d.data() as ActivityDoc }));
+      dataCostDebug.query('activity:page', snap.size);
+      return {
+        items: snap.docs.map((d) => ({ docId: d.id, ...d.data() as ActivityDoc })),
+        cursor: snap.empty ? null : snap.docs[snap.docs.length - 1],
+        hasMore: snap.size === pageSize,
+      };
+    } catch { return { items: [], cursor: null, hasMore: false }; }
+  },
+
+  async getRecent(db: Firestore, limitN = FIRESTORE_PAGE_SIZE): Promise<(ActivityDoc & { docId: string })[]> {
+    return (await dbActivityStore.getPage(db, null, limitN)).items;
+  },
+
+  async getForUser(
+    db: Firestore,
+    uid: string,
+    requestedSize = FIRESTORE_PAGE_SIZE,
+  ): Promise<(ActivityDoc & { docId: string })[]> {
+    const pageSize = boundedPageSize(requestedSize);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'activity'),
+        where('uid', '==', uid),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize),
+      ));
+      dataCostDebug.query('activity:user-page', snap.size);
+      return snap.docs.map((entry) => ({ docId: entry.id, ...entry.data() as ActivityDoc }));
     } catch { return []; }
   },
 
   async delete(db: Firestore, docId: string): Promise<void> {
-    try { await deleteDoc(doc(db, 'activity', docId)); } catch {}
+    // Do not swallow permission/network errors: callers must only remove the
+    // card from the UI after Firestore confirms the deletion.
+    await deleteDoc(doc(db, 'activity', docId));
+  },
+
+  /** Delete every activity document that represents one review. Old activity
+      documents predate reviewId, so the closest author/content/date match is
+      also removed. This prevents a deleted review from being rebuilt in the
+      feed after a reload. */
+  async deleteForReview(db: Firestore, target: ReviewActivityTarget): Promise<number> {
+    const ids = new Set<string>();
+    if (target.docId) ids.add(target.docId);
+    if (target.reviewId) {
+      const exact = await getDocs(query(
+        collection(db, 'activity'),
+        where('reviewId', '==', target.reviewId),
+        limit(FIRESTORE_PAGE_SIZE),
+      ));
+      dataCostDebug.query('activity:delete-review', exact.size);
+      exact.docs.forEach((entry) => {
+        if (entry.data()?.titleKey === target.titleKey) ids.add(entry.id);
+      });
+    }
+
+    // Bounded compatibility lookup for old activity docs without reviewId.
+    if (ids.size === 0 && target.uid) {
+      const legacySnap = await getDocs(query(
+        collection(db, 'activity'),
+        where('uid', '==', target.uid),
+        where('titleKey', '==', target.titleKey),
+        limit(FIRESTORE_PAGE_SIZE),
+      ));
+      dataCostDebug.query('activity:delete-legacy', legacySnap.size);
+      const legacyMatches = legacySnap.docs
+        .map((entry) => ({ docId: entry.id, ...entry.data() as ActivityDoc }))
+        .filter((activity) => !activity.reviewId
+          && activity.action === 'reviewed'
+          && activity.text === target.text
+          && activity.rating === target.rating)
+        .sort((a, b) => {
+          const targetTime = new Date(target.createdAt).getTime();
+          return Math.abs(new Date(a.createdAt).getTime() - targetTime)
+            - Math.abs(new Date(b.createdAt).getTime() - targetTime);
+        });
+      if (legacyMatches[0]) ids.add(legacyMatches[0].docId);
+    }
+    if (ids.size === 0) return 0;
+
+    const batch = writeBatch(db);
+    ids.forEach(id => batch.delete(doc(db, 'activity', id)));
+    await batch.commit();
+    return ids.size;
   },
 };
 
@@ -419,9 +752,13 @@ export const dbReportStore = {
   },
 
   /** Admin only (rules) — newest first. */
-  async list(db: Firestore, limitN = 100): Promise<(ReportDoc & { docId: string })[]> {
+  async list(db: Firestore, limitN = FIRESTORE_PAGE_SIZE): Promise<(ReportDoc & { docId: string })[]> {
     try {
-      const q    = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(limitN));
+      const q = query(
+        collection(db, 'reports'),
+        orderBy('createdAt', 'desc'),
+        limit(boundedPageSize(limitN, 50)),
+      );
       const snap = await getDocs(q);
       return snap.docs.map(d => ({ docId: d.id, ...d.data() as ReportDoc }));
     } catch { return []; }
@@ -497,6 +834,7 @@ const LIST_KEY  = 'sec_lists_v1';
 const PREFS_KEY = 'sec_prefs';
 
 export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
+  const stopUserMetric = dataCostDebug.listenerStart('users:current');
   const unsubscribeUser = onSnapshot(doc(db, 'users', uid), (snap) => {
     if (typeof window === 'undefined' || !snap.exists()) return;
     const data = snap.data();
@@ -544,6 +882,7 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
     window.dispatchEvent(new Event('maratonou:sync'));
   });
 
+  const stopProMetric = dataCostDebug.listenerStart('users:pro-settings');
   const unsubscribePro = onSnapshot(doc(db, 'users', uid, 'private', 'pro_settings'), (snap) => {
     if (typeof window === 'undefined' || !snap.exists()) return;
     const value = snap.data()?.value;
@@ -552,7 +891,12 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
     window.dispatchEvent(new Event('maratonou:pro'));
   });
 
-  return () => { unsubscribeUser(); unsubscribePro(); };
+  return () => {
+    unsubscribeUser();
+    unsubscribePro();
+    stopUserMetric();
+    stopProMetric();
+  };
 }
 
 // ── Episode watched ──────────────────────────────────────────
@@ -572,43 +916,101 @@ export const dbFollowStore = {
   async set(db: Firestore, uid: string, list: string[]): Promise<void> {
     await setField(db, ['users', uid], 'following_list', list);
   },
-  /**
-   * Follow writes ONLY to the follower's own document — Firestore rules
-   * allow owner writes only, so a `profile.followers` counter on the target
-   * can never be maintained from the client (it silently failed and left
-   * every follower count at 0). The follower count is derived instead, via
-   * getFollowers(). `targetUsername` must be the target's *canonical*
-   * username, otherwise nothing can match it later.
-   */
-  async follow(db: Firestore, followerUid: string, targetUsername: string): Promise<void> {
+  /** The client writes its own following relation. A trusted Cloud Function
+      mirrors it to the target's followers subcollection and maintains both
+      aggregate counters. The legacy array remains during the migration. */
+  async follow(
+    db: Firestore,
+    followerUid: string,
+    targetUsername: string,
+    targetUid?: string,
+    targetPublic: Partial<FollowerInfo> = {},
+  ): Promise<void> {
+    if (targetUid && targetUid === followerUid) throw new Error('Você não pode seguir a si mesmo.');
     const followerRef = doc(db, 'users', followerUid);
     const snap = await getDoc(followerRef);
     const currentList: string[] = snap.data()?.following_list ?? [];
-    if (currentList.includes(targetUsername)) return;
-    const nextList = [...currentList, targetUsername];
-    await updateDoc(followerRef, {
-      following_list: nextList,
-      'profile.following': nextList.length,
-    });
+    const nextList = currentList.includes(targetUsername) ? currentList : [...currentList, targetUsername];
+    const batch = writeBatch(db);
+    batch.update(followerRef, { following_list: nextList });
+    if (targetUid) {
+      batch.set(doc(db, 'users', followerUid, 'following', targetUid), stripUndefined({
+        userId: targetUid,
+        username: targetPublic.username || targetUsername,
+        name: targetPublic.name || '',
+        avatarImage: targetPublic.avatarThumbImage || targetPublic.avatarImage || '',
+        avatarLetter: targetPublic.avatarLetter || '',
+        avatarGradient: targetPublic.avatarGradient || '',
+        createdAt: serverTimestamp(),
+      }));
+    }
+    await batch.commit();
   },
-  async unfollow(db: Firestore, followerUid: string, targetUsername: string): Promise<void> {
+  async unfollow(db: Firestore, followerUid: string, targetUsernames: string | string[], targetUid?: string): Promise<void> {
     const followerRef = doc(db, 'users', followerUid);
     const snap = await getDoc(followerRef);
     const currentList: string[] = snap.data()?.following_list ?? [];
     // Drop the canonical username and any legacy display-name entry
-    const nextList = currentList.filter(u => u !== targetUsername);
-    if (nextList.length === currentList.length) return; // wasn't following
-    await updateDoc(followerRef, {
-      following_list: nextList,
-      'profile.following': nextList.length,
-    });
+    const identities = new Set(Array.isArray(targetUsernames) ? targetUsernames : [targetUsernames]);
+    const nextList = currentList.filter(u => !identities.has(u));
+    const batch = writeBatch(db);
+    let changed = false;
+    if (nextList.length !== currentList.length) {
+      batch.update(followerRef, { following_list: nextList });
+      changed = true;
+    }
+    if (targetUid) {
+      batch.delete(doc(db, 'users', followerUid, 'following', targetUid));
+      changed = true;
+    }
+    if (!changed) return;
+    await batch.commit();
   },
 };
 
 export type FollowerInfo = {
   uid: string; username: string; name: string;
-  avatarImage: string; avatarLetter: string; avatarGradient: string;
+  avatarImage: string; avatarThumbImage?: string; avatarLetter: string; avatarGradient: string;
 };
+
+export type FollowPageCursor = QueryDocumentSnapshot<DocumentData>;
+
+function relationInfo(entry: QueryDocumentSnapshot<DocumentData>): FollowerInfo {
+  const data = entry.data();
+  return {
+    uid: String(data.userId || entry.id),
+    username: String(data.username || ''),
+    name: String(data.name || ''),
+    avatarImage: String(data.avatarImage || ''),
+    avatarThumbImage: String(data.avatarThumbImage || data.avatarImage || ''),
+    avatarLetter: String(data.avatarLetter || ''),
+    avatarGradient: String(data.avatarGradient || ''),
+  };
+}
+
+export async function getFollowRelationsPage(
+  db: Firestore,
+  uid: string,
+  kind: 'followers' | 'following',
+  cursor: FollowPageCursor | null = null,
+  requestedSize = FIRESTORE_PAGE_SIZE,
+): Promise<FirestorePage<FollowerInfo, FollowPageCursor>> {
+  const pageSize = boundedPageSize(requestedSize);
+  const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
+  if (cursor) constraints.push(startAfter(cursor));
+  constraints.push(limit(pageSize));
+  try {
+    const snap = await getDocs(query(collection(db, 'users', uid, kind), ...constraints));
+    dataCostDebug.query(`follow:${kind}:page`, snap.size);
+    return {
+      items: snap.docs.map(relationInfo),
+      cursor: snap.empty ? null : snap.docs[snap.docs.length - 1],
+      hasMore: snap.size === pageSize,
+    };
+  } catch {
+    return { items: [], cursor: null, hasMore: false };
+  }
+}
 
 /**
  * Everyone whose following_list contains any of `identities`.
@@ -618,21 +1020,26 @@ export type FollowerInfo = {
  * display name, e.g. "Danilo" instead of "danilo"), so matching only the
  * canonical username would miss them.
  */
-export async function getFollowers(db: Firestore, identities: string[]): Promise<FollowerInfo[]> {
+export async function getFollowers(db: Firestore, identities: string[], targetUid?: string): Promise<FollowerInfo[]> {
+  if (targetUid) {
+    const page = await getFollowRelationsPage(db, targetUid, 'followers');
+    if (page.items.length) return page.items;
+  }
   const wanted = Array.from(new Set(identities.filter(Boolean)));
   const seen = new Map<string, FollowerInfo>();
   await Promise.all(wanted.map(async (identity) => {
     try {
       const snap = await getDocs(
-        query(collection(db, 'users'), where('following_list', 'array-contains', identity), limit(50))
+        query(collection(db, 'users'), where('following_list', 'array-contains', identity), limit(FIRESTORE_PAGE_SIZE))
       );
+      dataCostDebug.query('follow:legacy-followers', snap.size);
       snap.forEach(d => {
         if (seen.has(d.id)) return;
         const p = d.data()?.profile ?? {};
         seen.set(d.id, {
           uid: d.id,
           username: p.username || '', name: p.name || '',
-          avatarImage: p.avatarImage || '', avatarLetter: p.avatarLetter || '',
+          avatarImage: p.avatarThumbImage || p.avatarImage || '', avatarThumbImage: p.avatarThumbImage || '', avatarLetter: p.avatarLetter || '',
           avatarGradient: p.avatarGradient || '',
         });
       });
@@ -640,6 +1047,82 @@ export async function getFollowers(db: Firestore, identities: string[]): Promise
   }));
   return Array.from(seen.values());
 }
+
+// ── Monthly ranking (materialized by Cloud Functions) ───────
+
+export type MonthlyRankingEntry = {
+  uid: string;
+  name: string;
+  username: string;
+  avatarGradient: string;
+  avatarUrl: string;
+  watchedCount: number;
+  reviewsCount: number;
+  watchedMinutes: number;
+  score: number;
+  updatedAt?: unknown;
+};
+
+export function rankingMonthKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export const dbRankingStore = {
+  monthKey: rankingMonthKey,
+  async listMonth(
+    db: Firestore,
+    month = rankingMonthKey(),
+    requestedSize = FIRESTORE_PAGE_SIZE,
+  ): Promise<MonthlyRankingEntry[]> {
+    const pageSize = boundedPageSize(requestedSize);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'rankingMonthly', month, 'entries'),
+        orderBy('score', 'desc'),
+        limit(pageSize),
+      ));
+      dataCostDebug.query('ranking:month', snap.size);
+      return snap.docs.map((entry) => ({
+        uid: entry.id,
+        ...entry.data(),
+      } as MonthlyRankingEntry));
+    } catch {
+      return [];
+    }
+  },
+  async getUser(db: Firestore, uid: string, month = rankingMonthKey()): Promise<MonthlyRankingEntry | null> {
+    try {
+      const snap = await getDoc(doc(db, 'rankingMonthly', month, 'entries', uid));
+      dataCostDebug.query('ranking:user', snap.exists() ? 1 : 0);
+      return snap.exists() ? { uid: snap.id, ...snap.data() } as MonthlyRankingEntry : null;
+    } catch {
+      return null;
+    }
+  },
+};
+
+export type UserStatsAggregate = {
+  uid: string;
+  recentDays: Record<string, { activities: number; watched: number }>;
+  months: Record<string, { activities: number; watched: number; watchedMinutes: number }>;
+  updatedAt?: unknown;
+};
+
+export const dbUserStatsStore = {
+  async get(db: Firestore, uid: string): Promise<UserStatsAggregate> {
+    return cachedRequest(`user-stats:${uid}`, CACHE_TTL.recentList, async () => {
+      const snap = await getDoc(doc(db, 'userStats', uid));
+      dataCostDebug.query('user-stats:get', snap.exists() ? 1 : 0);
+      const data = snap.data() || {};
+      return {
+        uid,
+        recentDays: data.recentDays || {},
+        months: data.months || {},
+        updatedAt: data.updatedAt,
+      };
+    }, { staleIfError: true });
+  },
+};
 
 // ── Social Notifications ─────────────────────────────────────
 // Firestore: notifications/{auto-id}
@@ -663,22 +1146,52 @@ export type NotifDoc = {
   link?: string;
 };
 
+export type NotificationPageCursor = QueryDocumentSnapshot<DocumentData>;
+
 export const dbNotifStore = {
-  async add(db: Firestore, notif: Omit<NotifDoc, 'read'>): Promise<void> {
-    try { await addDoc(collection(db, 'notifications'), { ...notif, read: false }); } catch {}
+  async add(db: Firestore, notif: Omit<NotifDoc, 'read'>): Promise<boolean> {
+    const prefByType: Record<NotifDoc['type'], string> = {
+      new_follower: 'followers',
+      comment_reply: 'replies',
+      comment_like: 'likes',
+    };
+    try {
+      const recipientPrefs = await dbPrefsStore.get(db, notif.recipientId);
+      if (recipientPrefs.notifPrefs?.[prefByType[notif.type]] === false) return false;
+      await addDoc(collection(db, 'notifications'), { ...notif, read: false });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async listPage(
+    db: Firestore,
+    uid: string,
+    cursor: NotificationPageCursor | null = null,
+    requestedSize = FIRESTORE_PAGE_SIZE,
+  ): Promise<FirestorePage<NotifDoc & { docId: string }, NotificationPageCursor>> {
+    const pageSize = boundedPageSize(requestedSize);
+    try {
+      const constraints: QueryConstraint[] = [
+        where('recipientId', '==', uid),
+        orderBy('createdAt', 'desc'),
+      ];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(pageSize));
+      const q = query(collection(db, 'notifications'), ...constraints);
+      const snap = await getDocs(q);
+      dataCostDebug.query('notifications:account-page', snap.size);
+      return {
+        items: snap.docs.map(d => ({ docId: d.id, ...d.data() as NotifDoc })),
+        cursor: snap.empty ? null : snap.docs[snap.docs.length - 1],
+        hasMore: snap.size === pageSize,
+      };
+    } catch { return { items: [], cursor: null, hasMore: false }; }
   },
 
   async listForUser(db: Firestore, uid: string): Promise<(NotifDoc & { docId: string })[]> {
-    try {
-      const q = query(
-        collection(db, 'notifications'),
-        where('recipientId', '==', uid),
-        orderBy('createdAt', 'desc'),
-        limit(50),
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map(d => ({ docId: d.id, ...d.data() as NotifDoc }));
-    } catch { return []; }
+    return (await dbNotifStore.listPage(db, uid)).items;
   },
 
   async markRead(db: Firestore, docId: string): Promise<void> {
@@ -687,17 +1200,94 @@ export const dbNotifStore = {
 
   async markAllRead(db: Firestore, uid: string): Promise<void> {
     try {
+      for (;;) {
+        const q = query(
+          collection(db, 'notifications'),
+          where('recipientId', '==', uid),
+          where('read', '==', false),
+          limit(FIRESTORE_PAGE_SIZE),
+        );
+        const snap = await getDocs(q);
+        dataCostDebug.query('notifications:mark-all', snap.size);
+        if (snap.empty) return;
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => batch.update(d.ref, { read: true }));
+        await batch.commit();
+        if (snap.size < FIRESTORE_PAGE_SIZE) return;
+      }
+    } catch {}
+  },
+};
+
+// ── Automated app notifications ──────────────────────────────────────
+// Written by Firebase Admin SDK/Cloud Functions. Clients can only read and
+// mark their own documents as read.
+
+export type AppNotifDoc = Omit<InboxNotif, 'id' | 'cloudId'> & {
+  recipientId: string;
+  eventKey: string;
+};
+
+export const dbAppNotifStore = {
+  async listPage(
+    db: Firestore,
+    uid: string,
+    cursor: NotificationPageCursor | null = null,
+    requestedSize = FIRESTORE_PAGE_SIZE,
+  ): Promise<FirestorePage<InboxNotif, NotificationPageCursor>> {
+    const pageSize = boundedPageSize(requestedSize);
+    try {
+      const constraints: QueryConstraint[] = [where('recipientId', '==', uid), orderBy('time', 'desc')];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(pageSize));
+      const q = query(collection(db, 'app_notifications'), ...constraints);
+      const snap = await getDocs(q);
+      dataCostDebug.query('notifications:app-page', snap.size);
+      const items = snap.docs.map((entry) => {
+        const data = entry.data() as AppNotifDoc;
+        return {
+          id: data.eventKey || entry.id,
+          cloudId: entry.id,
+          type: data.type,
+          title: data.title,
+          body: data.body,
+          time: data.time,
+          read: data.read,
+          link: data.link,
+          poster: data.poster,
+        };
+      });
+      return {
+        items,
+        cursor: snap.empty ? null : snap.docs[snap.docs.length - 1],
+        hasMore: snap.size === pageSize,
+      };
+    } catch {
+      return { items: [], cursor: null, hasMore: false };
+    }
+  },
+  async listForUser(db: Firestore, uid: string): Promise<InboxNotif[]> {
+    return (await dbAppNotifStore.listPage(db, uid)).items;
+  },
+  async markRead(db: Firestore, docId: string): Promise<void> {
+    await updateDoc(doc(db, 'app_notifications', docId), { read: true });
+  },
+  async markAllRead(db: Firestore, uid: string): Promise<void> {
+    for (;;) {
       const q = query(
-        collection(db, 'notifications'),
+        collection(db, 'app_notifications'),
         where('recipientId', '==', uid),
         where('read', '==', false),
+        limit(FIRESTORE_PAGE_SIZE),
       );
       const snap = await getDocs(q);
+      dataCostDebug.query('notifications:app-mark-all', snap.size);
       if (snap.empty) return;
       const batch = writeBatch(db);
-      snap.docs.forEach(d => batch.update(d.ref, { read: true }));
+      snap.docs.forEach((entry) => batch.update(entry.ref, { read: true }));
       await batch.commit();
-    } catch {}
+      if (snap.size < FIRESTORE_PAGE_SIZE) return;
+    }
   },
 };
 

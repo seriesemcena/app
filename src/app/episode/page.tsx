@@ -8,12 +8,13 @@ import { T } from '@/lib/tokens';
 import { revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRevStore } from '@/lib/db';
+import { dbRatingSummaryStore, dbRevStore, type RatingSummary } from '@/lib/db';
 import { useTranslation } from 'react-i18next';
 import { navigateBack } from '@/lib/navigation';
 import i18next from 'i18next';
 import '@/lib/i18n';
 import { tmdbImg } from '@/lib/tmdb';
+import { useAppSettings } from '@/context/AppSettingsContext';
 
 const EPISODE_REACTIONS = [
   { id: 'loved', key: 'reactionLoved', emoji: '😍', color: '#C069FF' },
@@ -30,6 +31,7 @@ function EpisodePageInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const { user } = useAuth();
+  const { settings: appSettings } = useAppSettings();
   const { t } = useTranslation('title');
 
   /* ── params from URL ── */
@@ -59,14 +61,17 @@ function EpisodePageInner() {
   const [watched, setWatched]         = useState(false);
   const [toast, setToast]             = useState<string | false>(false);
   const [reviews, setReviews]         = useState<Review[]>([]);
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
   const [socialTab, setSocialTab]     = useState<'ratings' | 'reactions'>('ratings');
 
   /* ── Computed: ratings are private per user, only avg is public ── */
   const currentUserName = user?.displayName || user?.email?.split('@')[0] || 'Você';
   const ratedReviews    = reviews.filter(r => r.rating > 0);
-  const avgRating       = ratedReviews.length > 0
-    ? (ratedReviews.reduce((s, r) => s + r.rating, 0) / ratedReviews.length).toFixed(1)
-    : null;
+  const avgRating = ratingSummary?.total
+    ? ratingSummary.average.toFixed(1)
+    : ratedReviews.length > 0
+      ? (ratedReviews.reduce((s, r) => s + r.rating, 0) / ratedReviews.length).toFixed(1)
+      : null;
   const myRating        = reviews.find(r => r.user === currentUserName)?.rating || 0;
   const commentCount    = reviews.filter(r => r.text).length;
   const reactionReviews = reviews.filter(review => !!review.reaction);
@@ -110,6 +115,7 @@ function EpisodePageInner() {
     setReviews(local);
 
     if (!firebaseConfigured) return;
+    dbRatingSummaryStore.get(getDB(), storageKey).then(setRatingSummary).catch(() => {});
     dbRevStore.get(getDB(), storageKey).then(cloud => {
       if (cloud.length > 0) {
         // Merge: Firestore is the truth, but include any unsaved local items
@@ -128,6 +134,7 @@ function EpisodePageInner() {
   };
 
   const submitReview = async () => {
+    if (!appSettings.reviewsEnabled) { showToast('As avaliações estão temporariamente desativadas.'); return; }
     if (modalRating === 0 && !modalReaction) {
       showToast(t('addRatingOrReaction'));
       return;
@@ -294,7 +301,7 @@ function EpisodePageInner() {
                   epWatchedStore.markWatched(tvId, parseInt(season), parseInt(epNum));
                   // Only open modal if user hasn't reviewed yet
                   const alreadyReviewed = revStore.get(storageKey).some(r => r.user === currentUserName);
-                  if (!alreadyReviewed) setModalOpen(true);
+                  if (!alreadyReviewed && appSettings.reviewsEnabled) setModalOpen(true);
                   else showToast(t('markedWatched'));
                 } else {
                   setWatched(false);
@@ -311,7 +318,7 @@ function EpisodePageInner() {
             </button>
 
             {/* ── Ver comentários button ── */}
-            <button onClick={() => router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`${episodeCode}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`)}
+            <button onClick={() => appSettings.commentsEnabled ? router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`${episodeCode}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`) : showToast('Os comentários estão temporariamente desativados.')}
               style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 20 }}>
               <Icon name="message" size={18} color={T.t2} />
               <Txt size={15} weight={700} color={T.t1}>

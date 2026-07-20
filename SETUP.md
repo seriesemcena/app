@@ -18,30 +18,10 @@
 1. Firebase Console → **Firestore Database** → Create database
 2. Escolha **Production mode**
 3. Selecione a região mais próxima (ex: `southamerica-east1`)
-4. Após criar, vá em **Rules** e configure:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Users can only read/write their own data
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-    // Reviews are readable by anyone, writable by logged-in users
-    match /reviews/{titleKey} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-    // Config (slider etc.) readable by anyone, writable by admin only
-    match /config/{doc} {
-      allow read: if true;
-      allow write: if request.auth != null
-        && request.auth.token.email == 'admin@sectime.com'; // change this
-    }
-  }
-}
-```
+4. Use `firestore.rules` como fonte de verdade. Não use regras genéricas de
+   escrita: elas permitem que uma conta altere dados de outra.
+5. Publique regras e índices com `firebase deploy --only firestore` ou copie o
+   conteúdo de `firestore.rules` para o console.
 
 ### 1.4 Configurar FCM (Push Notifications)
 1. Firebase Console → **Project Settings** → **Cloud Messaging**
@@ -58,9 +38,22 @@ cp .env.local.example .env.local
 # Edite .env.local com as credenciais copiadas
 ```
 
-### 1.6 Atualizar firebase-messaging-sw.js
-Abra `public/firebase-messaging-sw.js` e substitua os valores `YOUR_*` pelas mesmas credenciais do `.env.local`.  
-*(Este arquivo não tem acesso às env vars do Next.js pois é servido como JS puro)*
+### 1.6 Configurar a administração separada
+
+O painel fica em `apps/admin`, é publicado separadamente no Cloudflare Pages e
+consome `api.maratonou.com/v1/admin/*`. Ele contém somente o Firebase Client SDK.
+O Admin SDK fica em Cloud Functions, scripts locais controlados e rotas Next
+exclusivamente server-side.
+
+1. Use Application Default Credentials para o bootstrap local; evite baixar
+   JSON de service account.
+2. Execute `npm run admin:bootstrap -- --email usuario@dominio.com` e confirme
+   interativamente o primeiro `super_admin`.
+3. Configure Cloudflare Access, App Check e as variáveis do backend conforme
+   `docs/`.
+4. Não publique Functions/Storage antes de autorizar o plano Blaze.
+
+Consulte `ADMIN.md` e `docs/admin-architecture.md` para o fluxo completo.
 
 ---
 
@@ -127,49 +120,27 @@ npm run cap:android   # Android Studio → Build → Generate Signed Bundle
 
 ## 4. Cloud Functions (notificações automáticas server-side)
 
-Para notificações de lançamentos que dispararem mesmo com o app fechado:
+O worker pronto está em `functions/index.js`. Ele:
+
+- verifica novos episódios a cada seis horas;
+- compara mudanças reais em `flatrate` por país antes de anunciar streaming;
+- respeita plataformas e preferências de cada usuário;
+- grava a caixa `app_notifications` e envia FCM com a mesma mensagem;
+- processa envios imediatos/agendados criados pelo painel administrativo;
+- usa IDs determinísticos para impedir duplicatas.
+
+Para publicar:
 
 ```bash
-# Na raiz do projeto
-firebase init functions
-# Escolha TypeScript
+npm install -g firebase-tools
+firebase login
+firebase use --add
+cd functions && npm install && cd ..
+firebase functions:secrets:set TMDB_API_KEY
+firebase deploy --only firestore,functions
 ```
 
-Adicione em `functions/src/index.ts`:
-
-```ts
-import * as admin from 'firebase-admin';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-
-admin.initializeApp();
-const db = admin.firestore();
-
-// Roda todo dia às 9h (horário de Brasília = UTC-3)
-export const checkReleases = onSchedule('0 12 * * *', async () => {
-  // Busca todos os usuários com fcm_tokens
-  const users = await db.collection('users').listDocuments();
-  for (const userDoc of users) {
-    const data = (await userDoc.get()).data();
-    const tokens: string[] = data?.fcm_tokens ?? [];
-    const lists: any[]     = [
-      ...(data?.lists_want     ?? []),
-      ...(data?.lists_watching ?? []),
-    ];
-    for (const item of lists) {
-      // Buscar TMDB para datas (use fetch com TMDB_API_KEY)
-      // Se release em ≤3 dias → enviar FCM para tokens do usuário
-      await admin.messaging().sendEachForMulticast({
-        tokens,
-        notification: {
-          title: `🎬 Estreia próxima: ${item.title}`,
-          body:  `Lançamento em X dias`,
-        },
-      });
-    }
-  }
-});
-```
-
-```bash
-firebase deploy --only functions
-```
+O projeto Firebase precisa estar no plano Blaze para Cloud Functions agendadas.
+Depois do deploy, abra **Configurações → Preferências de notificações** em
+cada dispositivo e ative a permissão de push. Os textos automáticos podem ser
+editados em **Admin → Notificações** sem alterar o worker.

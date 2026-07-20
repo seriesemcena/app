@@ -18,13 +18,13 @@ const isDev    = process.env.NODE_ENV !== 'production';
      inline scripts in layout.tsx; 'unsafe-eval' only exists in dev (HMR). */
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+  `script-src 'self' 'unsafe-inline' https://www.recaptcha.net https://www.gstatic.com${isDev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "media-src 'self' https:",
-  `connect-src 'self' https://*.googleapis.com https://*.google.com https://api.tvmaze.com${isDev ? ' ws: wss:' : ''}`,
-  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://appleid.apple.com",
+  `connect-src 'self' https://*.googleapis.com https://*.google.com https://api.tvmaze.com https://www.recaptcha.net${isDev ? ' ws: wss:' : ''}`,
+  "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://appleid.apple.com https://www.recaptcha.net",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

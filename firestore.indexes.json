@@ -1,0 +1,57 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "app_notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recipientId", "order": "ASCENDING" },
+        { "fieldPath": "time", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "activity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "activity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "titleKey", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "items",
+      "fieldPath": "date",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    { "collectionGroup": "activity", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "activity", "fieldPath": "mediaUrl", "indexes": [] },
+    { "collectionGroup": "items", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "items", "fieldPath": "replies", "indexes": [] },
+    { "collectionGroup": "items", "fieldPath": "likedBy", "indexes": [] },
+    { "collectionGroup": "users", "fieldPath": "lists_want", "indexes": [] },
+    { "collectionGroup": "users", "fieldPath": "lists_watching", "indexes": [] },
+    { "collectionGroup": "users", "fieldPath": "lists_watched", "indexes": [] },
+    { "collectionGroup": "users", "fieldPath": "lists_favorites", "indexes": [] },
+    { "collectionGroup": "users", "fieldPath": "ep_watched", "indexes": [] },
+    { "collectionGroup": "systemEvents", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+  ]
+}

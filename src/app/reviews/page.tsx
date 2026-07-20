@@ -9,7 +9,7 @@ import { T } from '@/lib/tokens';
 import { revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRevStore } from '@/lib/db';
+import { dbRatingSummaryStore, dbRevStore, type RatingSummary, type ReviewPageCursor } from '@/lib/db';
 import { navigateBack } from '@/lib/navigation';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
@@ -29,6 +29,10 @@ function ReviewsPageInner() {
   const [reviews, setReviews]   = useState<Review[]>([]);
   const [sort, setSort]         = useState<SortKey>('recentes');
   const [toast, setToast]       = useState<string | false>(false);
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
+  const [cursor, setCursor] = useState<ReviewPageCursor | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   /* modal de nova avaliação */
   const [modalOpen, setModalOpen]     = useState(false);
@@ -40,17 +44,42 @@ function ReviewsPageInner() {
   useEffect(() => {
     if (!storageKey) return;
     const local = revStore.get(storageKey);
-    setReviews(local);
+    setReviews(local.slice(0, 20));
+    setCursor(null);
+    setHasMore(local.length > 20);
     if (!firebaseConfigured) return;
-    dbRevStore.get(getDB(), storageKey).then(cloud => {
-      if (cloud.length > 0) {
-        const cloudIds = new Set(cloud.map(r => r.id));
-        const merged = [...local.filter(r => !cloudIds.has(r.id)), ...cloud];
+    dbRatingSummaryStore.get(getDB(), storageKey).then(setRatingSummary).catch(() => {});
+    dbRevStore.getPage(getDB(), storageKey).then(page => {
+      if (page.items.length > 0) {
+        const cloudIds = new Set(page.items.map(r => r.id));
+        const merged = [...local.filter(r => !cloudIds.has(r.id)).slice(0, Math.max(0, 20 - page.items.length)), ...page.items];
         setReviews(merged);
-        revStore.set(storageKey, merged);
       }
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
     }).catch(() => {});
   }, [storageKey]);
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    if (!firebaseConfigured) {
+      const local = revStore.get(storageKey);
+      setReviews(local.slice(0, reviews.length + 20));
+      setHasMore(local.length > reviews.length + 20);
+      return;
+    }
+    if (!cursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await dbRevStore.getPage(getDB(), storageKey, cursor);
+      setReviews((current) => {
+        const seen = new Set(current.map((review) => review.id));
+        return [...current, ...page.items.filter((review) => !seen.has(review.id))];
+      });
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+    } finally { setLoadingMore(false); }
+  };
 
   const submitReview = async () => {
     if (modalRating === 0 && !comment.trim()) { showToast(t('addRatingOrComment')); return; }
@@ -89,7 +118,12 @@ function ReviewsPageInner() {
     if (firebaseConfigured) {
       try {
         const cloud = await dbRevStore.toggleLike(getDB(), storageKey, id, user.uid);
-        if (cloud) { setReviews(cloud); revStore.set(storageKey, cloud); }
+        if (cloud) {
+          setReviews((current) => {
+            const replacements = new Map(cloud.map((review) => [review.id, review]));
+            return current.map((review) => replacements.get(review.id) || review);
+          });
+        }
       } catch {}
     }
   };
@@ -106,9 +140,12 @@ function ReviewsPageInner() {
     } catch { return dateStr; }
   }
 
-  const avgRating = reviews.length > 0
-    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : null;
+  const ratedReviews = reviews.filter((review) => review.rating > 0);
+  const avgRating = ratingSummary?.total
+    ? ratingSummary.average.toFixed(1)
+    : ratedReviews.length
+      ? (ratedReviews.reduce((sum, review) => sum + review.rating, 0) / ratedReviews.length).toFixed(1)
+      : null;
 
   const sorted = [...reviews].sort((a, b) => {
     if (sort === 'melhores') return b.rating - a.rating;
@@ -158,7 +195,7 @@ function ReviewsPageInner() {
                 <div style={{ width: 1, height: 40, background: 'rgba(26,20,0,0.15)' }} />
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1400', fontFamily: "'Area',sans-serif" }}>
-                    {t('reviewCount', { count: reviews.length })}
+                    {t('reviewCount', { count: ratingSummary?.total ?? ratedReviews.length })}
                   </div>
                   <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
                     {[1,2,3,4,5].map(i => (
@@ -203,6 +240,11 @@ function ReviewsPageInner() {
                 {sorted.map(rev => (
                   <ReviewCard key={rev.id} rev={rev} timeAgo={timeAgo} onLike={() => toggleLike(rev.id)} />
                 ))}
+                {hasMore && (
+                  <button type="button" onClick={loadMore} disabled={loadingMore} style={{ alignSelf: 'center', marginTop: 6, padding: '10px 20px', borderRadius: 22, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontWeight: 700, cursor: loadingMore ? 'default' : 'pointer' }}>
+                    {loadingMore ? 'Carregando…' : 'Carregar mais'}
+                  </button>
+                )}
               </div>
             )}
           </div>

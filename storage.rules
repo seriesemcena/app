@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validProfileImage(uid) {
+      return signedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == 'image/webp'
+        && request.resource.metadata.ownerUid == uid;
+    }
+
+    // Versioned WebP avatar/cover objects. Public app screens may read them;
+    // only the profile owner can upload or remove their own media.
+    match /users/{uid}/{kind}/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if kind in ['avatar', 'cover']
+                            && validProfileImage(uid);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "SEU_PROJETO_DE_DESENVOLVIMENTO",
+    "staging": "SEU_PROJETO_DE_HOMOLOGACAO",
+    "production": "SEU_PROJETO_DE_PRODUCAO"
+  }
+}

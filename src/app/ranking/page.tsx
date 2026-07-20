@@ -1,13 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { doc, getDoc } from 'firebase/firestore';
 import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbActivityStore } from '@/lib/db';
+import { dbRankingStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 import { navigateBack } from '@/lib/navigation';
@@ -59,54 +58,27 @@ export default function RankingPage() {
       try {
         const db = getDB();
 
-        /* 1. Buscar atividade recente para contar reviews e títulos assistidos por uid */
-        const activities = await dbActivityStore.getRecent(db, 500);
+        const month = dbRankingStore.monthKey();
+        const [leaders, currentUser] = await Promise.all([
+          dbRankingStore.listMonth(db, month),
+          dbRankingStore.getUser(db, user.uid, month),
+        ]);
+        const unique = new Map(leaders.map((entry) => [entry.uid, entry]));
+        if (currentUser) unique.set(currentUser.uid, currentUser);
 
-        const reviewsByUid: Record<string, number> = {};
-        const watchedByUid: Record<string, number> = {};
-        const metaByUid:    Record<string, { username: string; avatar: string; photoUrl: string }> = {};
-
-        activities.forEach(a => {
-          if (!a.uid) return;
-          if (a.action === 'reviewed') reviewsByUid[a.uid] = (reviewsByUid[a.uid] || 0) + 1;
-          if (a.action === 'watched')  watchedByUid[a.uid] = (watchedByUid[a.uid] || 0) + 1;
-          // guarda metadados do usuário vindos da activity (mais recente prevalece)
-          if (!metaByUid[a.uid]) {
-            metaByUid[a.uid] = { username: a.username || '', avatar: a.avatar || '', photoUrl: a.photoUrl || '' };
-          }
-        });
-
-        /* 2. Garantir que o usuário atual também apareça */
-        const activeUids = new Set(Object.keys(reviewsByUid).concat(Object.keys(watchedByUid)));
-        if (user?.uid) activeUids.add(user.uid);
-
-        /* 3. Buscar perfil de cada uid ativo individualmente (getDoc é permitido pelas regras) */
-        const entries: RankEntry[] = (
-          await Promise.all(
-            Array.from(activeUids).map(async uid => {
-              const snap    = await getDoc(doc(db, 'users', uid));
-              const data    = snap.exists() ? (snap.data() as any) : {};
-              const profile = data.profile || metaByUid[uid] || {};
-              const watched = Array.isArray(data.lists_watched) ? data.lists_watched.length
-                            : (watchedByUid[uid] || 0);
-              const hours   = Math.round(watched * 1.5);
-              const reviews = reviewsByUid[uid] || 0;
-              const score   = hours + reviews * 3;
-              return {
-                uid,
-                name:     profile.name || profile.username || metaByUid[uid]?.avatar || 'Usuário',
-                username: profile.username || uid.slice(0, 8),
-                gradient: profile.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`,
-                photoUrl: profile.avatarImage || metaByUid[uid]?.photoUrl || '',
-                hours,
-                reviews,
-                score,
-                isMe: uid === user?.uid,
-              } as RankEntry;
-            })
-          )
-        )
-          .filter(e => e.score > 0 || e.isMe)
+        const entries: RankEntry[] = Array.from(unique.values())
+          .map((entry) => ({
+            uid: entry.uid,
+            name: entry.name || entry.username || 'Usuário',
+            username: entry.username || entry.uid.slice(0, 8),
+            gradient: entry.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`,
+            photoUrl: entry.avatarUrl || '',
+            hours: Math.round((entry.watchedMinutes || 0) / 60),
+            reviews: entry.reviewsCount || 0,
+            score: entry.score || 0,
+            isMe: entry.uid === user.uid,
+          }))
+          .filter((entry) => entry.score > 0 || entry.isMe)
           .sort((a, b) => b.score - a.score);
 
         setRanking(entries);

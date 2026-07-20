@@ -108,6 +108,7 @@
       "detail": "Elige un tema inspirado en una serie de tu lista o sube una portada exclusiva.",
       "theme": "Tema de la serie",
       "uploadCover": "Subir imagen de portada",
+      "storagePending": "La subida de portadas se habilitará próximamente.",
       "removeCover": "Quitar"
     },
     "badges": {
@@ -183,6 +184,7 @@
     "usernameLabel": "Usuario",
     "bioLabel": "Bio",
     "saved": "¡Perfil guardado!",
+    "storagePending": "La subida de fotos se habilitará próximamente.",
     "usernameInUse": "Este nombre de usuario ya está en uso",
     "usernameInvalid": "Usuario inválido. Usa solo letras, números y _"
   },
@@ -239,6 +241,11 @@
   "notifPrefs": {
     "title": "Preferencias de notificaciones",
     "intro": "Activa o desactiva los tipos de notificación que quieres recibir. Los cambios se aplican en todos tus dispositivos.",
+    "pushTitle": "Notificaciones del dispositivo",
+    "pushEnabled": "Activadas en este dispositivo",
+    "pushDisabled": "Actívalas para recibir avisos con la app cerrada",
+    "pushBlocked": "Bloqueadas en los ajustes del navegador o sistema",
+    "enablePush": "Activar",
     "activitySection": "Actividad de la cuenta",
     "contentSection": "Estrenos y episodios",
     "mentions": "Citas y menciones",
@@ -249,9 +256,11 @@
     "repliesSub": "Cuando respondan a tus comentarios",
     "followers": "Nuevos seguidores",
     "followersSub": "Cuando alguien empiece a seguirte",
-    "premieres": "Estrenos",
-    "premieresSub": "Avisos de lanzamiento de títulos de tu lista",
+    "premieres": "Disponibilidad en streaming",
+    "premieresSub": "Cuando un título llegue a una plataforma que usas",
     "episodes": "Nuevos episodios",
-    "episodesSub": "Cuando salga un episodio de tus series"
+    "episodesSub": "Cuando salga un episodio de tus series",
+    "reminders": "Recordatorios PRO",
+    "remindersSub": "Avisos de fechas en tus listas personalizadas"
   }
 }

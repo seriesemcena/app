@@ -108,6 +108,7 @@
       "detail": "Choose a theme inspired by a show on your list or upload an exclusive cover.",
       "theme": "Show theme",
       "uploadCover": "Upload cover image",
+      "storagePending": "Cover uploads will be enabled in the future.",
       "removeCover": "Remove"
     },
     "badges": {
@@ -183,6 +184,7 @@
     "usernameLabel": "Username",
     "bioLabel": "Bio",
     "saved": "Profile saved!",
+    "storagePending": "Photo uploads will be enabled in the future.",
     "usernameInUse": "This username is already taken",
     "usernameInvalid": "Invalid username. Use only letters, numbers and _"
   },
@@ -239,6 +241,11 @@
   "notifPrefs": {
     "title": "Notification preferences",
     "intro": "Turn the notification types you want on or off. Changes apply across all your devices.",
+    "pushTitle": "Device notifications",
+    "pushEnabled": "Enabled on this device",
+    "pushDisabled": "Enable to receive alerts while the app is closed",
+    "pushBlocked": "Blocked in the browser or system settings",
+    "enablePush": "Enable",
     "activitySection": "Account activity",
     "contentSection": "Premieres & episodes",
     "mentions": "Mentions",
@@ -249,9 +256,11 @@
     "repliesSub": "When someone replies to your comments",
     "followers": "New followers",
     "followersSub": "When someone starts following you",
-    "premieres": "Premieres",
-    "premieresSub": "Release alerts for titles on your list",
+    "premieres": "Streaming availability",
+    "premieresSub": "When a title arrives on a platform you use",
     "episodes": "New episodes",
-    "episodesSub": "When shows you follow release an episode"
+    "episodesSub": "When shows you follow release an episode",
+    "reminders": "PRO reminders",
+    "remindersSub": "Alerts for dates in your custom lists"
   }
 }

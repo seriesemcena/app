@@ -10,7 +10,7 @@ import { Icon } from '@/components/Icon';
 import { SettingsCard, SettingsHeader, SettingsPrimaryButton } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
 import { useAuth } from '@/hooks/useAuth';
-import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { firebaseConfigured, firebaseStorageEnabled, getDB } from '@/lib/firebase';
 import { dbProSettingsStore, dbProfileStore } from '@/lib/db';
 import {
   DEFAULT_PRO_THEME,
@@ -27,8 +27,8 @@ import {
 } from '@/lib/store';
 import { tmdbImg } from '@/lib/tmdb';
 import { navigateBack } from '@/lib/navigation';
+import { createProfileImagePreview, removeProfileImages, uploadProfileImage } from '@/lib/imageStorage';
 
-const MAX_INPUT = 15 * 1024 * 1024;
 const PALETTES = [
   { accent: '#C069FF', gradient: 'linear-gradient(145deg,#421c61 0%,#171020 58%,#09090d 100%)' },
   { accent: '#E45835', gradient: 'linear-gradient(145deg,#632416 0%,#24100d 58%,#09090d 100%)' },
@@ -45,31 +45,6 @@ const HOME_LABELS: Record<ProHomeSectionKey, { icon: 'star' | 'tv' | 'play' | 'f
   streamings: { icon: 'wifi', key: 'streamings' },
   news: { icon: 'info', key: 'news' },
 };
-
-function compressCover(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (file.size > MAX_INPUT) { reject(new Error('Arquivo muito grande (máx. 15 MB)')); return; }
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, 1120 / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { reject(new Error('Não foi possível processar a imagem')); return; }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      for (const quality of [0.7, 0.58, 0.48, 0.4]) {
-        const output = canvas.toDataURL('image/jpeg', quality);
-        if (output.length <= 420_000) { resolve(output); return; }
-      }
-      reject(new Error('A imagem ainda ficou muito grande'));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não foi possível ler a imagem')); };
-    img.src = url;
-  });
-}
 
 const inputStyle: React.CSSProperties = {
   width: '100%', minHeight: 48, boxSizing: 'border-box', padding: '12px 14px',
@@ -93,6 +68,7 @@ export default function ProSettingsPage() {
   const { user, loading } = useAuth();
   const coverInput = useRef<HTMLInputElement>(null);
   const editedRef = useRef(false);
+  const originalCoverRef = useRef('');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [settings, setSettings] = useState<ProSettings>(() => proSettingsStore.get());
   const [saving, setSaving] = useState(false);
@@ -103,6 +79,7 @@ export default function ProSettingsPage() {
   const [mediaType, setMediaType] = useState<'tv' | 'movie'>('tv');
   const [remindAt, setRemindAt] = useState('');
   const [listsVersion, setListsVersion] = useState(0);
+  const [pendingCover, setPendingCover] = useState<File | null>(null);
 
   useEffect(() => {
     const refresh = () => setListsVersion((value) => value + 1);
@@ -142,6 +119,7 @@ export default function ProSettingsPage() {
     const localProfile = profileStore.get(user.uid);
     const localSettings = proSettingsStore.get(user.uid);
     setProfile(localProfile);
+    originalCoverRef.current = localProfile.coverImage || '';
     setSettings(localSettings);
 
     if (!firebaseConfigured) return;
@@ -153,6 +131,7 @@ export default function ProSettingsPage() {
       if (cloudProfile) {
         profileStore.set(cloudProfile, user.uid);
         setProfile(cloudProfile);
+        originalCoverRef.current = cloudProfile.coverImage || '';
       }
       if (cloudSettings) {
         proSettingsStore.set(cloudSettings, user.uid);
@@ -167,19 +146,36 @@ export default function ProSettingsPage() {
 
   const chooseTheme = (theme: ProProfileTheme) => {
     editedRef.current = true;
-    setProfile((current) => current ? { ...current, proTheme: theme, coverImage: '' } : current);
+    setPendingCover(null);
+    setProfile((current) => {
+      if (current?.coverImage?.startsWith('blob:')) URL.revokeObjectURL(current.coverImage);
+      return current ? { ...current, proTheme: theme, coverImage: '' } : current;
+    });
   };
 
   const handleCover = async (file?: File) => {
     if (!file) return;
     try {
-      const coverImage = await compressCover(file);
+      const coverImage = await createProfileImagePreview(file, 'cover');
       editedRef.current = true;
-      setProfile((current) => current ? { ...current, coverImage } : current);
+      setPendingCover(file);
+      setProfile((current) => {
+        if (current?.coverImage?.startsWith('blob:')) URL.revokeObjectURL(current.coverImage);
+        return current ? { ...current, coverImage } : current;
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('proSettings.coverError'));
       setTimeout(() => setError(null), 2800);
     }
+  };
+
+  const openCoverPicker = () => {
+    if (!firebaseStorageEnabled) {
+      setError(t('proSettings.profile.storagePending'));
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    coverInput.current?.click();
   };
 
   const toggleHomeSection = (key: ProHomeSectionKey) => {
@@ -255,23 +251,36 @@ export default function ProSettingsPage() {
     if (!user || !profile) return;
     if (!isProMember) { router.push('/pro'); return; }
     setSaving(true);
-    const nextProfile = { ...profile, proTheme: currentTheme };
-    profileStore.set(nextProfile, user.uid);
+    let nextProfile = { ...profile, proTheme: currentTheme };
+    let uploadedCover = '';
     proSettingsStore.set(settings, user.uid);
     const reminderSettings = syncProReminderNotifications(user.uid);
     if (firebaseConfigured) {
       try {
+        if (pendingCover) {
+          const uploaded = await uploadProfileImage(user.uid, 'cover', pendingCover);
+          uploadedCover = uploaded.url;
+          nextProfile = { ...nextProfile, coverImage: uploaded.url };
+        }
         await Promise.all([
           dbProfileStore.set(getDB(), user.uid, nextProfile),
           dbProSettingsStore.set(getDB(), user.uid, reminderSettings ?? proSettingsStore.get(user.uid)),
         ]);
+        if ((pendingCover || !nextProfile.coverImage) && originalCoverRef.current) {
+          await removeProfileImages(originalCoverRef.current);
+        }
+        originalCoverRef.current = nextProfile.coverImage || '';
+        setPendingCover(null);
       } catch {
+        if (uploadedCover) await removeProfileImages(uploadedCover);
         setSaving(false);
         setError(t('proSettings.saveError'));
         setTimeout(() => setError(null), 3200);
         return;
       }
     }
+    profileStore.set(nextProfile, user.uid);
+    setProfile(nextProfile);
     editedRef.current = false;
     setSaving(false);
     setToast(t('proSettings.saved'));
@@ -331,10 +340,10 @@ export default function ProSettingsPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 11 }}>
-                  <button type="button" onClick={() => coverInput.current?.click()} style={{ flex: 1, minHeight: 42, borderRadius: 21, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area',sans-serif", fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{t('proSettings.profile.uploadCover')}</button>
-                  {profile.coverImage && <button type="button" onClick={() => { editedRef.current = true; setProfile((current) => current ? { ...current, coverImage: '' } : current); }} style={{ minHeight: 42, padding: '0 14px', borderRadius: 21, border: '1px solid rgba(255,90,95,0.28)', background: 'rgba(255,90,95,0.10)', color: '#FF7378', fontFamily: "'Area',sans-serif", fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{t('proSettings.profile.removeCover')}</button>}
+                  <button type="button" onClick={openCoverPicker} style={{ flex: 1, minHeight: 42, borderRadius: 21, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area',sans-serif", fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{t('proSettings.profile.uploadCover')}</button>
+                  {profile.coverImage && <button type="button" onClick={() => { editedRef.current = true; setPendingCover(null); setProfile((current) => { if (current?.coverImage?.startsWith('blob:')) URL.revokeObjectURL(current.coverImage); return current ? { ...current, coverImage: '' } : current; }); }} style={{ minHeight: 42, padding: '0 14px', borderRadius: 21, border: '1px solid rgba(255,90,95,0.28)', background: 'rgba(255,90,95,0.10)', color: '#FF7378', fontFamily: "'Area',sans-serif", fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{t('proSettings.profile.removeCover')}</button>}
                 </div>
-                <input ref={coverInput} type="file" accept="image/*" hidden onChange={(event) => { void handleCover(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                <input ref={coverInput} type="file" accept="image/*" disabled={!firebaseStorageEnabled} hidden onChange={(event) => { void handleCover(event.target.files?.[0]); event.currentTarget.value = ''; }} />
               </SettingsCard>
             </section>
 

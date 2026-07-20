@@ -25,7 +25,7 @@ test('profile streaming summary uses the official local logos', async () => {
 test('profile summary uses real watch activity and compact streaming tracks', async () => {
   const source = await readFile(new URL('src/app/user/[username]/page.tsx', projectRoot), 'utf8');
 
-  assert.match(source, /dbActivityStore\.getRecent\(getDB\(\), 500\)/);
+  assert.match(source, /dbUserStatsStore\.get\(getDB\(\), user\.uid\)/);
   assert.match(source, /buildWatchCalendar\(dates\)/);
   assert.match(source, /gridTemplateColumns: 'repeat\(7, minmax\(0, 1fr\)\)'/);
   assert.match(source, /maxPlatformPrice/);

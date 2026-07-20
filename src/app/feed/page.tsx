@@ -7,14 +7,11 @@ import { Icon } from '@/components/Icon';
 import { SocialAction, SocialAuthor, SocialCard, SocialMedia } from '@/components/SocialCard';
 import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
-import { profileStore, notifInboxStore, reactionStore } from '@/lib/store';
+import { profileStore, notifInboxStore, reactionStore, revStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import { dbActivityStore, dbRevStore, dbReactionStore } from '@/lib/db';
-import { isAdminUser } from '@/lib/admin';
+import { dbActivityStore, dbRevStore, dbReactionStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
-import { tmdbImg } from '@/lib/tmdb';
 
 type FeedTab = 'para_voce' | 'seguindo';
 
@@ -41,8 +38,56 @@ type ActivityItem = {
   isMe?: boolean;
 };
 
+function findReviewForFeedItem(reviews: Review[], item: ActivityItem): Review | undefined {
+  if (item.reviewId) return reviews.find(review => review.id === item.reviewId);
+
+  const candidates = reviews.filter(review => {
+    const sameAuthor = item.uid && review.uid
+      ? review.uid === item.uid
+      : review.user === item.user;
+    return sameAuthor
+      && (review.text || '') === item.text
+      && (review.rating || 0) === item.rating;
+  });
+
+  const targetTime = new Date(item.rawDate).getTime();
+  return candidates.sort((a, b) =>
+    Math.abs(new Date(a.date).getTime() - targetTime)
+    - Math.abs(new Date(b.date).getTime() - targetTime)
+  )[0];
+}
+
 const POSTER_COLORS = ['#1a3a5c','#2a1a0a','#5c1a3a','#0a1a2a','#1a2a1a','#1a0a2a','#0a2a1a','#2a0a1a'];
 const EMOJIS = ['🔥', '❤️', '😮', '😂', '👏'];
+
+function posterColorFor(key: string) {
+  const hash = [...key].reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 0);
+  return POSTER_COLORS[hash % POSTER_COLORS.length];
+}
+
+function activityToFeedItem(a: ActivityDoc & { docId: string }): ActivityItem | null {
+  if (a.action !== 'reviewed') return null;
+  return {
+    id:             `act_${a.docId}`,
+    uid:            a.uid,
+    firestoreDocId: a.docId,
+    reviewId:       a.reviewId,
+    titleKey:       a.titleKey,
+    displayTitle:   a.titleName,
+    user:           a.authorUsername || a.username,
+    avatar:         a.avatar,
+    color:          '#C069FF',
+    photoUrl:       a.authorAvatarUrl || a.photoUrl,
+    action:         a.rating > 0 ? 'avaliou' : 'comentou',
+    rating:         a.rating,
+    text:           a.text,
+    mediaUrl:       a.mediaUrl || '',
+    spoiler:        !!a.spoiler,
+    time:           timeAgo(a.createdAt),
+    rawDate:        a.createdAt,
+    posterColor:    posterColorFor(a.titleKey),
+  };
+}
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -55,58 +100,6 @@ function timeAgo(dateStr: string): string {
   return `${d}d atrás`;
 }
 
-/* ── Parse Firestore titleKey → TMDB identifiers ── */
-type ParsedKey =
-  | { type: 'episode'; showId: number; season: number; episode: number }
-  | { type: 'tv';      showId: number }
-  | { type: 'movie';   movieId: number }
-  | { type: 'unknown' };
-
-function parseTitleKey(key: string): ParsedKey {
-  const ep = key.match(/^ep_(\d+)_s(\d+)_e(\d+)/);
-  if (ep) return { type: 'episode', showId: +ep[1], season: +ep[2], episode: +ep[3] };
-  const tv = key.match(/^tv_(\d+)/);
-  if (tv) return { type: 'tv', showId: +tv[1] };
-  const mv = key.match(/^movie_(\d+)/);
-  if (mv) return { type: 'movie', movieId: +mv[1] };
-  return { type: 'unknown' };
-}
-
-/* ── Fetch TMDB data for a card ── */
-async function fetchCardData(titleKey: string, fallback: string): Promise<{ label: string; imageUrl: string | null }> {
-  const parsed = parseTitleKey(titleKey);
-  try {
-    if (parsed.type === 'episode') {
-      const [showData, epData] = await Promise.all([
-        fetch(`/api/tmdb?endpoint=/tv/${parsed.showId}`).then(r => r.json()),
-        fetch(`/api/tmdb?endpoint=/tv/${parsed.showId}/season/${parsed.season}/episode/${parsed.episode}`).then(r => r.json()),
-      ]);
-      const sNum = parsed.season;
-      const eNum = String(parsed.episode).padStart(2, '0');
-      const showName = showData.name || 'Série';
-      const label = `${showName} · ${sNum}×${eNum}`;
-      const imageUrl = tmdbImg(epData.still_path, 'w780')
-        ?? tmdbImg(showData.poster_path, 'w342');
-      return { label, imageUrl };
-    }
-    if (parsed.type === 'tv') {
-      const d = await fetch(`/api/tmdb?endpoint=/tv/${parsed.showId}`).then(r => r.json());
-      return {
-        label:    d.name || fallback,
-        imageUrl: tmdbImg(d.backdrop_path, 'w780') ?? tmdbImg(d.poster_path, 'w342'),
-      };
-    }
-    if (parsed.type === 'movie') {
-      const d = await fetch(`/api/tmdb?endpoint=/movie/${parsed.movieId}`).then(r => r.json());
-      return {
-        label:    d.title || fallback,
-        imageUrl: tmdbImg(d.backdrop_path, 'w780') ?? tmdbImg(d.poster_path, 'w342'),
-      };
-    }
-  } catch { /* ignore */ }
-  return { label: fallback, imageUrl: null };
-}
-
 /* ──────────────────────────────────────────────── */
 export default function FeedPage() {
   const router = useRouter();
@@ -116,6 +109,10 @@ export default function FeedPage() {
   const [feedTab, setFeedTab]         = useState<FeedTab>('para_voce');
   const [globalFeed, setGlobalFeed]   = useState<ActivityItem[]>([]);
   const [loadingFeed, setLoadingFeed] = useState(true);
+  const [feedCursor, setFeedCursor] = useState<ActivityPageCursor | null>(null);
+  const [feedHasMore, setFeedHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [feedError, setFeedError] = useState('');
   const [scrolled, setScrolled]       = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -131,76 +128,42 @@ export default function FeedPage() {
       if (!firebaseConfigured) { setLoadingFeed(false); return; }
       try {
         const db    = getDB();
-        const items: ActivityItem[] = [];
-
-        // 1. Activity docs — apenas avaliações (action === 'reviewed')
-        const activityDocs = await dbActivityStore.getRecent(db, 60);
-        activityDocs.forEach((a) => {
-          if (a.action !== 'reviewed') return;
-          items.push({
-            id:             `act_${a.docId}`,
-            uid:            a.uid,
-            firestoreDocId: a.docId,
-            reviewId:       a.reviewId,
-            titleKey:       a.titleKey,
-            displayTitle:   a.titleName,
-            user:           a.username,
-            avatar:         a.avatar,
-            color:          '#C069FF',
-            photoUrl:       a.photoUrl,
-            action:         a.rating > 0 ? 'avaliou' : 'comentou',
-            rating:         a.rating,
-            text:           a.text,
-            mediaUrl:       a.mediaUrl || '',
-            spoiler:        !!a.spoiler,
-            time:           timeAgo(a.createdAt),
-            rawDate:        a.createdAt,
-            posterColor:    POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
-          });
-        });
-
-        // 2. Reviews collection
-        const snap = await getDocs(collection(db, 'reviews'));
-        snap.forEach((doc) => {
-          const titleKey = doc.id;
-          const reviews: any[] = doc.data()?.items ?? [];
-          const sorted = [...reviews].sort((a: any, b: any) =>
-            new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
-          );
-          sorted.slice(0, 2).forEach((rev: any) => {
-            if (!rev.text && !rev.gifUrl && !rev.imageUrl) return;
-            items.push({
-              id:             `rev_${titleKey}_${rev.id}`,
-              reviewId:       rev.id,
-              reviewTitleKey: titleKey,
-              titleKey,
-              displayTitle:   titleKey,
-              user:           rev.user || 'Usuário',
-              avatar:         rev.avatar || rev.user?.[0]?.toUpperCase() || 'U',
-              color:          '#6366f1',
-              photoUrl:       rev.photoUrl || '',
-              action:         (rev.rating || 0) > 0 ? 'avaliou' : 'comentou',
-              rating:         rev.rating || 0,
-              text:           rev.text || '',
-              mediaUrl:       rev.gifUrl || rev.imageUrl || '',
-              spoiler:        !!rev.spoiler,
-              time:           rev.date ? timeAgo(rev.date) : '',
-              rawDate:        rev.date || '',
-              posterColor:    POSTER_COLORS[Math.floor(Math.random() * POSTER_COLORS.length)],
-            });
-          });
-        });
-
-        items.sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
+        const page = await dbActivityStore.getPage(db);
+        const items = page.items.map(activityToFeedItem).filter((item): item is ActivityItem => item !== null);
         setGlobalFeed(items);
-      } catch { /* ignore */ }
+        setFeedCursor(page.cursor);
+        setFeedHasMore(page.hasMore);
+      } catch { setFeedError('Não foi possível atualizar o feed.'); }
       setLoadingFeed(false);
     }
     loadFeed();
   }, []);
 
-  const handleDeleteItem = (id: string) =>
-    setGlobalFeed(prev => prev.filter(i => i.id !== id));
+  const loadMoreFeed = async () => {
+    if (!feedCursor || !feedHasMore || loadingMore || !firebaseConfigured) return;
+    setLoadingMore(true);
+    setFeedError('');
+    try {
+      const page = await dbActivityStore.getPage(getDB(), feedCursor);
+      const next = page.items.map(activityToFeedItem).filter((item): item is ActivityItem => item !== null);
+      setGlobalFeed((current) => {
+        const seen = new Set(current.map((item) => item.id));
+        return [...current, ...next.filter((item) => !seen.has(item.id))];
+      });
+      setFeedCursor(page.cursor);
+      setFeedHasMore(page.hasMore);
+    } catch {
+      setFeedError('Não foi possível carregar mais atividades.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const handleDeleteItem = (id: string, titleKey: string, reviewId?: string) =>
+    setGlobalFeed(prev => prev.filter(item => {
+      if (item.id === id) return false;
+      return !(reviewId && item.titleKey === titleKey && item.reviewId === reviewId);
+    }));
 
   const feedItems: ActivityItem[] = globalFeed;
 
@@ -296,6 +259,14 @@ export default function FeedPage() {
             {!loadingFeed && feedItems.length > 0 && (
               <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {feedItems.map((item) => <FeedCard key={item.id} item={item} onDelete={handleDeleteItem} />)}
+                {feedError && <Txt size={12} color="#FF7378" style={{ display: 'block', textAlign: 'center' }}>{feedError}</Txt>}
+                {feedHasMore ? (
+                  <button type="button" onClick={loadMoreFeed} disabled={loadingMore} style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.65 : 1 }}>
+                    {loadingMore ? 'Carregando…' : 'Carregar mais atividades'}
+                  </button>
+                ) : (
+                  <Txt size={11} color={T.t4} style={{ display: 'block', textAlign: 'center', padding: '6px 0' }}>Não há mais atividades.</Txt>
+                )}
               </div>
             )}
           </div>
@@ -306,7 +277,10 @@ export default function FeedPage() {
 }
 
 /* ──────────────────────────────────────────────── */
-function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: string) => void }) {
+function FeedCard({ item, onDelete }: {
+  item: ActivityItem;
+  onDelete: (id: string, titleKey: string, reviewId?: string) => void;
+}) {
   const router      = useRouter();
   const { user }    = useAuth();
   const actionLabel = item.action === 'comentou' ? 'comentou em' : item.action;
@@ -320,11 +294,7 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
   const goToProfile = () => router.push(`/user/${encodeURIComponent(item.user)}`);
 
   /* ── TMDB label ── */
-  const [cardData, setCardData] = useState<{ label: string; imageUrl: string | null }>({ label: item.displayTitle, imageUrl: null });
-  useEffect(() => {
-    fetchCardData(item.titleKey, item.displayTitle).then(setCardData);
-  }, [item.titleKey, item.displayTitle]);
-  const displayLabel = cardData.label;
+  const displayLabel = item.displayTitle || item.titleKey;
   // Title artwork is context, not user content. Only explicit GIF/image
   // attachments are rendered inside a feed post.
   const mediaSrc = item.mediaUrl || '';
@@ -391,17 +361,7 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
     let alive = true;
     dbRevStore.get(getDB(), item.titleKey).then(list => {
       if (!alive) return;
-      const exact = item.reviewId
-        ? list.find(review => review.id === item.reviewId)
-        : [...list]
-            .filter(review => {
-              const sameAuthor = item.uid ? review.uid === item.uid : review.user === item.user;
-              return sameAuthor && (review.text || '') === item.text && (review.rating || 0) === item.rating;
-            })
-            .sort((a, b) => {
-              const target = new Date(item.rawDate).getTime();
-              return Math.abs(new Date(a.date).getTime() - target) - Math.abs(new Date(b.date).getTime() - target);
-            })[0];
+      const exact = findReviewForFeedItem(list, item);
       setReplyCount(exact?.replies?.length ?? 0);
     }).catch(() => {});
     return () => { alive = false; };
@@ -424,14 +384,46 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
     setDeleting(true);
     try {
       const db = getDB();
-      if (item.firestoreDocId) {
-        await dbActivityStore.delete(db, item.firestoreDocId);
-      } else if (item.reviewId && item.reviewTitleKey) {
-        await dbRevStore.remove(db, item.reviewTitleKey, item.reviewId);
+      let removed = false;
+      const reviewKey = item.reviewTitleKey || item.titleKey;
+      const reviews = item.reviewId
+        ? []
+        : await dbRevStore.get(db, reviewKey);
+      const matchedReview = item.reviewId
+        ? undefined
+        : findReviewForFeedItem(reviews, item);
+      const resolvedReviewId = item.reviewId || matchedReview?.id;
+
+      // A feed card can have both an activity document and its source review.
+      // Delete the source first so it cannot reappear after a refresh.
+      if (resolvedReviewId) {
+        const source = await dbRevStore.remove(
+          db,
+          reviewKey,
+          resolvedReviewId,
+        );
+        removed = source !== 'missing';
+        revStore.removeReview(reviewKey, resolvedReviewId);
       }
-      onDelete(item.id);
-    } catch {
+
+      const deletedActivities = await dbActivityStore.deleteForReview(db, {
+        docId: item.firestoreDocId,
+        reviewId: resolvedReviewId,
+        titleKey: reviewKey,
+        uid: item.uid,
+        username: item.user,
+        text: item.text,
+        rating: item.rating,
+        createdAt: item.rawDate,
+      });
+      removed = removed || deletedActivities > 0;
+
+      if (!removed) throw new Error('Comentário não encontrado no Firestore.');
+      onDelete(item.id, reviewKey, resolvedReviewId);
+      showToast('Comentário excluído.');
+    } catch (error) {
       setDeleting(false);
+      console.error('[feed] Falha ao excluir comentário:', error);
       showToast('Erro ao excluir. Tente novamente.');
     }
   };
@@ -465,8 +457,9 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
     { label: 'Compartilhar', icon: 'share' as const, color: T.t2, action: handleShare },
     { label: 'Denunciar',  icon: 'flag'  as const, color: T.red ?? '#ff4444', action: handleReport },
     ...(!isMyPost ? [{ label: 'Ocultar conteúdo deste usuário', icon: 'eye' as const, color: T.t2, action: () => { setShowMenu(false); showToast('Conteúdo ocultado.'); } }] : []),
-    // Own posts — or any post when moderating as admin (rules allow both)
-    ...(isMyPost || isAdminUser(user)
+    // Client deletion is author-only. Administrative moderation uses the
+    // separate panel and central API.
+    ...(isMyPost
       ? [{ label: isMyPost ? 'Excluir comentário' : 'Excluir (moderação)', icon: 'close' as const, color: T.red ?? '#ff4444', action: handleDelete }]
       : []),
   ];
@@ -534,7 +527,7 @@ function FeedCard({ item, onDelete }: { item: ActivityItem; onDelete: (id: strin
               {item.text}
             </Txt>
           ) : null}
-          {mediaSrc && <SocialMedia src={mediaSrc} alt={displayLabel} />}
+          {mediaSrc && <SocialMedia src={mediaSrc} alt={displayLabel} compact />}
         </div>
         {spoilerHidden && (
           <button type="button" onClick={() => setSpoilerRevealed(true)} style={{ position: 'absolute', inset: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, background: 'rgba(18,18,22,0.56)', border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' }}>

@@ -2,18 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import i18next from 'i18next';
 import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, GlassHeader, Txt, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { notifInboxStore, listStore, prefsStore, profileStore, isNotifEnabled, syncProReminderNotifications, type InboxNotif, type NotifPrefKey } from '@/lib/store';
+import { notifInboxStore, prefsStore, profileStore, isNotifEnabled, syncProReminderNotifications, type InboxNotif, type NotifPrefKey } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack, navigateTo } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbNotifStore, dbProSettingsStore, type NotifDoc } from '@/lib/db';
-import { tmdbImg } from '@/lib/tmdb';
+import { dbAppNotifStore, dbNotifStore, dbProSettingsStore, type NotifDoc, type NotificationPageCursor } from '@/lib/db';
 
 type ActiveTab = 'account' | 'app';
 
@@ -34,11 +32,11 @@ function letterGradient(letter: string) {
 /* ── "Do app" icon/color map ── */
 const APP_ICON: Record<InboxNotif['type'], string> = {
   new_episode: 'play', like: 'heart', reply: 'message',
-  follow: 'user', release: 'star', general: 'bell',
+  follow: 'user', release: 'star', pro_reminder: 'bell', general: 'bell',
 };
 const APP_COLOR: Record<InboxNotif['type'], string> = {
   new_episode: '#60a5fa', like: T.pink, reply: '#a78bfa',
-  follow: '#4ade80', release: T.gold, general: T.t3,
+  follow: '#4ade80', release: T.gold, pro_reminder: T.pink, general: T.t3,
 };
 
 /* ── Group by day key (translation-friendly) ── */
@@ -74,66 +72,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-/* ── Seed sample "Do app" notifications (refreshes stale seeds) ── */
-function seedIfEmpty(uid: string) {
-  const existing = notifInboxStore.get(uid);
-  // Seeds are stale if any episode/release seed is missing poster or link
-  const hasStaleSeeds = existing.some(
-    n => n.id.startsWith('seed_') && n.type !== 'general' && (!n.link || !n.poster)
-  );
-  // Skip if inbox has content and all seeds are fresh
-  if (existing.length > 0 && !hasStaleSeeds) return;
-  // Clear stale seeds, preserve real (non-seed) notifications
-  if (hasStaleSeeds) {
-    const real = existing.filter(n => !n.id.startsWith('seed_'));
-    notifInboxStore.clear(uid);
-    real.forEach(n => notifInboxStore.add(n, uid));
-  }
-
-  const watching = listStore.get('watching');
-  const want     = listStore.get('want');
-  const now      = Date.now();
-  const ms       = (h: number) => h * 60 * 60 * 1000;
-  const seeds: InboxNotif[] = [];
-
-  watching.slice(0, 2).forEach((item, i) => {
-    seeds.push({
-      id: `seed_ep_${item.id}`,
-      type: 'new_episode',
-      title: i18next.t('seeds.newEpisodeTitle', { ns: 'notifications' }),
-      body: i18next.t('seeds.newEpisodeBody', { ns: 'notifications', title: item.title }),
-      time: new Date(now - ms(i * 6 + 2)).toISOString(),
-      read: false,
-      poster: tmdbImg(item.poster_path, 'w154') ?? undefined,
-      link: item.type ? `/title/${item.type}/${item.id}` : undefined,
-    });
-  });
-
-  want.slice(0, 1).forEach((item) => {
-    seeds.push({
-      id: `seed_rel_${item.id}`,
-      type: 'release',
-      title: i18next.t('seeds.releaseTitle', { ns: 'notifications' }),
-      body: i18next.t('seeds.releaseBody', { ns: 'notifications', title: item.title }),
-      time: new Date(now - ms(30)).toISOString(),
-      read: false,
-      poster: tmdbImg(item.poster_path, 'w154') ?? undefined,
-      link: item.type ? `/title/${item.type}/${item.id}` : undefined,
-    });
-  });
-
-  seeds.push({
-    id: 'seed_welcome',
-    type: 'general',
-    title: i18next.t('seeds.welcomeTitle', { ns: 'notifications' }),
-    body: i18next.t('seeds.welcomeBody', { ns: 'notifications' }),
-    time: new Date(now - ms(48)).toISOString(),
-    read: false,
-  });
-
-  seeds.forEach(n => notifInboxStore.add(n, uid));
-}
-
 /* ═══════════════════════════════════════════════════════════ */
 
 export default function NotificationsPage() {
@@ -149,24 +87,59 @@ export default function NotificationsPage() {
   const [accountNotifs, setAccountNotifs] = useState<(NotifDoc & { docId: string })[]>([]);
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountLoaded, setAccountLoaded]   = useState(false);
+  const [accountCursor, setAccountCursor] = useState<NotificationPageCursor | null>(null);
+  const [accountHasMore, setAccountHasMore] = useState(false);
 
   // "Do app" state
   const [appNotifs, setAppNotifs] = useState<InboxNotif[]>([]);
+  const [appCursor, setAppCursor] = useState<NotificationPageCursor | null>(null);
+  const [appHasMore, setAppHasMore] = useState(false);
+  const [appLoading, setAppLoading] = useState(false);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2200); };
 
-  /* ── Load "Do app" (localStorage) ── */
+  /* ── Load verified app notifications (cloud + local reminders) ── */
   useEffect(() => {
     if (loading) return;
     if (!uid) { setAppNotifs([]); return; }
-    seedIfEmpty(uid);
+    let cancelled = false;
+
+    // Older builds generated sample release/episode alerts. Remove them once
+    // so only notifications backed by a real event remain visible.
+    const local = notifInboxStore.get(uid);
+    const verifiedLocal = local.filter((item) => !item.id.startsWith('seed_'));
+    if (verifiedLocal.length !== local.length) {
+      notifInboxStore.clear(uid);
+      verifiedLocal.forEach((item) => notifInboxStore.add(item, uid));
+    }
+
     const reminderSettings = profileStore.get(uid).proMember === true
       ? syncProReminderNotifications(uid)
       : null;
     if (reminderSettings && firebaseConfigured) {
       dbProSettingsStore.set(getDB(), uid, reminderSettings).catch(() => {});
     }
-    setAppNotifs(notifInboxStore.get(uid));
+    const localAfterReminders = notifInboxStore.get(uid);
+    if (!firebaseConfigured) {
+      setAppNotifs(localAfterReminders);
+      return;
+    }
+    setAppLoading(true);
+    dbAppNotifStore.listPage(getDB(), uid).then((page) => {
+      if (cancelled) return;
+      const merged = new Map<string, InboxNotif>();
+      [...page.items, ...localAfterReminders].forEach((item) => {
+        if (!merged.has(item.id)) merged.set(item.id, item);
+      });
+      setAppCursor(page.cursor);
+      setAppHasMore(page.hasMore);
+      setAppNotifs(Array.from(merged.values()).sort(
+        (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
+      ));
+    }).catch(() => {
+      if (!cancelled) setAppNotifs(localAfterReminders);
+    }).finally(() => { if (!cancelled) setAppLoading(false); });
+    return () => { cancelled = true; };
   }, [uid, loading]);
 
   // Account notifications are Firestore-backed React state, so they must be
@@ -175,6 +148,10 @@ export default function NotificationsPage() {
     setAccountNotifs([]);
     setAccountLoading(false);
     setAccountLoaded(false);
+    setAccountCursor(null);
+    setAccountHasMore(false);
+    setAppCursor(null);
+    setAppHasMore(false);
   }, [uid]);
 
   /* ── Load "Minha conta" (Firestore) once per session ── */
@@ -183,9 +160,11 @@ export default function NotificationsPage() {
     if (!firebaseConfigured) { setAccountLoaded(true); return; }
     let cancelled = false;
     setAccountLoading(true);
-    dbNotifStore.listForUser(getDB(), uid).then(list => {
+    dbNotifStore.listPage(getDB(), uid).then(page => {
       if (cancelled) return;
-      setAccountNotifs(list);
+      setAccountNotifs(page.items);
+      setAccountCursor(page.cursor);
+      setAccountHasMore(page.hasMore);
       setAccountLoading(false);
       setAccountLoaded(true);
     }).catch(() => {
@@ -196,11 +175,38 @@ export default function NotificationsPage() {
     return () => { cancelled = true; };
   }, [uid, loading, accountLoaded]);
 
+  const loadMoreAccount = async () => {
+    if (!uid || !accountCursor || !accountHasMore || accountLoading) return;
+    setAccountLoading(true);
+    try {
+      const page = await dbNotifStore.listPage(getDB(), uid, accountCursor);
+      setAccountNotifs((current) => [...current, ...page.items]);
+      setAccountCursor(page.cursor);
+      setAccountHasMore(page.hasMore);
+    } finally { setAccountLoading(false); }
+  };
+
+  const loadMoreApp = async () => {
+    if (!uid || !appCursor || !appHasMore || appLoading) return;
+    setAppLoading(true);
+    try {
+      const page = await dbAppNotifStore.listPage(getDB(), uid, appCursor);
+      setAppNotifs((current) => {
+        const merged = new Map(current.map((item) => [item.id, item]));
+        page.items.forEach((item) => merged.set(item.id, item));
+        return Array.from(merged.values()).sort((a, b) => b.time.localeCompare(a.time));
+      });
+      setAppCursor(page.cursor);
+      setAppHasMore(page.hasMore);
+    } finally { setAppLoading(false); }
+  };
+
   /* ── Mark all read ── */
   const markAllRead = async () => {
     if (tab === 'app') {
       notifInboxStore.markAllRead(uid);
-      setAppNotifs(notifInboxStore.get(uid));
+      if (firebaseConfigured && uid) await dbAppNotifStore.markAllRead(getDB(), uid).catch(() => {});
+      setAppNotifs(prev => prev.map(n => ({ ...n, read: true })));
     } else {
       if (firebaseConfigured && uid) {
         await dbNotifStore.markAllRead(getDB(), uid);
@@ -213,7 +219,11 @@ export default function NotificationsPage() {
   /* ── Mark one read ── */
   const markOne = (id: string) => {
     notifInboxStore.markRead(id, uid);
-    setAppNotifs(notifInboxStore.get(uid));
+    const current = appNotifs.find(item => item.id === id);
+    if (firebaseConfigured && current?.cloudId) {
+      dbAppNotifStore.markRead(getDB(), current.cloudId).catch(() => {});
+    }
+    setAppNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
   const markOneAccount = (docId: string) => {
     if (firebaseConfigured) dbNotifStore.markRead(getDB(), docId).catch(() => {});
@@ -229,7 +239,7 @@ export default function NotificationsPage() {
   };
   const APP_PREF: Partial<Record<InboxNotif['type'], NotifPrefKey>> = {
     like: 'likes', reply: 'replies', follow: 'followers',
-    release: 'premieres', new_episode: 'episodes',
+    release: 'premieres', new_episode: 'episodes', pro_reminder: 'reminders',
   };
   const visibleAccount = accountNotifs.filter(n => {
     const key = ACCOUNT_PREF[n.type];
@@ -337,6 +347,7 @@ export default function NotificationsPage() {
                     ))}
                   </DayGroup>
                 ))}
+                {accountHasMore && <LoadMoreButton loading={accountLoading} onClick={loadMoreAccount} />}
               </>
             )}
 
@@ -365,6 +376,7 @@ export default function NotificationsPage() {
                     ))}
                   </DayGroup>
                 ))}
+                {appHasMore && <LoadMoreButton loading={appLoading} onClick={loadMoreApp} />}
 
                 {visibleApp.length > 0 && (
                   <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
@@ -382,6 +394,14 @@ export default function NotificationsPage() {
         <Toast msg={toast} visible={!!toast} />
       </Screen>
     </Frame>
+  );
+}
+
+function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} disabled={loading} style={{ display: 'block', margin: '8px auto 18px', padding: '10px 20px', borderRadius: 22, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontWeight: 700, cursor: loading ? 'default' : 'pointer' }}>
+      {loading ? 'Carregando…' : 'Carregar mais'}
+    </button>
   );
 }
 

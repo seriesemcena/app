@@ -28,6 +28,7 @@ export default defineConfig([
     '.next/**',
     'out/**',
     'build/**',
+    'apps/admin/dist/**',
     'next-env.d.ts',
     'public/sw.js',
     'public/firebase-messaging-sw.js',

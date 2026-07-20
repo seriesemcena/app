@@ -47,6 +47,7 @@ const ACTIVITY_ROWS: PrefRow[] = [
 const CONTENT_ROWS: PrefRow[] = [
   { key: 'premieres', icon: 'star', labelKey: 'notifPrefs.premieres', subKey: 'notifPrefs.premieresSub' },
   { key: 'episodes',  icon: 'play', labelKey: 'notifPrefs.episodes',  subKey: 'notifPrefs.episodesSub' },
+  { key: 'reminders', icon: 'bell', labelKey: 'notifPrefs.reminders', subKey: 'notifPrefs.remindersSub' },
 ];
 
 export default function NotificationPrefsPage() {
@@ -55,7 +56,21 @@ export default function NotificationPrefsPage() {
   const { user } = useAuth();
 
   const [prefs, setPrefs] = useState<Prefs>({});
-  useEffect(() => { setPrefs(prefsStore.get()); }, []);
+  const [permission, setPermission] = useState<NotificationPermission>('default');
+  useEffect(() => {
+    setPrefs(prefsStore.get());
+    if (typeof Notification !== 'undefined') setPermission(Notification.permission);
+  }, []);
+
+  const enablePush = async () => {
+    if (typeof Notification === 'undefined') return;
+    const next = await Notification.requestPermission();
+    setPermission(next);
+    if (next === 'granted' && user && firebaseConfigured) {
+      const { initFCM } = await import('@/lib/fcm');
+      await initFCM(getDB(), user.uid);
+    }
+  };
 
   const toggle = (key: NotifPrefKey) => {
     const next: Prefs = {
@@ -105,6 +120,31 @@ export default function NotificationPrefsPage() {
           <Txt size={12} color={T.t3} style={{ display: 'block', margin: '4px 4px 16px', lineHeight: 1.5 }}>
             {t('notifPrefs.intro')}
           </Txt>
+
+          <SettingsCard style={{ marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px' }}>
+              <Icon name="bell" size={19} color={permission === 'granted' ? T.pink : T.t2} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Txt size={14} weight={600} color={T.t1} style={{ display: 'block' }}>{t('notifPrefs.pushTitle')}</Txt>
+                <Txt size={11} color={T.t3} style={{ display: 'block', marginTop: 1 }}>
+                  {permission === 'granted'
+                    ? t('notifPrefs.pushEnabled')
+                    : permission === 'denied'
+                      ? t('notifPrefs.pushBlocked')
+                      : t('notifPrefs.pushDisabled')}
+                </Txt>
+              </div>
+              {permission !== 'granted' && (
+                <button
+                  onClick={enablePush}
+                  disabled={permission === 'denied'}
+                  style={{ border: 'none', borderRadius: 16, padding: '8px 12px', background: permission === 'denied' ? T.surface2 : T.pink, color: permission === 'denied' ? T.t3 : '#fff', fontSize: 12, fontWeight: 700, cursor: permission === 'denied' ? 'default' : 'pointer' }}
+                >
+                  {t('notifPrefs.enablePush')}
+                </button>
+              )}
+            </div>
+          </SettingsCard>
 
           {/* ── Atividade da conta ── */}
           <Txt size={11} weight={700} color={T.t2} style={{ display: 'block', margin: '0 4px 8px', textTransform: 'uppercase', letterSpacing: 0.8 }}>

@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import i18next from 'i18next';
+import { cachedRequest } from './cache';
+import { CACHE_TTL } from './dataPolicy';
 
 export type TMDBItem = {
   id: number;
@@ -64,9 +66,14 @@ const get = async (endpoint: string, params: Record<string, string> = {}) => {
   const region = lang.split('-')[1];
   if (region) url.searchParams.set('region', region);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`TMDB request failed (${res.status})`);
-  return res.json();
+  const ttl = endpoint.startsWith('/search/') ? CACHE_TTL.recentList
+    : /^\/(movie|tv|person)\/\d+/.test(endpoint) ? CACHE_TTL.title
+      : CACHE_TTL.homeSection;
+  return cachedRequest(`tmdb:${url.pathname}${url.search}`, ttl, async () => {
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error(`TMDB request failed (${res.status})`);
+    return res.json();
+  }, { staleIfError: true });
 };
 
 export const tmdb = {
