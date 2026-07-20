@@ -62,7 +62,7 @@ export function App() {
   const [accessError, setAccessError] = useState<unknown>(null);
   const [section, setSection] = useState<Section>('dashboard');
   const [search, setSearch] = useState('');
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('maratonou-admin-sidebar') === 'collapsed');
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 900 || localStorage.getItem('maratonou-admin-sidebar') === 'collapsed');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => localStorage.getItem('maratonou-admin-theme') === 'light' ? 'light' : 'dark');
 
   useEffect(() => auth ? onAuthStateChanged(auth, (next) => { setUser(next); setActor(null); setAccessError(null); setAuthReady(true); }) : undefined, []);
@@ -73,6 +73,11 @@ export function App() {
   }, []);
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('maratonou-admin-theme', theme); }, [theme]);
   useEffect(() => { localStorage.setItem('maratonou-admin-sidebar', collapsed ? 'collapsed' : 'expanded'); }, [collapsed]);
+  useEffect(() => {
+    const closeDrawer = () => { if (window.innerWidth < 900) setCollapsed(true); };
+    window.addEventListener('resize', closeDrawer);
+    return () => window.removeEventListener('resize', closeDrawer);
+  }, []);
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {

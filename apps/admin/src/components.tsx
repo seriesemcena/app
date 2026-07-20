@@ -84,6 +84,7 @@ export function AdminLayout({ actor, current, onSection, search, onSearch, theme
   const active = sections.find((entry) => entry.id === current)!;
   const visible = sections.filter((entry) => actor.permissions.includes('*') || actor.permissions.includes(entry.permission));
   return <div className={`admin-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
+    <button className="sidebar-scrim" aria-label="Fechar menu" onClick={onCollapsed}/>
     <aside className="sidebar">
       <div className="brand-row"><button className="brand" aria-label="Ir para visão geral" onClick={() => onSection('dashboard')}><span className="brand-mark">M</span><span className="brand-copy">Maratonou <small>Admin</small></span></button><button className="icon-button collapse-button" onClick={onCollapsed} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}><Icon name="menu" /></button></div>
       <nav className="sidebar-nav" aria-label="Administração">{visible.map((item) => <button title={item.label} className={current === item.id ? 'active' : ''} key={item.id} onClick={() => onSection(item.id)}><Icon name={item.icon}/><span>{item.label}</span></button>)}</nav>
