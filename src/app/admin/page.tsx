@@ -37,7 +37,7 @@ const SEED_FEATURED: FeaturedItem[] = [
 ];
 const SEED_BANNERS: BannerItem[] = [
   { id: '1', title: 'Novidades de Abril', subtitle: 'Confira os lançamentos do mês', cta: 'Ver agora', color: '#E50914', active: true },
-  { id: '2', title: 'Semana VIP', subtitle: 'Assine e desbloqueie tudo', cta: 'Assinar', color: '#d4a810', active: false },
+  { id: '2', title: 'Semana PRO', subtitle: 'Assine e desbloqueie tudo', cta: 'Assinar', color: '#d4a810', active: false },
 ];
 const SEED_NEWS: NewsItem[] = [
   { id: '1', title: 'Stranger Things: temporada 5 confirmada', body: 'Netflix anuncia data de estreia...', category: 'Séries', date: today(), published: true },
@@ -77,7 +77,7 @@ const NAV: { id: AdminSection; icon: string; label: string }[] = [
   { id: 'notificacoes', icon: 'bell',   label: 'Notificações'     },
   { id: 'slider',       icon: 'tv',     label: 'Slider da Home'   },
   { id: 'usuarios',     icon: 'user',   label: 'Usuários'         },
-  { id: 'vip',          icon: 'crown',  label: 'VIP / Assinaturas'},
+  { id: 'vip',          icon: 'crown',  label: 'PRO / Assinaturas'},
   { id: 'lancamentos',  icon: 'tv',     label: 'Lançamentos'      },
   { id: 'moderacao',    icon: 'flag',   label: 'Moderação'        },
 ];
@@ -321,7 +321,7 @@ function AdminPanel() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
         {[
           { label: 'Usuários', value: metrics.usuarios, color: T.pink },
-          { label: 'VIP', value: metrics.vips, color: T.gold },
+          { label: 'PRO', value: metrics.vips, color: T.gold },
           { label: 'Assistidos', value: metrics.assistidos, color: '#4ade80' },
           { label: 'Avaliações', value: metrics.avaliacoes, color: '#60a5fa' },
           { label: 'Querendo ver', value: metrics.querendo, color: '#f472b6' },
@@ -342,7 +342,7 @@ function AdminPanel() {
           { icon: '⭐', text: 'Rodrigo avaliou Oppenheimer', time: 'há 4h' },
           { icon: '❤️', text: 'Lucas adicionou Breaking Bad aos favoritos', time: 'há 6h' },
           { icon: '🔔', text: 'Push enviado para todos os usuários', time: 'ontem' },
-          { icon: '👑', text: 'Ana assinou plano VIP', time: '2 dias atrás' },
+          { icon: '👑', text: 'Ana assinou plano PRO', time: '2 dias atrás' },
         ].map((a, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < 4 ? `1px solid ${T.border}` : 'none' }}>
             <Txt size={13}>{a.icon} {a.text}</Txt>
@@ -675,7 +675,7 @@ function AdminPanel() {
               style={{ padding: '10px 12px', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, color: T.white, fontSize: 13, cursor: 'pointer' }}
             >
               <option value="all">Todos os usuários</option>
-              <option value="vip">Apenas VIP</option>
+              <option value="vip">Apenas PRO</option>
               <option value="free">Apenas Free</option>
             </select>
           </div>
@@ -772,7 +772,7 @@ function AdminPanel() {
                   {p.body.slice(0, 70)}{p.body.length > 70 ? '…' : ''}
                 </Txt>
                 <Txt size={10} color={T.t4} style={{ display: 'block', marginTop: 3 }}>
-                  {p.target === 'all' ? '👥 Todos' : p.target === 'vip' ? '👑 VIP' : '🆓 Free'}
+                  {p.target === 'all' ? '👥 Todos' : p.target === 'vip' ? '👑 PRO' : '🆓 Free'}
                   {p.scheduledAt ? ` · 📅 ${p.scheduledAt}` : ` · ${p.date}`}
                   {!p.sent && ' · Pendente'}
                 </Txt>
@@ -965,7 +965,7 @@ function AdminPanel() {
           <div key={u.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr', gap: 8, padding: '10px 0', borderBottom: i < users.length - 1 ? `1px solid ${T.border}` : 'none', alignItems: 'center' }}>
             <Txt size={13} weight={600}>{u.name}</Txt>
             <Txt size={12} color={T.t2}>{u.email}</Txt>
-            <span style={S.tag(u.plan === 'vip' ? T.gold : T.surface2)}>{u.plan.toUpperCase()}</span>
+            <span style={S.tag(u.plan === 'vip' ? T.gold : T.surface2)}>{u.plan === 'vip' ? 'PRO' : u.plan.toUpperCase()}</span>
             <Txt size={11} color={T.t3}>{u.joined}</Txt>
             <Txt size={12} color={T.t2}>{u.titles}</Txt>
           </div>
@@ -974,7 +974,7 @@ function AdminPanel() {
     </>
   );
 
-  const VIP = () => {
+  const PRO = () => {
     const plans = [
       { name: 'Mensal', price: 'R$ 12,90', subs: 1, revenue: 'R$ 12,90', color: T.pink },
       { name: 'Trimestral', price: 'R$ 34,90', subs: 0, revenue: 'R$ 0,00', color: '#a78bfa' },
@@ -982,7 +982,7 @@ function AdminPanel() {
     ];
     return (
       <>
-        <SectionTitle label="👑 Controle de assinaturas VIP" />
+        <SectionTitle label="👑 Controle de assinaturas PRO" />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
           {plans.map(p => (
             <div key={p.name} style={{ ...S.card, borderTop: `3px solid ${p.color}`, marginBottom: 0 }}>
@@ -993,8 +993,8 @@ function AdminPanel() {
           ))}
         </div>
         <div style={S.card}>
-          <Txt size={14} weight={700} style={{ display: 'block', marginBottom: 12 }}>Benefícios VIP</Txt>
-          {['Sem anúncios', 'Acesso antecipado a lançamentos', 'Recomendações IA ilimitadas', 'Badge exclusivo no perfil', 'Suporte prioritário'].map((b, i) => (
+          <Txt size={14} weight={700} style={{ display: 'block', marginBottom: 12 }}>Benefícios PRO</Txt>
+          {['Perfil temático e capa própria', 'Selos mensais', 'Home personalizada', 'Listas com lembretes', 'Recomendações IA'].map((b, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < 4 ? `1px solid ${T.border}` : 'none' }}>
               <Icon name="check" size={14} color={T.gold} />
               <Txt size={13}>{b}</Txt>
@@ -1161,7 +1161,7 @@ function AdminPanel() {
     notificacoes: <Notificacoes />,
     slider:       <SliderEditor />,
     usuarios:     <Usuarios />,
-    vip:          <VIP />,
+    vip:          <PRO />,
     lancamentos:  <Lancamentos />,
     moderacao:    <Moderacao />,
   };

@@ -34,6 +34,7 @@ export const T = {
   goldDim:  'rgba(245,197,24,0.15)',
   pink:     '#C069FF',
   pinkGlow: 'rgba(192,105,255,0.35)',
+  active:   '#0B0B0D',
 
   /* radii (numeric, not colours) */
   radius:   22,
@@ -48,4 +49,4 @@ export type IconName =
   | 'film' | 'tv' | 'crown' | 'close' | 'info' | 'eye' | 'share'
   | 'fire' | 'mappin' | 'wifi' | 'lock' | 'smile' | 'message' | 'flag'
   | 'chart' | 'chevronLeft' | 'chevronRight' | 'bookmark' | 'award' | 'clock' | 'menuDots'
-  | 'moon' | 'logout';
+  | 'moon' | 'logout' | 'reply';

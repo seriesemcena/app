@@ -92,8 +92,7 @@
   "movies": {
     "tabs": {
       "minha_lista": "Minha lista",
-      "em_cartaz": "Em cartaz",
-      "no_streaming": "No streaming",
+      "proximas_estreias": "Próximas estreias",
       "avaliados": "Avaliados"
     },
     "wantSection": "Quero ver",
@@ -103,10 +102,8 @@
     "emptyFav": "Nenhum filme favorito ainda",
     "emptyWatched": "Nenhum filme marcado como assistido",
     "emptyRated": "Nenhum filme avaliado ainda",
-    "inTheaters": "Em cartaz nos cinemas",
-    "inTheatersSub": "Filmes em exibição nas salas de cinema",
-    "onStreamingTitle": "No streaming",
-    "onStreamingSub": "Filmes disponíveis para assistir agora",
+    "upcomingTitle": "Próximas estreias",
+    "upcomingSub": "Filmes com estreia prevista para os próximos meses",
     "ratedTitle": "Avaliados",
     "ratedSub": "Filmes que você já avaliou",
     "exploreMovies": "Explorar filmes"
@@ -123,7 +120,7 @@
     "step2Title": "Notificações",
     "step2Sub": "Quando você quer receber alertas?",
     "genres": ["Ação", "Drama", "Comédia", "Terror", "Sci-Fi", "Romance", "Thriller", "Documentário", "Animação", "Crime"],
-    "notifOptions": ["Estreias no cinema", "Chegou no streaming", "Novo episódio", "Lembretes VIP"],
+    "notifOptions": ["Estreias no cinema", "Chegou no streaming", "Novo episódio", "Lembretes PRO"],
     "back": "Voltar",
     "next": "Próximo",
     "begin": "Começar"

@@ -43,6 +43,9 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
 
+  /* Codex/Claude previews access the local dev server through 127.0.0.1. */
+  ...(isDev ? { allowedDevOrigins: ['127.0.0.1'] } : {}),
+
   /* Static export for Capacitor (no API routes in bundle) */
   ...(isMobile ? { output: 'export', trailingSlash: true } : {}),
 

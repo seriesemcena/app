@@ -6,10 +6,10 @@ import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { ImgWithSkeleton } from '@/components/posters';
-import { listStore, revStore, profileStore, prefsStore, type Profile } from '@/lib/store';
+import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, type ProReminder, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, dbActivityStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
 import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { usernameFromNameOrEmail } from '@/lib/username';
 import { useTheme } from '@/context/ThemeContext';
@@ -30,21 +30,6 @@ const COLLAGE_SLOTS: Array<{ left?: number; right?: number; top: number; rotate:
   { right: -20, top:  20, rotate:  24, width: 108 },
   { left:   30, top:  90, rotate: -12, width: 100 },
 ];
-
-const GENRE_COLORS: Record<string, string> = {
-  'Drama': '#C069FF', 'Ação': '#FF6B2B', 'Action': '#FF6B2B',
-  'Comédia': '#F5C518', 'Comedy': '#F5C518',
-  'Ficção científica': '#3b82f6', 'Ficção Científica': '#3b82f6',
-  'Science Fiction': '#3b82f6', 'Sci-Fi': '#3b82f6',
-  'Terror': '#8b5cf6', 'Horror': '#8b5cf6',
-  'Romance': '#ec4899', 'Thriller': '#ef4444',
-  'Documentário': '#10b981', 'Documentary': '#10b981',
-  'Animação': '#f97316', 'Animation': '#f97316',
-  'Crime': '#6366f1', 'Aventura': '#06b6d4', 'Adventure': '#06b6d4',
-  'Família': '#f59e0b', 'Family': '#f59e0b',
-  'Mistério': '#7c3aed', 'Mystery': '#7c3aed',
-  'Western': '#a16207', 'Guerra': '#dc2626', 'War': '#dc2626',
-};
 
 const STREAMING_LOGOS: Record<string, string> = {
   netflix: 'netflix',
@@ -70,9 +55,44 @@ const STREAMING_LOGOS_BY_NAME: Record<string, string> = {
   'Star+': 'mgm',
 };
 
+type WatchCalendarCell = { key: string; count: number; future: boolean };
+
+const localDateKey = (date: Date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0'),
+].join('-');
+
+function buildWatchCalendar(dateValues: string[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const start = new Date(monday);
+  start.setDate(monday.getDate() - 21);
+
+  const counts = new Map<string, number>();
+  dateValues.forEach((value) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return;
+    const key = localDateKey(parsed);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+
+  const weekdays = Array(7).fill(0) as number[];
+  const cells: WatchCalendarCell[] = Array.from({ length: 28 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    const count = counts.get(localDateKey(date)) ?? 0;
+    if (date <= today) weekdays[index % 7] += count;
+    return { key: localDateKey(date), count, future: date > today };
+  });
+  return { cells, weekdays };
+}
+
 function UserProfileInner() {
   const router            = useRouter();
-  const { t }             = useTranslation('profile');
+  const { t, i18n }       = useTranslation('profile');
   const { theme }         = useTheme();
   const isDark            = theme === 'dark';
   const params            = useParams();
@@ -107,6 +127,9 @@ function UserProfileInner() {
   const [targetLists,   setTargetLists]   = useState<Lists>(EMPTY_LISTS);
   const [notFound,      setNotFound]      = useState(false);
   const [reviewCount,   setReviewCount]   = useState(0);
+  const [watchCalendar, setWatchCalendar] = useState<WatchCalendarCell[]>(() => buildWatchCalendar([]).cells);
+  const [watchWeekdays, setWatchWeekdays] = useState<number[]>(Array(7).fill(0));
+  const [proReminders, setProReminders] = useState<ProReminder[]>([]);
 
   /* ── Social ── */
   const [socialSheet,    setSocialSheet]    = useState<'followers' | 'following' | null>(null);
@@ -159,6 +182,7 @@ function UserProfileInner() {
       });
     };
     const local = profileStore.get(user.uid);
+    setProReminders(proSettingsStore.get(user.uid).reminders);
     applyProfile(local);
     try {
       const list: string[] = JSON.parse(localStorage.getItem('sec_following') || '[]');
@@ -176,6 +200,13 @@ function UserProfileInner() {
       }).then(f => { if (f) setFollowers(f); }).catch(() => {});
     }
   }, [isMe, user, loading, slug]);
+
+  useEffect(() => {
+    if (!isMe || !user) return;
+    const refresh = () => setProReminders(proSettingsStore.get(user.uid).reminders);
+    window.addEventListener('maratonou:pro', refresh);
+    return () => window.removeEventListener('maratonou:pro', refresh);
+  }, [isMe, user]);
 
   /* Navigating to a different profile clears the "resolved to me" flag */
   useEffect(() => {
@@ -235,13 +266,12 @@ function UserProfileInner() {
   /* ── Real stats from the watched list (works for any profile) ── */
   const [realStats, setRealStats] = useState<{
     totalHours: number; moviesCount: number; tvCount: number;
-    genres: Array<{ g: string; pct: number; color: string }>;
   } | null>(null);
 
   useEffect(() => {
     const watched = concluidos;
     if (watched.length === 0) {
-      setRealStats({ totalHours: 0, moviesCount: 0, tvCount: 0, genres: [] });
+      setRealStats({ totalHours: 0, moviesCount: 0, tvCount: 0 });
       return;
     }
     let alive = true;
@@ -256,27 +286,45 @@ function UserProfileInner() {
     ).then((results) => {
       if (!alive) return;
       let totalMinutes = 0, moviesCount = 0, tvCount = 0;
-      const genreCount: Record<string, number> = {};
       results.forEach((d, i) => {
         if (!d) return;
         const item = toFetch[i];
-        (d.genres || []).forEach((g: { name: string }) => {
-          genreCount[g.name] = (genreCount[g.name] || 0) + 1;
-        });
         if (item.type === 'movie') { moviesCount++; totalMinutes += d.runtime || 110; }
         else { tvCount++; totalMinutes += (d.episode_run_time?.[0] || 45) * Math.min(d.number_of_episodes || 10, 24); }
       });
-      const totalGenreCount = Math.max(Object.values(genreCount).reduce((a, b) => a + b, 0), 1);
-      const genres = Object.entries(genreCount)
-        .sort(([, a], [, b]) => b - a).slice(0, 5)
-        .map(([name, count]) => ({
-          g: name, pct: Math.round((count / totalGenreCount) * 100),
-          color: GENRE_COLORS[name] || '#6b7280',
-        }));
-      setRealStats({ totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount, genres });
+      setRealStats({ totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount });
     });
     return () => { alive = false; };
   }, [concluidos]);
+
+  /* ── Activity calendar: last four weeks, Monday → Sunday ── */
+  useEffect(() => {
+    if (!isMe || loading || !user) return;
+    let alive = true;
+    const profileName = myProfile?.name || user.displayName || '';
+    const reviewDates = profileName ? revStore.getByUser(profileName).map((review) => review.date) : [];
+    const applyDates = (dates: string[]) => {
+      if (!alive) return;
+      const { cells, weekdays } = buildWatchCalendar(dates);
+      setWatchCalendar(cells);
+      setWatchWeekdays(weekdays);
+    };
+
+    if (!firebaseConfigured) {
+      applyDates(reviewDates);
+      return () => { alive = false; };
+    }
+
+    dbActivityStore.getRecent(getDB(), 500)
+      .then((activities) => {
+        const watchedDates = activities
+          .filter((activity) => activity.uid === user.uid && activity.action === 'watched')
+          .map((activity) => activity.createdAt);
+        applyDates(watchedDates.length > 0 ? watchedDates : reviewDates);
+      })
+      .catch(() => applyDates(reviewDates));
+    return () => { alive = false; };
+  }, [isMe, loading, user, myProfile?.name]);
 
   /* ── Follow / unfollow ── */
   const toggleFollow = async () => {
@@ -378,6 +426,11 @@ function UserProfileInner() {
   const displayAvatar   = activeProfile?.avatarImage || '';
   const displayGradient = activeProfile?.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`;
   const bio             = activeProfile?.bio || '';
+  const isProProfile    = activeProfile?.proMember === true;
+  const proTheme        = activeProfile?.proTheme ?? DEFAULT_PRO_THEME;
+  const proAccent       = isProProfile ? proTheme.accent : T.pink;
+  const proThemeCover   = isProProfile ? tmdbImg(proTheme.posterPath, 'w780') : null;
+  const profileCover    = isProProfile ? (activeProfile?.coverImage || proThemeCover || '') : '';
   // Both counts are derived: profile.followers is never written (cross-user
   // writes are denied) and profile.following drifts out of sync with the list.
   const followingCount  = isMe ? followingNames.length : targetFollowing;
@@ -386,16 +439,25 @@ function UserProfileInner() {
 
   const collageSources     = [...favoritos, ...minhaLista];
   const collagePosterItems = collageSources.filter(x => !!x.poster_path).slice(0, 6);
+  const nextProReminder = isMe && isProProfile
+    ? proReminders
+        .filter((reminder) => new Date(`${reminder.remindAt}T12:00:00`).getTime() >= Date.now() - 86_400_000)
+        .sort((a, b) => a.remindAt.localeCompare(b.remindAt))[0]
+    : undefined;
 
   return (
     <Frame>
       <Screen>
         <ScrollArea>
 
-          {/* ── Capa com collage ── */}
+          {/* ── Capa: personalizada/tema para PRO; collage no perfil comum ── */}
           <div style={{ position: 'relative' }}>
-            <div style={{ position: 'relative', height: 180, overflow: 'hidden', background: 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
-              {collagePosterItems.map((item, idx) => {
+            <div style={{ position: 'relative', height: 180, overflow: 'hidden', background: isProProfile ? proTheme.gradient : 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
+              {profileCover && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profileCover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              )}
+              {!isProProfile && collagePosterItems.map((item, idx) => {
                 const slot = COLLAGE_SLOTS[idx];
                 if (!slot || !item.poster_path) return null;
                 const url = tmdbImg(item.poster_path, 'w185');
@@ -415,7 +477,7 @@ function UserProfileInner() {
                   </div>
                 );
               })}
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.50) 65%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
+              <div style={{ position: 'absolute', inset: 0, background: isProProfile ? `radial-gradient(circle at 86% 12%,${proAccent}38,transparent 45%),linear-gradient(to bottom,rgba(0,0,0,0.08) 0%,rgba(0,0,0,0.44) 62%,rgba(13,13,15,1) 100%)` : 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.50) 65%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
 
               {/* Ações no topo */}
               <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 14px)', left: 14, right: 14, display: 'flex', alignItems: 'center', zIndex: 10 }}>
@@ -457,16 +519,19 @@ function UserProfileInner() {
                 background: displayAvatar ? `url(${displayAvatar}) center/cover no-repeat` : displayGradient,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 border: '3px solid var(--c-bg)',
-                boxShadow: '0 0 0 2px #C069FF, 0 8px 28px rgba(0,0,0,0.7)',
+                boxShadow: `0 0 0 2px ${proAccent}, 0 8px 28px rgba(0,0,0,0.7)`,
                 overflow: 'hidden',
               }}>
                 {!displayAvatar && <Txt size={32} weight={900} color={T.white}>{displayName[0]?.toUpperCase() || 'U'}</Txt>}
               </div>
 
               <div style={{ paddingBottom: 6, flex: 1, minWidth: 0 }}>
-                <Txt size={24} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {displayName}
-                </Txt>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                  <Txt size={24} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {displayName}
+                  </Txt>
+                  {isProProfile && <span style={{ flexShrink: 0, padding: '3px 7px', borderRadius: 9, background: `${proAccent}24`, border: `1px solid ${proAccent}55`, color: proAccent, fontSize: 9, fontWeight: 900, letterSpacing: 0.5 }}>PRO</span>}
+                </div>
                 <Txt size={13} color={T.t3} style={{ display: 'block' }}>@{displayUsername}</Txt>
               </div>
 
@@ -525,12 +590,24 @@ function UserProfileInner() {
                 border: '1px solid var(--c-border)',
                 gap: 4,
               }}>
-                <Icon name={icon} size={16} color={T.pink} />
+                <Icon name={icon} size={16} color={proAccent} />
                 <Txt size={18} weight={900} color={T.t1}>{value}</Txt>
                 <Txt size={10} weight={600} color={T.t3} style={{ textAlign: 'center' }}>{label}</Txt>
               </div>
             ))}
           </div>
+
+          {nextProReminder && (
+            <button onClick={() => router.push(withProfileOrigin('/settings/pro#reminders'))} style={{ width: 'calc(100% - 32px)', margin: '16px 16px 0', padding: '13px 14px', borderRadius: 18, border: `1px solid ${proAccent}44`, background: `linear-gradient(135deg,${proAccent}1f,rgba(255,255,255,0.025))`, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 13, display: 'grid', placeItems: 'center', flexShrink: 0, background: `${proAccent}20`, border: `1px solid ${proAccent}45` }}><Icon name="bell" size={19} color={proAccent} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Txt size={10} weight={800} color={proAccent} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 0.7 }}>{nextProReminder.listName}</Txt>
+                <Txt size={13} weight={800} color={T.t1} style={{ display: 'block', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nextProReminder.title}</Txt>
+                <Txt size={10} color={T.t3} style={{ display: 'block', marginTop: 3 }}>{new Intl.DateTimeFormat(i18n.language, { day: '2-digit', month: 'short' }).format(new Date(`${nextProReminder.remindAt}T12:00:00`))}</Txt>
+              </div>
+              <Icon name="chevronR" size={15} color={T.t3} />
+            </button>
+          )}
 
           {/* ── Favoritos ── */}
           <PosterRow
@@ -570,6 +647,9 @@ function UserProfileInner() {
               catch { return []; }
             })();
             const userPlatforms = activeSubs.slice(0, 5);
+            const totalMonthly = userPlatforms.reduce((sum, platform) => sum + (Number(platform.price) || 0), 0);
+            const maxPlatformPrice = Math.max(...userPlatforms.map((platform) => Number(platform.price) || 0), 1);
+            const priceFormatter = new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'BRL' });
             const totalItems = (realStats?.moviesCount ?? 0) + (realStats?.tvCount ?? 0);
 
             return (
@@ -577,7 +657,7 @@ function UserProfileInner() {
 
                 {/* Bloco 1 — Estatísticas */}
                 <button onClick={() => router.push(withProfileOrigin('/stats'))}
-                  style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 142, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+                  style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 258, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                     <Txt size={16} weight={800} color="#fff">{t('stats.title')}</Txt>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
@@ -596,33 +676,70 @@ function UserProfileInner() {
                       const mv = realStats?.moviesCount ?? 0;
                       const total = tv + mv || 1;
                       const tvPct = tv / total;
-                      const r = 26, cx = 34, cy = 34, circ = 2 * Math.PI * r;
+                      const r = 34, cx = 46, cy = 46, circ = 2 * Math.PI * r;
                       const tvLen = circ * tvPct;
                       const mvLen = circ * (1 - tvPct);
+                      const dayReference = new Date(2024, 0, 1); // segunda-feira
+                      const weekdayLabels = Array.from({ length: 7 }, (_, index) => {
+                        const date = new Date(dayReference);
+                        date.setDate(dayReference.getDate() + index);
+                        return new Intl.DateTimeFormat(i18n.language, { weekday: 'narrow' }).format(date).toUpperCase();
+                      });
+                      const weekdayNames = Array.from({ length: 7 }, (_, index) => {
+                        const date = new Date(dayReference);
+                        date.setDate(dayReference.getDate() + index);
+                        return new Intl.DateTimeFormat(i18n.language, { weekday: 'long' }).format(date);
+                      });
+                      const maxCellCount = Math.max(...watchCalendar.map((cell) => cell.count), 1);
+                      const maxWeekdayCount = Math.max(...watchWeekdays, 0);
+                      const mostActiveDay = maxWeekdayCount > 0 ? weekdayNames[watchWeekdays.indexOf(maxWeekdayCount)] : null;
                       return (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%', minWidth: 0 }}>
-                          <svg width={60} height={60} viewBox="0 0 68 68" style={{ flexShrink: 0 }}>
-                            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={9} />
-                            {tv > 0 && (
-                              <circle cx={cx} cy={cy} r={r} fill="none" stroke="#C069FF" strokeWidth={9}
-                                strokeDasharray={`${tvLen} ${circ}`} strokeDashoffset={circ / 4}
-                                style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
-                            )}
-                            {mv > 0 && (
-                              <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FF6B2B" strokeWidth={9}
-                                strokeDasharray={`${mvLen} ${circ}`} strokeDashoffset={circ / 4 - tvLen}
-                                style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
-                            )}
-                            <text x={cx} y={cy + 4} textAnchor="middle" fill="#fff" fontSize={11} fontWeight={800} fontFamily="'Area','Inter',sans-serif">{total}</text>
-                          </svg>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <div style={{ width: 7, height: 7, borderRadius: 2, background: '#C069FF', flexShrink: 0 }} />
-                              <Txt size={10} color="rgba(255,255,255,0.55)">{tv} {t('stats.seriesLabel')}</Txt>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, width: '100%', minWidth: 0 }}>
+                          <div style={{ minWidth: 0, padding: '10px 10px 11px', borderRadius: 16, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <Txt size={10} weight={800} color="rgba(255,255,255,0.48)" style={{ display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.7 }}>{t('stats.contentChart')}</Txt>
+                            <svg width={92} height={92} viewBox="0 0 92 92" style={{ flexShrink: 0 }}>
+                              <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={11} />
+                              {tv > 0 && (
+                                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#C069FF" strokeWidth={11}
+                                  strokeDasharray={`${tvLen} ${circ}`} strokeDashoffset={circ / 4}
+                                  style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
+                              )}
+                              {mv > 0 && (
+                                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FF6B2B" strokeWidth={11}
+                                  strokeDasharray={`${mvLen} ${circ}`} strokeDashoffset={circ / 4 - tvLen}
+                                  style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
+                              )}
+                              <text x={cx} y={cy + 5} textAnchor="middle" fill="#fff" fontSize={15} fontWeight={800} fontFamily="'Area','Inter',sans-serif">{tv + mv}</text>
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: '100%', marginTop: 7 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <div style={{ width: 7, height: 7, borderRadius: 2, background: '#C069FF', flexShrink: 0 }} />
+                                <Txt size={10} color="rgba(255,255,255,0.55)">{tv} {t('stats.seriesLabel')}</Txt>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <div style={{ width: 7, height: 7, borderRadius: 2, background: '#FF6B2B', flexShrink: 0 }} />
+                                <Txt size={10} color="rgba(255,255,255,0.55)">{mv} {t('stats.moviesLabel')}</Txt>
+                              </div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <div style={{ width: 7, height: 7, borderRadius: 2, background: '#FF6B2B', flexShrink: 0 }} />
-                              <Txt size={10} color="rgba(255,255,255,0.55)">{mv} {t('stats.moviesLabel')}</Txt>
+                          </div>
+
+                          <div aria-label={t('stats.weekdayChart')} style={{ minWidth: 0, padding: '10px 10px 11px', borderRadius: 16, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+                            <Txt size={10} weight={800} color="rgba(255,255,255,0.48)" style={{ display: 'block', marginBottom: 9, textTransform: 'uppercase', letterSpacing: 0.7, textAlign: 'center' }}>{t('stats.weekdayChart')}</Txt>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, width: '100%' }}>
+                              {weekdayLabels.map((label, index) => (
+                                <Txt key={`weekday-${index}`} size={8} weight={800} color="rgba(255,255,255,0.38)" style={{ textAlign: 'center', lineHeight: 1 }}>{label}</Txt>
+                              ))}
+                              {watchCalendar.map((cell) => {
+                                const alpha = cell.count > 0 ? 0.28 + (cell.count / maxCellCount) * 0.62 : 0;
+                                return (
+                                  <div key={cell.key} title={`${cell.key}: ${cell.count}`} style={{ aspectRatio: '1', borderRadius: 4, background: cell.future ? 'transparent' : cell.count > 0 ? `rgba(192,105,255,${alpha})` : 'rgba(255,255,255,0.065)', border: cell.future ? '1px solid rgba(255,255,255,0.025)' : '1px solid rgba(255,255,255,0.045)' }} />
+                                );
+                              })}
+                            </div>
+                            <div style={{ marginTop: 9, minHeight: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                              <Txt size={9} weight={700} color={mostActiveDay ? '#D79BFF' : 'rgba(255,255,255,0.32)'} style={{ lineHeight: 1.25 }}>
+                                {mostActiveDay ? t('stats.mostWatchedDay', { day: mostActiveDay }) : t('stats.noWatchActivity')}
+                              </Txt>
                             </div>
                           </div>
                         </div>
@@ -643,36 +760,72 @@ function UserProfileInner() {
                   </div>
 
                   <div data-summary-layout="stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8, width: '100%' }}>
-                    <Txt size={11} color="rgba(255,255,255,0.38)" style={{ whiteSpace: 'nowrap' }}>{t('monthlyExpenses')}</Txt>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 7, overflow: 'hidden' }}>
-                        {userPlatforms.length > 0
-                          ? userPlatforms.map((p) => {
-                              const logo = STREAMING_LOGOS[p.streamId ?? ''] ?? STREAMING_LOGOS_BY_NAME[p.name];
-                              return (
-                                <div key={p.name} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                      <Txt size={11} color="rgba(255,255,255,0.38)" style={{ whiteSpace: 'nowrap' }}>{t('monthlyExpenses')}</Txt>
+                      {userPlatforms.length > 0 && <Txt size={13} weight={800} color="#fff">{priceFormatter.format(totalMonthly)}</Txt>}
+                    </div>
+                    <div data-streaming-chart="compact" style={{ padding: '10px', borderRadius: 14, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                      {userPlatforms.length > 0 ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${userPlatforms.length}, minmax(0, 1fr))`, gap: 8, width: '100%', minWidth: 0 }}>
+                          {userPlatforms.map((p) => {
+                            const logo = STREAMING_LOGOS[p.streamId ?? ''] ?? STREAMING_LOGOS_BY_NAME[p.name];
+                            const value = Number(p.price) || 0;
+                            const width = `${Math.max(8, (value / maxPlatformPrice) * 100)}%`;
+                            return (
+                              <div key={p.name} aria-label={p.name} style={{ display: 'flex', flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                                   {logo ? (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={`/${logo}_logo.png`} alt={p.name} style={{ width: '74%', height: '70%', objectFit: 'contain', display: 'block' }} />
+                                    <img src={`/${logo}_logo.png`} alt="" style={{ width: '76%', height: '72%', objectFit: 'contain', display: 'block' }} />
                                   ) : (
-                                    <Txt size={10} weight={800} color="#fff">{p.name.slice(0, 1)}</Txt>
+                                    <Txt size={11} weight={800} color="#fff">{p.name.slice(0, 1)}</Txt>
                                   )}
                                 </div>
-                              );
-                            })
-                          : <Txt size={11} color="rgba(255,255,255,0.28)">{t('noExpenses')}</Txt>
-                        }
-                      </div>
-
-                      <div style={{ height: 5, marginTop: 7, borderRadius: 4, overflow: 'hidden', display: 'flex', gap: 2 }}>
-                        {userPlatforms.length > 0
-                          ? userPlatforms.map((p) => (
-                              <div key={p.name} style={{ height: '100%', flex: 1, background: p.color ?? 'rgba(255,255,255,0.15)' }} />
-                            ))
-                          : <div style={{ height: '100%', width: '100%', background: 'rgba(255,255,255,0.08)', borderRadius: 4 }} />
-                        }
-                      </div>
+                                <div style={{ width: '100%', height: 5, borderRadius: 4, overflow: 'hidden', background: 'rgba(255,255,255,0.10)' }}>
+                                  <div style={{ width, height: '100%', borderRadius: 4, background: p.color || 'rgba(255,255,255,0.28)' }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <Txt size={11} color="rgba(255,255,255,0.28)">{t('noExpenses')}</Txt>
+                      )}
                     </div>
+                  </div>
+                </button>
+
+                {/* Bloco 3 — Destaque do ranking mensal */}
+                <button
+                  onClick={() => router.push(withProfileOrigin('/ranking'))}
+                  style={{ width: '100%', minHeight: 148, padding: '18px', borderRadius: 22, border: '1px solid rgba(245,197,24,0.28)', cursor: 'pointer', overflow: 'hidden', position: 'relative', textAlign: 'left', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 104px', alignItems: 'center', gap: 14, background: 'radial-gradient(circle at 88% 14%, rgba(245,197,24,0.22), transparent 34%), linear-gradient(135deg, rgba(75,31,112,0.98) 0%, rgba(31,18,50,0.98) 52%, rgba(17,17,20,0.99) 100%)', boxShadow: '0 12px 34px rgba(87,34,132,0.24), inset 0 1px 0 rgba(255,255,255,0.10)' } as React.CSSProperties}
+                >
+                  <div style={{ minWidth: 0, position: 'relative', zIndex: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(245,197,24,0.14)', border: '1px solid rgba(245,197,24,0.34)' }}>
+                        <Icon name="crown" size={17} color="#F5C518" />
+                      </div>
+                      <Txt size={17} weight={900} color="#fff">{t('ranking.title', { ns: 'home' })}</Txt>
+                    </div>
+                    <Txt size={11} color="rgba(255,255,255,0.58)" style={{ display: 'block', lineHeight: 1.45 }}>
+                      {t('ranking.scoreFormula', { ns: 'home' })}
+                    </Txt>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 13 }}>
+                      <Txt size={12} weight={800} color="#D79BFF">{t('rankingHighlightAction')}</Txt>
+                      <Icon name="chevronR" size={12} color="#D79BFF" />
+                    </div>
+                  </div>
+
+                  <div aria-hidden style={{ height: 106, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 6, position: 'relative', zIndex: 2 }}>
+                    {[
+                      { rank: 2, height: 60, color: '#AEB4BF' },
+                      { rank: 1, height: 88, color: '#F5C518' },
+                      { rank: 3, height: 48, color: '#CD7F32' },
+                    ].map((place) => (
+                      <div key={place.rank} style={{ width: 27, height: place.height, borderRadius: '10px 10px 4px 4px', background: `linear-gradient(180deg, ${place.color}38, ${place.color}0D)`, border: `1px solid ${place.color}58`, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 9, boxSizing: 'border-box', boxShadow: place.rank === 1 ? `0 0 20px ${place.color}30` : 'none' }}>
+                        <Txt size={11} weight={900} color={place.color}>{place.rank}</Txt>
+                      </div>
+                    ))}
                   </div>
                 </button>
               </div>
@@ -706,7 +859,7 @@ function UserProfileInner() {
                 {(['followers', 'following'] as const).map(tab => (
                   <button key={tab} onClick={() => setSocialSheet(tab)} style={{
                     padding: '6px 16px', borderRadius: 20,
-                    background: socialSheet === tab ? T.pink : T.surface2,
+                    background: socialSheet === tab ? T.active : T.surface2,
                     border: socialSheet === tab ? 'none' : `1px solid ${T.border}`,
                     color: socialSheet === tab ? '#fff' : T.t2,
                     fontSize: 12, fontWeight: 700, cursor: 'pointer',

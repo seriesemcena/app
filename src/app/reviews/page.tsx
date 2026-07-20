@@ -174,7 +174,7 @@ function ReviewsPageInner() {
               {SORT_OPTIONS.map(({ key, label }) => (
                 <button key={key} onClick={() => setSort(key)} style={{
                   padding: '7px 16px', borderRadius: 20, flexShrink: 0,
-                  background: sort === key ? T.pink : T.surface2,
+                  background: sort === key ? T.active : T.surface2,
                   border: sort === key ? 'none' : `1px solid ${T.border}`,
                   color: sort === key ? '#fff' : T.t2,
                   fontSize: 12, fontWeight: 700, cursor: 'pointer',

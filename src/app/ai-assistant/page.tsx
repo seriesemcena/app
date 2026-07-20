@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, AppBar, Chip, VIPBadge, Txt } from '@/components/primitives';
+import { Screen, AppBar, Chip, PROBadge, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { authHeader } from '@/lib/firebase';
@@ -16,7 +16,7 @@ export default function AIAssistantPage() {
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Msg[]>([
-    { role: 'assistant', text: 'Olá! Sou seu assistente VIP de recomendações 🎬\n\nMe diga o que está com vontade de assistir — gênero, humor, temática, atores favoritos — e vou sugerir títulos perfeitos para você!' },
+    { role: 'assistant', text: 'Olá! Sou seu assistente PRO de recomendações 🎬\n\nMe diga o que está com vontade de assistir — gênero, humor, temática, atores favoritos — e vou sugerir títulos perfeitos para você!' },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ export default function AIAssistantPage() {
           <button onClick={() => navigateBack(router)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="chevronL" size={20} color={T.t2} /></button>
         } right={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <VIPBadge />
+            <PROBadge />
             <button onClick={() => setShowMetrics((m) => !m)} style={{ background: 'none', border: 'none', cursor: 'pointer', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="settings" size={18} color={T.t2} />
             </button>

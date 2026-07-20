@@ -109,7 +109,7 @@ export default function TitleDetailPage() {
   }, [gifSearch, showGif, showForm, isTV]);
 
   const { data: detail, loading, error, retry } = useTMDB(
-    () => isTV ? tmdb.tvDetail(id) : tmdb.movieDetail(id),
+    () => tmdb.titleDetail(isTV ? 'tv' : 'movie', id),
     [id, isTV]
   );
 
@@ -194,6 +194,10 @@ export default function TitleDetailPage() {
   const cast = (detail.credits?.cast || []).slice(0, 12);
   const crew = (detail.credits?.crew || []).filter((c: any) => ['Director', 'Creator'].includes(c.job)).slice(0, 3);
   const similar = (detail.similar?.results || []).slice(0, 8);
+  const textlessPosterPath = detail.images?.posters?.find(
+    (image: { iso_639_1: string | null; file_path: string }) => image.iso_639_1 === null,
+  )?.file_path;
+  const heroPosterPath = textlessPosterPath || detail.poster_path || detail.backdrop_path;
   const seasons: number[] = (detail.seasons || []).map((s: any) => s.season_number).filter((n: number) => n > 0);
   // Default to last/latest season
   const activeSeason = selectedSeason ?? seasons[seasons.length - 1] ?? 1;
@@ -207,6 +211,19 @@ export default function TitleDetailPage() {
   ];
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2500); };
+  const openProblemReport = () => {
+    setMaisSheet(false);
+    setListSheet(false);
+    setShowForm(false);
+    setShowGif(false);
+    setShowEmoji(false);
+    setReportTarget({
+      kind: 'problem',
+      targetId: itemKey,
+      titleKey: itemKey,
+      targetLabel: title,
+    });
+  };
 
   const toggleFav = async () => {
     const item = { id: detail.id, title, type: isTV ? 'tv' : 'movie', poster_path: detail.poster_path };
@@ -275,8 +292,12 @@ export default function TitleDetailPage() {
   return (
     <Frame>
       <Screen>
-        {/* ── Floating header — BlurUIKit style: camadas de blur progressivo, sempre ativo ── */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 40, pointerEvents: 'none' }}>
+        {/* ── Floating header — o glass aparece apenas após o scroll ── */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 40, pointerEvents: 'none',
+          opacity: showNavTitle ? 1 : 0,
+          transition: 'opacity 0.22s ease',
+        }}>
           {/* Camadas de blur progressivo (mais intenso no topo, some embaixo) */}
           {[
             { blur: 24, start: 0,  end: 25  },
@@ -342,7 +363,7 @@ export default function TitleDetailPage() {
           {/* ── Backdrop hero com título e botões sobrepostos ── */}
           <div style={{ height: 480, position: 'relative', overflow: 'hidden' }}>
             <ImgWithSkeleton
-              src={tmdbImg(detail.backdrop_path, 'w780')}
+              src={tmdbImg(heroPosterPath, 'w780')}
               alt={title}
               width="100%" height={480}
               objectPosition="center 20%"
@@ -486,17 +507,36 @@ export default function TitleDetailPage() {
                 ? new Date(nextEp.air_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
                 : null;
               return (
-                <div style={{ marginTop: 16, padding: '18px 18px 16px', borderRadius: 16, background: 'linear-gradient(145deg, rgba(255,255,255,0.10) 0%, rgba(0,0,0,0.18) 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.09)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <Txt size={10} weight={800} color={T.t3} style={{ textTransform: 'uppercase', letterSpacing: 1.2 }}>{t('nextEpisode')}</Txt>
-                    <div style={{ width: 8, height: 8, borderRadius: 4, background: '#22c55e', flexShrink: 0 }} />
+                <div style={{
+                  marginTop: 16, padding: 0, borderRadius: 16, overflow: 'hidden', minHeight: 104,
+                  background: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.025)',
+                  boxShadow: isDark
+                    ? 'inset 0 1px 0 rgba(255,255,255,0.055)'
+                    : 'inset 0 1px 0 rgba(255,255,255,0.65)',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`,
+                  display: 'grid',
+                  gridTemplateColumns: nextEp.still_path ? 'minmax(0, 1fr) 124px' : '1fr',
+                  alignItems: 'stretch', gap: 0,
+                }}>
+                  <div style={{ minWidth: 0, padding: '14px 10px 14px 16px', alignSelf: 'center' }}>
+                    <Txt size={9} weight={800} color={T.t3} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1.15, marginBottom: 8 }}>{t('nextEpisode')}</Txt>
+                    <Txt size={18} weight={800} style={{ display: 'block', lineHeight: 1.18, marginBottom: airDate ? 6 : 0, letterSpacing: -0.25 }}>
+                      {nextEp.name || `Episódio ${nextEp.episode_number}`}
+                    </Txt>
+                    {airDate && (
+                      <Txt size={11} color={T.t3} style={{ display: 'block' }}>{airDate}</Txt>
+                    )}
                   </div>
-                  <Txt size={26} weight={800} style={{ display: 'block', lineHeight: 1.15, marginBottom: 6, letterSpacing: -0.5 }}>
-                    {nextEp.name || `Episódio ${nextEp.episode_number}`}
-                  </Txt>
-                  <Txt size={12} color={T.t3} style={{ display: 'block' }}>
-                    T{nextEp.season_number} · Ep {nextEp.episode_number}{airDate ? ` · ${airDate}` : ''}
-                  </Txt>
+                  {nextEp.still_path && (
+                    <ImgWithSkeleton
+                      src={tmdbImg(nextEp.still_path, 'w300')}
+                      alt={nextEp.name || `Episódio ${nextEp.episode_number}`}
+                      width={124}
+                      height="100%"
+                      objectPosition="center"
+                      style={{ minHeight: 104, alignSelf: 'stretch' }}
+                    />
+                  )}
                 </div>
               );
             })()}
@@ -576,7 +616,7 @@ export default function TitleDetailPage() {
 
             {/* Onde assistir */}
             {tab === 'whereToWatch' && (
-              <WatchProvidersTab type={isTV ? 'tv' : 'movie'} id={id} onVIP={() => router.push('/vip')} />
+              <WatchProvidersTab type={isTV ? 'tv' : 'movie'} id={id} onVIP={() => router.push('/pro')} />
             )}
 
             {/* Avaliações (filmes) */}
@@ -625,12 +665,7 @@ export default function TitleDetailPage() {
           {/* ── Relatar problema (dados errados, imagem quebrada etc.) ── */}
           <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 16px 0' }}>
             <button
-              onClick={() => setReportTarget({
-                kind: 'problem',
-                targetId: itemKey,
-                titleKey: itemKey,
-                targetLabel: title,
-              })}
+              onClick={openProblemReport}
               style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', padding: '10px 14px' }}>
               <Icon name="flag" size={13} color={T.t4} />
               <Txt size={12} weight={600} color={T.t4}>Relatar problema</Txt>
@@ -644,7 +679,7 @@ export default function TitleDetailPage() {
         <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
 
         {/* ── Modal de avaliação (filmes) ── */}
-        {showForm && !isTV && (
+        {showForm && !isTV && reportTarget === null && (
           <>
             <div onClick={() => { setShowForm(false); setShowGif(false); setShowEmoji(false); }}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
@@ -766,7 +801,8 @@ export default function TitleDetailPage() {
           </>
         )}
 
-        <BottomSheet visible={listSheet} onClose={() => setListSheet(false)} title={listStatus ? t('myList') : t('addToList')}>
+        {listSheet && reportTarget === null && (
+        <BottomSheet visible onClose={() => setListSheet(false)} title={listStatus ? t('myList') : t('addToList')}>
           {([
             { key: 'want',     label: t('wantStatus'),     icon: 'bookmark' as const, action: 'want'     as const },
             { key: 'watching', label: t('watchingStatus'), icon: 'eye'      as const, action: 'watching' as const },
@@ -831,22 +867,25 @@ export default function TitleDetailPage() {
             </button>
           )}
         </BottomSheet>
+        )}
 
-        <BottomSheet visible={maisSheet} onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
-          {([
-            { icon: 'play'     as const, label: t('viewTrailer'),  action: () => { setTab('whereToWatch'); setMaisSheet(false); } },
-            { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); setListSheet(true); } },
-            { icon: 'share'    as const, label: t('shareTitle'),   action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); } },
-            { icon: 'flag'     as const, label: t('reportIssue'),  action: () => { setMaisSheet(false); setReportTarget({ kind: 'problem', targetId: itemKey, titleKey: itemKey, targetLabel: title }); } },
-          ]).map(({ icon, label, action }, idx, arr) => (
-            <button key={label} onClick={action} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: idx < arr.length - 1 ? `1px solid ${T.border}` : 'none', textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon name={icon} size={17} color={T.t2} />
-              </div>
-              {label}
-            </button>
-          ))}
-        </BottomSheet>
+        {maisSheet && reportTarget === null && (
+          <BottomSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
+            {([
+              { icon: 'play'     as const, label: t('viewTrailer'),  action: () => { setTab('whereToWatch'); setMaisSheet(false); } },
+              { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); setListSheet(true); } },
+              { icon: 'share'    as const, label: t('shareTitle'),   action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); } },
+              { icon: 'flag'     as const, label: t('reportIssue'),  action: openProblemReport },
+            ]).map(({ icon, label, action }, idx, arr) => (
+              <button key={label} onClick={action} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: idx < arr.length - 1 ? `1px solid ${T.border}` : 'none', textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon name={icon} size={17} color={T.t2} />
+                </div>
+                {label}
+              </button>
+            ))}
+          </BottomSheet>
+        )}
       </Screen>
     </Frame>
   );
@@ -922,7 +961,7 @@ function MovieReviewsTab({ reviews, avgRating, onAddReview, onViewComments, onLi
           {SORT_OPTIONS.map(({ key, label }) => (
             <button key={key} onClick={() => setSort(key)} style={{
               padding: '7px 16px', borderRadius: 20, flexShrink: 0,
-              background: sort === key ? T.pink : T.surface2,
+              background: sort === key ? T.active : T.surface2,
               border: sort === key ? 'none' : `1px solid ${T.border}`,
               color: sort === key ? '#fff' : T.t2,
               fontSize: 12, fontWeight: 700, cursor: 'pointer',

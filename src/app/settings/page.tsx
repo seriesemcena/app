@@ -79,9 +79,6 @@ export default function SettingsPage() {
   const { user, signOut } = useAuth();
   const isDark = theme === 'dark';
 
-  // Todo usuário registrado é VIP
-  const isVip = !!user;
-
   const [profile, setProfile] = useState<Profile | null>(null);
   useEffect(() => {
     const load = () => { try { setProfile(profileStore.get(user?.uid)); } catch {} };
@@ -89,6 +86,10 @@ export default function SettingsPage() {
     window.addEventListener('maratonou:sync', load);
     return () => window.removeEventListener('maratonou:sync', load);
   }, [user?.uid]);
+
+  // Visual prototype only. Production billing authorization must replace
+  // this profile marker with a server-controlled entitlement.
+  const isPro = profile?.proMember === true;
 
   const displayName = profile?.name || user?.displayName || t('title');
   const username    = profile?.username ? `@${profile.username}` : '';
@@ -159,10 +160,10 @@ export default function SettingsPage() {
               <Icon name="chevronR" size={17} color={T.t3} />
             </div>
 
-            {/* ══ Banner VIP ══ */}
-            {!isVip ? (
+            {/* ══ Banner PRO ══ */}
+            {!isPro ? (
               <div
-                onClick={() => router.push(withProfileOrigin('/vip'))}
+                onClick={() => router.push(withProfileOrigin('/pro'))}
                 style={{
                   marginBottom: 14, borderRadius: 20, overflow: 'hidden', cursor: 'pointer',
                   background: 'linear-gradient(135deg, #f5c518 0%, #e0a800 60%, #c47d00 100%)',
@@ -184,7 +185,7 @@ export default function SettingsPage() {
               </div>
             ) : (
               <div
-                onClick={() => router.push(withProfileOrigin('/vip'))}
+                onClick={() => router.push(withProfileOrigin('/settings/pro'))}
                 style={{
                   marginBottom: 14, borderRadius: 20, overflow: 'hidden', cursor: 'pointer',
                   background: 'linear-gradient(135deg, #7B2FBE 0%, #C069FF 100%)',
@@ -202,6 +203,12 @@ export default function SettingsPage() {
                 </div>
                 <Icon name="chevronR" size={18} color="rgba(255,255,255,0.7)" />
               </div>
+            )}
+
+            {isPro && (
+              <Group rows={[
+                { icon: 'crown', label: t('proSettings.settingsLabel'), sub: t('proSettings.settingsSub'), onClick: () => router.push(withProfileOrigin('/settings/pro')) },
+              ]} />
             )}
 
             {/* ══ Conta ══ */}

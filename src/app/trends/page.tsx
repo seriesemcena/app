@@ -87,8 +87,8 @@ export default function TrendsPage() {
     <Frame>
       <Screen>
         <AppBar title="Trends" right={
-          <button onClick={() => router.push('/search')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-            <Icon name="search" size={20} color={T.t2} />
+          <button aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+            <Icon name="bell" size={20} color={T.t2} />
           </button>
         } />
 
@@ -106,7 +106,7 @@ export default function TrendsPage() {
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px 4px', flexShrink: 0 }}>
           {(['day', 'week'] as const).map(p => (
             <button key={p} onClick={() => setPeriod(p)}
-              style={{ padding: '6px 16px', borderRadius: 20, border: period === p ? 'none' : `1px solid ${T.border}`, background: period === p ? T.pink : 'transparent', color: period === p ? T.white : T.t3, fontSize: 12, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.15s' }}>
+              style={{ padding: '6px 16px', borderRadius: 20, border: period === p ? 'none' : `1px solid ${T.border}`, background: period === p ? T.active : 'transparent', color: period === p ? T.white : T.t3, fontSize: 12, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.15s' }}>
               {p === 'day' ? 'Hoje' : 'Esta semana'}
             </button>
           ))}

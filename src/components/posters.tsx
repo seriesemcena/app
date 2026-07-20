@@ -268,6 +268,7 @@ export const TMDBGridCard = ({
   if (!isDark) {
     return (
       <div
+        className="tmdb-grid-card tmdb-grid-card-media"
         onClick={onClick}
         style={{
           width: '100%',
@@ -382,6 +383,7 @@ export const TMDBGridCard = ({
 
   return (
     <div
+      className="tmdb-grid-card"
       onClick={onClick}
       style={{
         width: '100%',
@@ -398,7 +400,7 @@ export const TMDBGridCard = ({
       } as React.CSSProperties}
     >
       {/* ── Imagem com aspecto fixo + scroll edge effect ── */}
-      <div style={{
+      <div className="tmdb-grid-card-media" style={{
         position: 'relative', aspectRatio: '5 / 6.6', overflow: 'hidden', flexShrink: 0,
         borderRadius: '16px 16px 0 0',
       }}>
@@ -495,7 +497,7 @@ export const MasonryGrid2 = ({
   if (loading) return (
     <div className="masonry-cols" style={{ padding }}>
       {Array.from({ length: skeletonCount }).map((_, i) => (
-        <div key={i} className="masonry-item" style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
+        <div key={i} className="masonry-item masonry-skeleton" style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
       ))}
     </div>
   );

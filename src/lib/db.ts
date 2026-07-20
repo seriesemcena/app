@@ -16,8 +16,8 @@ import {
   deleteField,
   type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
-import type { Profile, Review, SliderItem, Prefs } from './store';
-import { profileKey } from './store';
+import type { Profile, Review, SliderItem, Prefs, ProSettings } from './store';
+import { profileKey, proSettingsKey } from './store';
 import { slugifyUsername, usernameFromNameOrEmail, usernameCandidate, USERNAME_FALLBACK } from './username';
 
 type ListType = 'want' | 'watching' | 'watched' | 'favorites';
@@ -45,17 +45,25 @@ const PROFILE_DEFAULT: Profile = {
   social: { instagram: '', twitter: '', letterboxd: '' },
   streamings: [], genres: [],
   followers: 0, following: 0,
+  proMember: false,
+  proBadges: [],
 };
 
 export const dbProfileStore = {
-  async get(db: Firestore, uid: string): Promise<Profile> {
+  async getOptional(db: Firestore, uid: string): Promise<Profile | null> {
     try {
       const snap = await getDoc(doc(db, 'users', uid));
-      return { ...PROFILE_DEFAULT, ...(snap.data()?.profile ?? {}) } as Profile;
-    } catch { return PROFILE_DEFAULT; }
+      const profile = snap.data()?.profile;
+      return profile && typeof profile === 'object'
+        ? { ...PROFILE_DEFAULT, ...profile } as Profile
+        : null;
+    } catch { return null; }
+  },
+  async get(db: Firestore, uid: string): Promise<Profile> {
+    return (await dbProfileStore.getOptional(db, uid)) ?? PROFILE_DEFAULT;
   },
   async set(db: Firestore, uid: string, p: Partial<Profile>) {
-    const current = await dbProfileStore.get(db, uid);
+    const current = (await dbProfileStore.getOptional(db, uid)) ?? PROFILE_DEFAULT;
     await setField(db, ['users', uid], 'profile', { ...current, ...p });
   },
 };
@@ -463,6 +471,22 @@ export const dbExpensesStore = {
   },
 };
 
+// ── PRO preferences ─────────────────────────────────────────
+// Stored outside the public profile payload: only the profile appearance is
+// public; Home composition and reminder dates are private account settings.
+export const dbProSettingsStore = {
+  async get(db: Firestore, uid: string): Promise<ProSettings | null> {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid, 'private', 'pro_settings'));
+      const value = snap.data()?.value;
+      return value && typeof value === 'object' ? value as ProSettings : null;
+    } catch { return null; }
+  },
+  async set(db: Firestore, uid: string, settings: ProSettings) {
+    await setDoc(doc(db, 'users', uid, 'private', 'pro_settings'), { value: settings }, { merge: true });
+  },
+};
+
 // ── Real-time subscription: users/{uid} → localStorage ───────
 // Call on login; returns an Unsubscribe function.
 // Whenever the user's doc changes in Firestore (other device wrote),
@@ -473,7 +497,7 @@ const LIST_KEY  = 'sec_lists_v1';
 const PREFS_KEY = 'sec_prefs';
 
 export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
-  return onSnapshot(doc(db, 'users', uid), (snap) => {
+  const unsubscribeUser = onSnapshot(doc(db, 'users', uid), (snap) => {
     if (typeof window === 'undefined' || !snap.exists()) return;
     const data = snap.data();
     if (!data) return;
@@ -519,6 +543,16 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
     // Notify all listening components
     window.dispatchEvent(new Event('maratonou:sync'));
   });
+
+  const unsubscribePro = onSnapshot(doc(db, 'users', uid, 'private', 'pro_settings'), (snap) => {
+    if (typeof window === 'undefined' || !snap.exists()) return;
+    const value = snap.data()?.value;
+    if (!value || typeof value !== 'object') return;
+    try { localStorage.setItem(proSettingsKey(uid), JSON.stringify(value)); } catch {}
+    window.dispatchEvent(new Event('maratonou:pro'));
+  });
+
+  return () => { unsubscribeUser(); unsubscribePro(); };
 }
 
 // ── Episode watched ──────────────────────────────────────────
@@ -726,6 +760,11 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
       }
     } catch {}
 
+    try {
+      const proSettings = await dbProSettingsStore.get(db, uid);
+      if (proSettings) localStorage.setItem(proSettingsKey(uid), JSON.stringify(proSettings));
+    } catch {}
+
     console.info('[DB] Firestore → localStorage sync ✓');
   } catch (e) {
     console.warn('[DB] Sync from Firestore failed', e);
@@ -740,7 +779,7 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
   if (localStorage.getItem(MIGRATED_KEY)) return; // already done
 
   try {
-    const { listStore, revStore, profileStore, prefsStore } = await import('./store');
+    const { listStore, revStore, profileStore, prefsStore, proSettingsStore } = await import('./store');
 
     const profile = profileStore.get(uid);
     if (profile.name) await dbProfileStore.set(db, uid, profile);
@@ -752,6 +791,12 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
 
     const prefs = prefsStore.get();
     if (Object.keys(prefs).length) await dbPrefsStore.set(db, uid, prefs);
+
+    // A fresh device has no local PRO document. Never upload defaults before
+    // the initial Firestore pull, otherwise valid remote reminders are lost.
+    if (localStorage.getItem(proSettingsKey(uid))) {
+      await dbProSettingsStore.set(db, uid, proSettingsStore.get(uid));
+    }
 
     // migrate episode watched data
     const { epWatchedStore } = await import('./store');

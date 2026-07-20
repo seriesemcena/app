@@ -6,13 +6,13 @@ import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
-import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
-import { listStore, revStore } from '@/lib/store';
+import { tmdb, useTMDB, type TMDBItem } from '@/lib/tmdb';
+import { listStore } from '@/lib/store';
 import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 
-type MoviesTab = 'minha_lista' | 'em_cartaz' | 'no_streaming' | 'avaliados';
+type MoviesTab = 'minha_lista' | 'proximas_estreias' | 'avaliados';
 
 type ListMovie = {
   id: number; title: string; type: string; poster_path?: string | null;
@@ -31,22 +31,11 @@ export default function MoviesPage() {
   const [scrolled, setScrolled] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  // Em cartaz: discover com release_type=3 (Theatrical) — apenas cinema
-  const { data: inTheaters, loading: lIT } = useTMDB(() =>
-    tmdb.discover('movie', {
-      with_release_type: '3',
-      'primary_release_date.gte': new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
-      sort_by: 'popularity.desc',
-      region: 'BR',
-    }), []);
-
-  // No streaming: flatrate (assinatura) na região BR
-  const { data: onStreaming, loading: lOS } = useTMDB(() =>
-    tmdb.discover('movie', {
-      with_watch_monetization_types: 'flatrate',
-      watch_region: 'BR',
-      sort_by: 'popularity.desc',
-    }), []);
+  // Catálogo oficial de próximas estreias da TMDB para a região do Brasil.
+  const { data: upcomingMovies, loading: upcomingLoading } = useTMDB(
+    () => tmdb.upcoming('BR'),
+    []
+  );
 
   useEffect(() => {
     const allLists = [
@@ -88,15 +77,15 @@ export default function MoviesPage() {
   return (
     <Frame>
       <Screen>
-        <div ref={scrollRef} onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+        <div className="app-page-scroll" ref={scrollRef} onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
             navTitle={t('movies', { ns: 'navigation' })}
             showNavTitle={scrolled}
             right={
-              <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="search" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
+              <button aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
               </button>
             }
           />
@@ -110,7 +99,7 @@ export default function MoviesPage() {
             background: 'transparent',
             transition: 'padding 0.25s ease',
           } as React.CSSProperties}>
-            {(['minha_lista', 'em_cartaz', 'no_streaming', 'avaliados'] as const).map((id) => (
+            {(['minha_lista', 'proximas_estreias', 'avaliados'] as const).map((id) => (
               <button key={id} onClick={() => setTab(id)} style={{
                 padding: scrolled ? '4.5px 13px' : '7px 16px',
                 borderRadius: 24, flexShrink: 0,
@@ -121,7 +110,7 @@ export default function MoviesPage() {
                   ? 'none'
                   : (isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.11)'),
                 color: tab === id
-                  ? (isDark ? '#C069FF' : '#fff')
+                  ? (isDark ? T.active : '#fff')
                   : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
@@ -192,30 +181,15 @@ export default function MoviesPage() {
               </div>
             )}
 
-            {/* ══ TAB: Em cartaz ══ */}
-            {tab === 'em_cartaz' && (
+            {/* ══ TAB: Próximas estreias ══ */}
+            {tab === 'proximas_estreias' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('movies.inTheaters')}</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('movies.inTheatersSub')}</Txt>
+                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('movies.upcomingTitle')}</Txt>
+                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('movies.upcomingSub')}</Txt>
                 <MasonryGrid2
-                  items={(inTheaters?.results || []).slice(0, 10)}
-                  onItem={(item) => { const n = normalize(item); router.push(`/title/${n.type}/${n.id}`); }}
-                  loading={!!lIT}
-                  skeletonCount={8}
-                  padding="0"
-                />
-              </div>
-            )}
-
-            {/* ══ TAB: No streaming ══ */}
-            {tab === 'no_streaming' && (
-              <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('movies.onStreamingTitle')}</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('movies.onStreamingSub')}</Txt>
-                <MasonryGrid2
-                  items={(onStreaming?.results || []).slice(0, 10)}
-                  onItem={(item) => { const n = normalize(item); router.push(`/title/${n.type}/${n.id}`); }}
-                  loading={!!lOS}
+                  items={(upcomingMovies?.results || []).slice(0, 10)}
+                  onItem={(item) => openTitle(item.id)}
+                  loading={!!upcomingLoading}
                   skeletonCount={8}
                   padding="0"
                 />

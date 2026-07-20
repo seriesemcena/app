@@ -15,21 +15,16 @@ import i18next from 'i18next';
 import '@/lib/i18n';
 import { tmdbImg } from '@/lib/tmdb';
 
-/* ── emoji picker data ── */
-const EMOJI_GROUPS = [
-  { label: '😀', emojis: ['😀','😂','🤣','😍','🥰','😎','🤩','😱','😭','😤','🙄','🤔','😴','🤯','🥳'] },
-  { label: '❤️', emojis: ['❤️','🔥','⭐','💯','👏','🎬','🍿','📺','🎥','🏆','💀','✨','💫','🎭','🎞️'] },
-  { label: '👍', emojis: ['👍','👎','🤌','💪','🙏','👀','🫣','🤦','🤷','💁','🫡','🫶','🤟','✌️','🤞'] },
-];
+const EPISODE_REACTIONS = [
+  { id: 'loved', key: 'reactionLoved', emoji: '😍', color: '#C069FF' },
+  { id: 'hated', key: 'reactionHated', emoji: '😡', color: '#FF5B68' },
+  { id: 'shocked', key: 'reactionShocked', emoji: '😱', color: '#6C8CFF' },
+  { id: 'sad', key: 'reactionSad', emoji: '😢', color: '#55B7E8' },
+  { id: 'afraid', key: 'reactionAfraid', emoji: '😨', color: '#8A79D6' },
+  { id: 'expectedMore', key: 'reactionExpectedMore', emoji: '😕', color: '#F5A94A' },
+] as const;
 
-type GiphyGif = {
-  id: string;
-  title: string;
-  images: {
-    fixed_height_small: { url: string; width: string; height: string };
-    downsized_small:     { mp4: string };
-  };
-};
+type EpisodeReaction = typeof EPISODE_REACTIONS[number]['id'];
 
 function EpisodePageInner() {
   const router = useRouter();
@@ -42,6 +37,7 @@ function EpisodePageInner() {
   const season  = sp.get('season')  || '1';
   const epNum   = sp.get('epNum')   || '1';
   const epName  = sp.get('name')    || '';
+  const episodeCode = `${season}X${epNum.padStart(2, '0')}`;
   const showName= sp.get('showName')|| '';
   const runtime = sp.get('runtime') || '';
   const overview= sp.get('overview')|| '';
@@ -63,6 +59,7 @@ function EpisodePageInner() {
   const [watched, setWatched]         = useState(false);
   const [toast, setToast]             = useState<string | false>(false);
   const [reviews, setReviews]         = useState<Review[]>([]);
+  const [socialTab, setSocialTab]     = useState<'ratings' | 'reactions'>('ratings');
 
   /* ── Computed: ratings are private per user, only avg is public ── */
   const currentUserName = user?.displayName || user?.email?.split('@')[0] || 'Você';
@@ -72,21 +69,19 @@ function EpisodePageInner() {
     : null;
   const myRating        = reviews.find(r => r.user === currentUserName)?.rating || 0;
   const commentCount    = reviews.filter(r => r.text).length;
+  const reactionReviews = reviews.filter(review => !!review.reaction);
+  const reactionBuckets = EPISODE_REACTIONS.map(reaction => ({
+    ...reaction,
+    label: t(reaction.key),
+    count: reactionReviews.filter(review => review.reaction === reaction.id).length,
+  }));
 
   /* review modal */
   const [modalOpen, setModalOpen]     = useState(false);
   const [modalRating, setModalRating] = useState(0);
-  const [comment, setComment]         = useState('');
-  const [selectedGif, setSelectedGif] = useState<GiphyGif | null>(null);
-  const [emojiTab, setEmojiTab]       = useState(0);
-  const [showEmoji, setShowEmoji]     = useState(false);
-  const [showGif, setShowGif]         = useState(false);
-  const [gifSearch, setGifSearch]     = useState('');
-  const [gifResults, setGifResults]   = useState<GiphyGif[]>([]);
-  const [gifLoading, setGifLoading]   = useState(false);
+  const [modalReaction, setModalReaction] = useState<EpisodeReaction | null>(null);
   const [replyOpen, setReplyOpen]     = useState<string | null>(null);
   const [replyText, setReplyText]     = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showNavTitle, setShowNavTitle] = useState(false);
   const epTitleRef = useRef<HTMLDivElement>(null);
 
@@ -127,36 +122,14 @@ function EpisodePageInner() {
     }).catch(() => {});
   }, [storageKey]);
 
-  /* ── Giphy: fetch trending on open, search on type ── */
-  useEffect(() => {
-    if (!showGif) return;
-    const delay = gifSearch ? 400 : 0;
-    const timer = setTimeout(async () => {
-      setGifLoading(true);
-      try {
-        const res  = await fetch(`/api/giphy?q=${encodeURIComponent(gifSearch)}&limit=15`);
-        const data = await res.json();
-        setGifResults(data.data || []);
-      } catch {}
-      setGifLoading(false);
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [gifSearch, showGif]);
-
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(false), 2000);
   };
 
-  const insertEmoji = (e: string) => {
-    setComment(c => c + e);
-    setShowEmoji(false);
-    textareaRef.current?.focus();
-  };
-
   const submitReview = async () => {
-    if (modalRating === 0 && !comment.trim()) {
-      showToast(t('addRatingOrComment'));
+    if (modalRating === 0 && !modalReaction) {
+      showToast(t('addRatingOrReaction'));
       return;
     }
     const prof         = profileStore.get(user?.uid);
@@ -170,8 +143,8 @@ function EpisodePageInner() {
       avatar: avatarLetter,
       photoUrl,
       rating: modalRating * 2,
-      text: comment.trim(),
-      gifUrl: selectedGif?.images?.fixed_height_small?.url || '',
+      reaction: modalReaction || undefined,
+      text: '',
       date: new Date().toISOString(),
       likes: 0,
     };
@@ -180,8 +153,7 @@ function EpisodePageInner() {
     setReviews(updated);
     setModalOpen(false);
     setModalRating(0);
-    setComment('');
-    setSelectedGif(null);
+    setModalReaction(null);
     showToast(t('reviewPublished'));
     // Sync to Firestore in background
     if (firebaseConfigured) {
@@ -259,11 +231,11 @@ function EpisodePageInner() {
                 <Icon name="bell" size={16} color={T.white} />
               </button>
             }
-            navTitle={`Ep. ${epNum}${epName ? `: ${epName}` : ''}`}
+            navTitle={`${episodeCode}${epName ? `: ${epName}` : ''}`}
             showNavTitle={showNavTitle}
           />
           {/* ── Backdrop / still ── */}
-          <div style={{ height: 210, position: 'relative', overflow: 'hidden', background: still ? 'transparent' : 'var(--c-surface2)' }}>
+          <div style={{ height: 270, margin: '8px 16px 0', borderRadius: 20, position: 'relative', overflow: 'hidden', background: still ? 'transparent' : 'var(--c-surface2)' }}>
             {still && (
               <img
                 src={tmdbImg(still, 'w780') ?? ''}
@@ -281,12 +253,12 @@ function EpisodePageInner() {
               <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
                 {showName ? (
                   <Txt size={12} color={T.pink} weight={700} style={{ display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                    {showName}{season ? `  ·  ${t('season', { number: season })}` : ''}
+                    {showName}
                   </Txt>
                 ) : null}
                 <div ref={epTitleRef}>
                   <Txt size={20} weight={800} style={{ display: 'block', marginBottom: 6, lineHeight: 1.25 }}>
-                    {t('episode', { number: epNum })}{epName ? `: ${epName}` : ''}
+                    {episodeCode}{epName ? `: ${epName}` : ''}
                   </Txt>
                 </div>
                 {/* Air date · Duration */}
@@ -312,36 +284,6 @@ function EpisodePageInner() {
                 {overview}
               </Txt>
             ) : null}
-
-            {/* ── Ratings box (average public, individual private) ── */}
-            <div style={{ padding: '14px 16px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, marginBottom: 12 }}>
-              {avgRating ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ background: '#FFEB13', borderRadius: 10, padding: '8px 14px', textAlign: 'center', flexShrink: 0 }}>
-                    <div style={{ fontSize: 24, fontWeight: 900, color: '#1a1400', lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{avgRating}</div>
-                    <div style={{ fontSize: 10, color: 'rgba(26,20,0,0.6)', marginTop: 1 }}>/10</div>
-                  </div>
-                  <div>
-                    <Txt size={13} weight={700} style={{ display: 'block' }}>
-                      {t('reviewCount', { count: ratedReviews.length })}
-                    </Txt>
-                    {myRating > 0 && (
-                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 3 }}>{t('yourRatingValue', { value: myRating })}</Txt>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Icon name="star" size={20} color={T.t4} />
-                  <div>
-                    <Txt size={13} weight={600} color={T.t2} style={{ display: 'block' }}>{t('noRatingYet')}</Txt>
-                    {myRating > 0 && (
-                      <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 2 }}>{t('yourRatingValue', { value: myRating })}</Txt>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* ── Mark as watched ── */}
             <button
@@ -369,13 +311,91 @@ function EpisodePageInner() {
             </button>
 
             {/* ── Ver comentários button ── */}
-            <button onClick={() => router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`Episódio ${epNum}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`)}
-              style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 24 }}>
+            <button onClick={() => router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`${episodeCode}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`)}
+              style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 20 }}>
               <Icon name="message" size={18} color={T.t2} />
               <Txt size={15} weight={700} color={T.t1}>
                 {t('viewComments')}{commentCount > 0 ? ` (${commentCount})` : ''}
               </Txt>
             </button>
+
+            {/* ── Avaliações e estatísticas de reações ── */}
+            <section style={{ marginBottom: 24 }}>
+              <div role="tablist" aria-label={t('episodeCommunity')} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                {([
+                  { key: 'ratings' as const, label: t('ratingsTab') },
+                  { key: 'reactions' as const, label: t('reactionsTab') },
+                ]).map(item => {
+                  const active = socialTab === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setSocialTab(item.key)}
+                      style={{
+                        padding: '9px 18px', borderRadius: 999, cursor: 'pointer',
+                        background: active ? T.surface2 : 'transparent',
+                        border: `1px solid ${active ? T.t3 : T.border}`,
+                        color: active ? T.t1 : T.t3,
+                        fontSize: 13, fontWeight: 700,
+                        fontFamily: "'Area','Inter',sans-serif",
+                      }}>
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {socialTab === 'ratings' ? (
+                avgRating ? (
+                  <div style={{ padding: '14px 16px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ background: '#FFEB13', borderRadius: 10, padding: '8px 14px', textAlign: 'center', flexShrink: 0 }}>
+                        <div style={{ fontSize: 24, fontWeight: 900, color: '#1a1400', lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{avgRating}</div>
+                        <div style={{ fontSize: 10, color: 'rgba(26,20,0,0.6)', marginTop: 1 }}>/10</div>
+                      </div>
+                      <div>
+                        <Txt size={13} weight={700} style={{ display: 'block' }}>{t('reviewCount', { count: ratedReviews.length })}</Txt>
+                        {myRating > 0 && (
+                          <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 3 }}>{t('yourRatingValue', { value: myRating })}</Txt>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 6px' }}>
+                    <Icon name="star" size={16} color={T.t4} />
+                    <Txt size={13} weight={600} color={T.t3}>{t('noRatingYet')}</Txt>
+                  </div>
+                )
+              ) : reactionReviews.length > 0 ? (
+                <div>
+                  <Txt size={11} color={T.t4} style={{ display: 'block', marginBottom: 12 }}>{t('reactionStatsHint')}</Txt>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                    {reactionBuckets.map(bucket => {
+                      const percentage = Math.round((bucket.count / reactionReviews.length) * 100);
+                      return (
+                        <div key={bucket.label} style={{ display: 'grid', gridTemplateColumns: '26px 92px minmax(0, 1fr) 34px', alignItems: 'center', gap: 8 }}>
+                          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>{bucket.emoji}</span>
+                          <Txt size={12} weight={600} color={T.t2}>{bucket.label}</Txt>
+                          <div style={{ height: 7, borderRadius: 999, background: T.surface2, overflow: 'hidden' }}>
+                            <div style={{ width: `${percentage}%`, height: '100%', borderRadius: 999, background: bucket.color, transition: 'width 0.25s ease' }} />
+                          </div>
+                          <Txt size={11} weight={700} color={T.t3} style={{ textAlign: 'right' }}>{percentage}%</Txt>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 6px' }}>
+                  <span aria-hidden style={{ fontSize: 16 }}>😶</span>
+                  <Txt size={13} weight={600} color={T.t3}>{t('noReactionsYet')}</Txt>
+                </div>
+              )}
+            </section>
           </div>
           <div style={{ height: 80 }} />
         </ScrollArea>
@@ -385,15 +405,15 @@ function EpisodePageInner() {
         {/* ── Review modal ── */}
         {modalOpen && (
           <>
-            <div onClick={() => { setModalOpen(false); setShowEmoji(false); setShowGif(false); }}
+            <div onClick={() => { setModalOpen(false); setModalRating(0); setModalReaction(null); }}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
 
-            <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
+            <div className="safe-bottom-sheet" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
               {/* handle + title */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
                 <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
                 <Txt size={15} weight={700}>{t('rateEpisode')}</Txt>
-                <button onClick={() => { setModalOpen(false); setShowEmoji(false); setShowGif(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <button onClick={() => { setModalOpen(false); setModalRating(0); setModalReaction(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
                   <Icon name="close" size={18} color={T.t3} />
                 </button>
               </div>
@@ -412,109 +432,32 @@ function EpisodePageInner() {
                   )}
                 </div>
 
-                {/* GIF preview */}
-                {selectedGif && (
-                  <div style={{ position: 'relative', marginBottom: 12 }}>
-                    <img
-                      src={selectedGif.images.fixed_height_small.url}
-                      alt={selectedGif.title}
-                      style={{ width: '100%', borderRadius: 10, display: 'block', maxHeight: 140, objectFit: 'cover' }}
-                    />
-                    <button onClick={() => setSelectedGif(null)}
-                      style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon name="close" size={12} color={T.white} />
-                    </button>
-                  </div>
-                )}
-
-                {/* Textarea */}
-                <div style={{ position: 'relative', marginBottom: 10 }}>
-                  <textarea
-                    ref={textareaRef}
-                    value={comment}
-                    onChange={e => setComment(e.target.value)}
-                    placeholder={t('writeComment')}
-                    rows={3}
-                    maxLength={500}
-                    style={{ width: '100%', background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 12, color: T.white, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", padding: '12px 14px', outline: 'none', resize: 'none', boxSizing: 'border-box' }}
-                  />
-                  <Txt size={10} color={T.t4} style={{ position: 'absolute', bottom: 8, right: 10 }}>{comment.length}/500</Txt>
-                </div>
-
-                {/* Toolbar */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <button onClick={() => { setShowEmoji(e => !e); setShowGif(false); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 20, background: showEmoji ? T.pink : T.surface2, border: `1px solid ${showEmoji ? T.pink : T.border}`, cursor: 'pointer' }}>
-                    <span style={{ fontSize: 16 }}>😀</span>
-                    <Txt size={12} weight={600} color={showEmoji ? T.white : T.t2}>Emoji</Txt>
-                  </button>
-                  <button onClick={() => { setShowGif(g => !g); setShowEmoji(false); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 20, background: showGif ? T.pink : T.surface2, border: `1px solid ${showGif ? T.pink : T.border}`, cursor: 'pointer' }}>
-                    <Txt size={11} weight={800} color={showGif ? T.white : T.t2}>GIF</Txt>
-                  </button>
-                </div>
-
-                {/* Emoji picker */}
-                {showEmoji && (
-                  <div style={{ background: T.surface2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 12, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}` }}>
-                      {EMOJI_GROUPS.map((g, i) => (
-                        <button key={i} onClick={() => setEmojiTab(i)}
-                          style={{ flex: 1, padding: '8px 0', background: emojiTab === i ? T.surface : 'transparent', border: 'none', cursor: 'pointer', fontSize: 18 }}>
-                          {g.label}
+                {/* Episode reaction */}
+                <div style={{ marginBottom: 18 }}>
+                  <Txt size={12} color={T.t3} weight={600} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8, textAlign: 'center' }}>{t('yourReaction')}</Txt>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {EPISODE_REACTIONS.map(reaction => {
+                      const selected = modalReaction === reaction.id;
+                      return (
+                        <button
+                          key={reaction.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setModalReaction(current => current === reaction.id ? null : reaction.id)}
+                          style={{
+                            minHeight: 50, padding: '9px 12px', borderRadius: 14, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left',
+                            background: selected ? `${reaction.color}20` : T.surface2,
+                            border: `1px solid ${selected ? reaction.color : T.border}`,
+                            fontFamily: "'Area','Inter',sans-serif",
+                          }}>
+                          <span aria-hidden style={{ fontSize: 21, lineHeight: 1 }}>{reaction.emoji}</span>
+                          <Txt size={12} weight={700} color={selected ? T.t1 : T.t2}>{t(reaction.key)}</Txt>
                         </button>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: 8 }}>
-                      {EMOJI_GROUPS[emojiTab].emojis.map(e => (
-                        <button key={e} onClick={() => insertEmoji(e)}
-                          style={{ width: 38, height: 38, fontSize: 22, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8 }}>
-                          {e}
-                        </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                )}
-
-                {/* GIF picker */}
-                {showGif && (
-                  <div style={{ background: T.surface2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 12, overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <input
-                        value={gifSearch}
-                        onChange={e => setGifSearch(e.target.value)}
-                        placeholder={t('searchGif')}
-                        style={{ flex: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.t1, fontSize: 13, fontFamily: "'Area','Inter',sans-serif", padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
-                      />
-                      <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Giphy-logo.svg/200px-Giphy-logo.svg.png" alt="GIPHY" style={{ height: 16, opacity: 0.5 }} />
-                    </div>
-                    {gifLoading ? (
-                      <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
-                        <Txt size={12} color={T.t3}>{t('loadingGif')}</Txt>
-                      </div>
-                    ) : gifResults.length === 0 ? (
-                      <div style={{ padding: 24, display: 'flex', justifyContent: 'center' }}>
-                        <Txt size={12} color={T.t3}>{t('noGifFound')}</Txt>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 3, padding: 8, maxHeight: 340, overflowY: 'auto' }}>
-                        {gifResults.map(g => (
-                          <button
-                            key={g.id}
-                            onClick={() => { setSelectedGif(g); setShowGif(false); }}
-                            style={{ position: 'relative', overflow: 'hidden', borderRadius: 8, border: selectedGif?.id === g.id ? `2px solid ${T.pink}` : '2px solid transparent', cursor: 'pointer', padding: 0, height: 110, background: T.surface }}
-                          >
-                            <img
-                              src={g.images.fixed_height_small.url}
-                              alt={g.title}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* Submit */}

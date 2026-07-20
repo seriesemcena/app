@@ -85,7 +85,7 @@ export const prefsStore = {
 
 export type Review = {
   id: string; user: string; uid?: string; avatar: string; photoUrl?: string; rating: number; text: string;
-  gifUrl?: string; imageUrl?: string; spoiler?: boolean; date: string; likes?: number; likedBy?: string[];
+  gifUrl?: string; imageUrl?: string; reaction?: string; spoiler?: boolean; date: string; likes?: number; likedBy?: string[];
   replies?: Array<{ id: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
 };
 
@@ -207,6 +207,27 @@ export type Profile = {
   usernameMigrated?: boolean;
   /** True when the user picked the username by hand — never auto-derive again. */
   usernameCustom?: boolean;
+  /** Visual PRO marker for the current prototype. Never use this client-writable field as billing authorization. */
+  proMember?: boolean;
+  /** Public visual theme used by the PRO profile header. */
+  proTheme?: ProProfileTheme;
+  /** Public monthly emblems. Their final visual taxonomy is still evolving. */
+  proBadges?: string[];
+};
+
+export type ProProfileTheme = {
+  id: string;
+  title: string;
+  posterPath?: string | null;
+  accent: string;
+  gradient: string;
+};
+
+export const DEFAULT_PRO_THEME: ProProfileTheme = {
+  id: 'maratonou',
+  title: 'Maratonou',
+  accent: '#C069FF',
+  gradient: 'linear-gradient(145deg,#28143f 0%,#130d20 55%,#08080c 100%)',
 };
 
 export const PROFILE_KEY_BASE = 'sec_profile_v1';
@@ -230,6 +251,9 @@ const PROFILE_DEFAULT: Profile = {
   aliases: [],
   usernameMigrated: false,
   usernameCustom: false,
+  proMember: false,
+  proTheme: DEFAULT_PRO_THEME,
+  proBadges: [],
 };
 
 export const profileStore = {
@@ -246,6 +270,106 @@ export const profileStore = {
   clear(uid?: string | null) {
     if (typeof window === 'undefined') return;
     try { localStorage.removeItem(profileKey(uid)); } catch {}
+  },
+};
+
+/* ─── PRO preferences (private, uid-scoped) ──────────────────
+   Public profile appearance lives in Profile. Home composition and dated
+   reminders stay in this per-account store so one member never changes the
+   experience of another account on the same device. ─────────────────── */
+export const PRO_HOME_SECTION_KEYS = [
+  'hero', 'watching', 'recommendedSeries', 'recommendedMovies', 'streamings', 'news',
+] as const;
+export type ProHomeSectionKey = (typeof PRO_HOME_SECTION_KEYS)[number];
+export type ProHomeSections = Record<ProHomeSectionKey, boolean>;
+
+export type ProReminder = {
+  id: string;
+  listId?: string;
+  listName: string;
+  title: string;
+  mediaType: 'tv' | 'movie';
+  remindAt: string;
+  createdAt: string;
+  tmdbId?: number;
+  posterPath?: string | null;
+  notifiedAt?: string;
+};
+
+export type ProCustomList = {
+  id: string;
+  name: string;
+  notificationsEnabled: boolean;
+  createdAt: string;
+};
+
+export type ProSettings = {
+  homeSections: ProHomeSections;
+  customLists: ProCustomList[];
+  reminders: ProReminder[];
+};
+
+export const DEFAULT_PRO_HOME_SECTIONS: ProHomeSections = {
+  hero: true,
+  watching: true,
+  recommendedSeries: true,
+  recommendedMovies: true,
+  streamings: true,
+  news: true,
+};
+
+export const DEFAULT_PRO_SETTINGS: ProSettings = {
+  homeSections: DEFAULT_PRO_HOME_SECTIONS,
+  customLists: [],
+  reminders: [],
+};
+
+export const PRO_SETTINGS_KEY_BASE = 'sec_pro_settings_v1';
+export const proSettingsKey = (uid?: string | null) => `${PRO_SETTINGS_KEY_BASE}_${uid ?? ''}`;
+
+export const proSettingsStore = {
+  get(uid?: string | null): ProSettings {
+    if (typeof window === 'undefined') return DEFAULT_PRO_SETTINGS;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(proSettingsKey(uid)) || '{}') as Partial<ProSettings>;
+      const reminders = Array.isArray(parsed.reminders) ? parsed.reminders : [];
+      const customLists = Array.isArray(parsed.customLists)
+        ? parsed.customLists.map((list) => ({ ...list, notificationsEnabled: list.notificationsEnabled !== false }))
+        : [];
+      for (const reminder of reminders) {
+        if (!customLists.some((list) => list.id === reminder.listId || list.name.toLocaleLowerCase() === reminder.listName.toLocaleLowerCase())) {
+          customLists.push({
+            id: reminder.listId || `legacy_${reminder.listName.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+            name: reminder.listName,
+            notificationsEnabled: true,
+            createdAt: reminder.createdAt,
+          });
+        }
+      }
+      return {
+        homeSections: { ...DEFAULT_PRO_HOME_SECTIONS, ...(parsed.homeSections ?? {}) },
+        customLists,
+        reminders: reminders.map((reminder) => ({
+          ...reminder,
+          listId: reminder.listId || customLists.find((list) => list.name.toLocaleLowerCase() === reminder.listName.toLocaleLowerCase())?.id,
+        })),
+      };
+    } catch { return DEFAULT_PRO_SETTINGS; }
+  },
+  set(settings: Partial<ProSettings>, uid?: string | null) {
+    if (typeof window === 'undefined') return;
+    const current = proSettingsStore.get(uid);
+    const next: ProSettings = {
+      ...current,
+      ...settings,
+      homeSections: { ...current.homeSections, ...(settings.homeSections ?? {}) },
+      customLists: settings.customLists ?? current.customLists,
+      reminders: settings.reminders ?? current.reminders,
+    };
+    try {
+      localStorage.setItem(proSettingsKey(uid), JSON.stringify(next));
+      window.dispatchEvent(new Event('maratonou:pro'));
+    } catch {}
   },
 };
 
@@ -398,8 +522,10 @@ export const notifInboxStore = {
     const key = inboxKey(uid);
     try {
       const all: InboxNotif[] = JSON.parse(localStorage.getItem(key) || '[]');
-      all.unshift(n);
-      localStorage.setItem(key, JSON.stringify(all));
+      // Keep the original read state/time when the same reminder is checked
+      // again from a stale cloud snapshot.
+      if (all.some((item) => item.id === n.id)) return;
+      localStorage.setItem(key, JSON.stringify([n, ...all]));
     } catch {}
   },
   markRead(id: string, uid?: string | null) {
@@ -431,3 +557,41 @@ export const notifInboxStore = {
     try { localStorage.removeItem(INBOX_KEY_LEGACY); } catch {}
   },
 };
+
+/**
+ * Creates the in-app reminder once a dated PRO item is within three days.
+ * It is intentionally idempotent: notifiedAt is persisted with the reminder,
+ * so opening Home and Notifications cannot create duplicates.
+ */
+export function syncProReminderNotifications(uid?: string | null): ProSettings | null {
+  if (typeof window === 'undefined' || !uid) return null;
+  const settings = proSettingsStore.get(uid);
+  const now = Date.now();
+  const soon = now + 3 * 24 * 60 * 60 * 1000;
+  const oldest = now - 7 * 24 * 60 * 60 * 1000;
+  let changed = false;
+  const reminders = settings.reminders.map((reminder) => {
+    const customList = settings.customLists.find((list) => list.id === reminder.listId);
+    if (customList?.notificationsEnabled === false) return reminder;
+    const due = new Date(`${reminder.remindAt}T12:00:00`).getTime();
+    if (reminder.notifiedAt || Number.isNaN(due) || due > soon || due < oldest) return reminder;
+
+    notifInboxStore.add({
+      id: `pro_reminder_${reminder.id}`,
+      type: 'general',
+      title: reminder.listName,
+      body: `${reminder.title} está chegando na data que você escolheu.`,
+      time: new Date().toISOString(),
+      read: false,
+      poster: reminder.posterPath || undefined,
+      link: reminder.tmdbId ? `/title/${reminder.mediaType}/${reminder.tmdbId}` : '/settings/pro',
+    }, uid);
+    changed = true;
+    return { ...reminder, notifiedAt: new Date().toISOString() };
+  });
+
+  if (!changed) return null;
+  const next = { ...settings, reminders };
+  proSettingsStore.set(next, uid);
+  return next;
+}

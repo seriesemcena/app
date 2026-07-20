@@ -91,7 +91,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   return (
     <button onClick={onClick} style={{
       padding: '7px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
-      background: active ? T.pink : 'rgba(255,255,255,0.08)',
+      background: active ? T.active : 'rgba(255,255,255,0.08)',
       color: active ? '#fff' : T.t2,
       fontSize: 13, fontWeight: active ? 700 : 500,
       fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.15s',

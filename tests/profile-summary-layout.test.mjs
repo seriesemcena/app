@@ -21,3 +21,14 @@ test('profile streaming summary uses the official local logos', async () => {
   assert.match(source, /STREAMING_LOGOS\[p\.streamId \?\? ''\] \?\? STREAMING_LOGOS_BY_NAME\[p\.name\]/);
   assert.match(source, /src=\{`\/\$\{logo\}_logo\.png`\}/);
 });
+
+test('profile summary uses real watch activity and compact streaming tracks', async () => {
+  const source = await readFile(new URL('src/app/user/[username]/page.tsx', projectRoot), 'utf8');
+
+  assert.match(source, /dbActivityStore\.getRecent\(getDB\(\), 500\)/);
+  assert.match(source, /buildWatchCalendar\(dates\)/);
+  assert.match(source, /gridTemplateColumns: 'repeat\(7, minmax\(0, 1fr\)\)'/);
+  assert.match(source, /maxPlatformPrice/);
+  assert.match(source, /data-streaming-chart="compact"/);
+  assert.match(source, /value \/ maxPlatformPrice/);
+});

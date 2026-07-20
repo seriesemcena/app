@@ -11,6 +11,7 @@ import type { IconName } from '@/lib/tokens';
 const BASE_TABS: Array<{ id: string; icon: IconName; href: string; labelKey: string }> = [
   { id: 'home',    icon: 'home',    href: '/home',    labelKey: 'home'     },
   { id: 'series',  icon: 'tv',      href: '/series',  labelKey: 'series'   },
+  { id: 'search',  icon: 'search',  href: '/search',  labelKey: 'search'   },
   { id: 'movies',  icon: 'film',    href: '/movies',  labelKey: 'movies'   },
   { id: 'feed',    icon: 'message', href: '/feed',    labelKey: 'activity' },
   { id: 'profile', icon: 'user',    href: '/profile', labelKey: 'profile'  },
@@ -236,7 +237,7 @@ export function TabBar() {
       <style>{TAB_STYLES}</style>
 
       {/* Outer wrapper — 22px sides gives the pill comfortable breathing room */}
-      <div style={{
+      <div className="tab-bar-safe-wrap" style={{
         padding: '8px calc(22px + var(--safe-area-right)) calc(12px + var(--safe-area-bottom)) calc(22px + var(--safe-area-left))',
         background: 'transparent',
       }}>

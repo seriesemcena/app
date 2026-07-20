@@ -38,6 +38,7 @@
   "myLists": "Minhas listas",
   "seeAll": "Ver tudo",
   "seeMore": "Ver mais",
+  "rankingHighlightAction": "Ver ranking",
   "emptyList": "Nenhum item ainda",
   "concluidos": "Concluídos",
   "stats": {
@@ -45,6 +46,11 @@
     "hoursLabel": "assistidas",
     "ratingsLabel": "avaliações",
     "rankingLabel": "ranking",
+    "contentChart": "Títulos",
+    "genreChart": "Gêneros",
+    "weekdayChart": "Dias assistidos",
+    "mostWatchedDay": "Mais ativo: {{day}}",
+    "noWatchActivity": "Sem atividade recente",
     "seriesLabel": "séries",
     "moviesLabel": "filmes",
     "titlesCount": "{{h}}h · {{n}} títulos"

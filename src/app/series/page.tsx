@@ -40,7 +40,7 @@ export default function SeriesPage() {
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
     if (d.getTime() === today.getTime()) return { label: t('today'), isToday: true, isTomorrow: false };
     if (d.getTime() === tomorrow.getTime()) return { label: t('tomorrow'), isToday: false, isTomorrow: true };
-    const label = new Intl.DateTimeFormat(i18next.language, { day: 'numeric', month: 'short' }).format(d);
+    const label = new Intl.DateTimeFormat(i18next.language, { day: 'numeric', month: 'long' }).format(d);
     return { label, isToday: false, isTomorrow: false };
   }
   const isDark = theme === 'dark';
@@ -97,6 +97,14 @@ export default function SeriesPage() {
     items.filter((i) => i.nextAirDate)
       .sort((a, b) => new Date(a.nextAirDate!).getTime() - new Date(b.nextAirDate!).getTime()),
   [items]);
+  const emBreveGroups = useMemo(() => {
+    const groups = new Map<string, WatchingItem[]>();
+    emBreve.forEach((item) => {
+      const date = item.nextAirDate!;
+      groups.set(date, [...(groups.get(date) || []), item]);
+    });
+    return Array.from(groups, ([date, groupItems]) => ({ date, items: groupItems }));
+  }, [emBreve]);
 
   const TAG_STYLES: Record<WatchingTag, { bg: string; color: string; label: string }> = {
     novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo') },
@@ -107,15 +115,15 @@ export default function SeriesPage() {
   return (
     <Frame>
       <Screen>
-        <div ref={scrollRef} onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+        <div className="app-page-scroll" ref={scrollRef} onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)} style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
             navTitle={t('series', { ns: 'navigation' })}
             showNavTitle={scrolled}
             right={
-              <button onClick={() => router.push('/search')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.12)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.14)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}>
-                <Icon name="search" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.75)'} />
+              <button aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.12)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.14)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}>
+                <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.75)'} />
               </button>
             }
           />
@@ -140,7 +148,7 @@ export default function SeriesPage() {
                   ? 'none'
                   : (isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.11)'),
                 color: tab === id
-                  ? (isDark ? '#C069FF' : '#fff')
+                  ? (isDark ? T.active : '#fff')
                   : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
@@ -222,13 +230,10 @@ export default function SeriesPage() {
             {/* ══ TAB: Em breve ══ */}
             {tab === 'em_breve' && (
               <div style={{ padding: '20px 16px' }}>
-                <Txt size={22} weight={900} style={{ display: 'block', marginBottom: 4 }}>{t('tabs.em_breve')}</Txt>
-                <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 16 }}>{t('upcomingEpisodes')}</Txt>
-
                 {loading ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} style={{ height: 76, borderRadius: 16, background: T.surface2 }} />
+                      <div key={i} style={{ height: 112, borderRadius: 16, background: T.surface2 }} />
                     ))}
                   </div>
                 ) : emBreve.length === 0 ? (
@@ -240,44 +245,40 @@ export default function SeriesPage() {
                     </Txt>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {emBreve.map((item) => {
-                      const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
-                      const dateResult = item.nextAirDate ? formatDate(item.nextAirDate) : { label: '', isToday: false, isTomorrow: false };
-                      const { label: dateLabel, isToday, isTomorrow } = dateResult;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => router.push(`/title/${item.type}/${item.id}`)}
-                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
-                          {/* Thumbnail */}
-                          <div style={{ width: 88, height: 60, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
-                            {thumb
-                              ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                              : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
-                            }
-                          </div>
-                          {/* Info */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
-                              {item.title}
-                            </Txt>
-                            <Txt size={12} color={T.t3}>
-                              {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : t('newEpisode')}
-                            </Txt>
-                          </div>
-                          {/* Date badge */}
-                          <div style={{ flexShrink: 0 }}>
-                            <span style={{
-                              display: 'inline-block', padding: '5px 10px', borderRadius: 10,
-                              background: isToday ? 'rgba(192,105,255,0.14)' : isTomorrow ? 'rgba(52,199,89,0.14)' : T.surface2,
-                            }}>
-                              <Txt size={11} weight={700} color={isToday ? T.pink : isTomorrow ? '#1a8f3a' : T.t2}>{dateLabel}</Txt>
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+                    {emBreveGroups.map((group) => (
+                      <section key={group.date}>
+                        <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 10 }}>
+                          {formatDate(group.date).label}
+                        </Txt>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {group.items.map((item) => {
+                            const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
+                            return (
+                              <button
+                                key={item.id}
+                                onClick={() => router.push(`/title/${item.type}/${item.id}`)}
+                                style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
+                                <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
+                                  {thumb
+                                    ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                    : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
+                                  }
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0, padding: '14px 16px 14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                  <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
+                                    {item.title}
+                                  </Txt>
+                                  <Txt size={12} color={T.t3}>
+                                    {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : t('newEpisode')}
+                                  </Txt>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 )}
               </div>

@@ -202,6 +202,16 @@ html[data-keyboard-open="true"] .tab-bar-wrap {
   bottom: var(--keyboard-offset) !important;
 }
 
+/* Custom page scrollers need to keep their final content above the floating
+   toolbar. ScrollArea already does this; these full-page routes use their own
+   scroll container. */
+.app-page-scroll {
+  min-height: 0;
+  padding-bottom: var(--content-bottom-inset);
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .safe-bottom-sheet {
   max-height: calc(100% - var(--safe-area-top) - 8px) !important;
 }
@@ -240,6 +250,24 @@ html[data-keyboard-open="true"] .tab-bar-wrap {
 
 @media (max-width: 767px) {
   .sidebar-nav { display: none !important; }
+}
+
+/* Installed iOS/Android PWA: keep the tab pill inside the home indicator
+   without adding a second 12px gap, and slightly compact the textless-poster
+   grid so useful content remains visible above the floating toolbar. */
+@media (max-width: 767px) and (display-mode: standalone) {
+  :root {
+    --toolbar-height: calc(72px + max(6px, var(--safe-area-bottom)));
+  }
+
+  .tab-bar-safe-wrap {
+    padding-bottom: max(6px, var(--safe-area-bottom)) !important;
+  }
+
+  .tmdb-grid-card-media,
+  .masonry-skeleton {
+    aspect-ratio: 5 / 5.75 !important;
+  }
 }
 
 @supports (-webkit-touch-callout: none) {

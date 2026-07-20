@@ -32,6 +32,7 @@ import {
   MenuDots,
   Moon,
   Play,
+  Reply,
   SettingsMinimalistic,
   Share,
   SmileCircle,
@@ -100,6 +101,7 @@ const ICONS: Record<IconName, typeof Home> = {
   menuDots: MenuDots,
   moon: Moon,
   logout: Logout2,
+  reply: Reply,
 };
 
 const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlain', 'crown', 'fire', 'menuDots']);
@@ -147,6 +149,7 @@ const SF_SYMBOLS: Record<IconName, string> = {
   menuDots: 'ellipsis',
   moon: 'moon',
   logout: 'rectangle.portrait.and.arrow.right',
+  reply: 'arrowshape.turn.up.left',
 };
 
 const nativeSymbolCache = new Map<string, Promise<string | null>>();

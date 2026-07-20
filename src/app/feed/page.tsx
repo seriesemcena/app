@@ -210,9 +210,10 @@ export default function FeedPage() {
     <Frame>
       <Screen>
         <div
+          className="app-page-scroll"
           ref={scrollRef}
           onScroll={(e) => setScrolled((e.currentTarget as HTMLDivElement).scrollTop > 10)}
-          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'var(--tab-h, 90px)' } as React.CSSProperties}
+          style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}
         >
 
           {/* ── Header glass sticky ── */}
@@ -247,7 +248,7 @@ export default function FeedPage() {
                   ? 'none'
                   : (isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.11)'),
                 color: feedTab === id
-                  ? (isDark ? '#C069FF' : '#fff')
+                  ? (isDark ? T.active : '#fff')
                   : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
                 fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
@@ -257,7 +258,7 @@ export default function FeedPage() {
           </div>
 
           {/* ── Content ── */}
-          <div style={{ minHeight: 400, padding: '0 0 100px' }}>
+          <div style={{ minHeight: 400 }}>
 
             {/* Loading skeletons */}
             {loadingFeed && (

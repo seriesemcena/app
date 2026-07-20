@@ -92,8 +92,7 @@
   "movies": {
     "tabs": {
       "minha_lista": "My list",
-      "em_cartaz": "In theaters",
-      "no_streaming": "On streaming",
+      "proximas_estreias": "Upcoming releases",
       "avaliados": "Rated"
     },
     "wantSection": "Want to watch",
@@ -103,10 +102,8 @@
     "emptyFav": "No favorite movies yet",
     "emptyWatched": "No movies marked as watched",
     "emptyRated": "No movies rated yet",
-    "inTheaters": "In theaters",
-    "inTheatersSub": "Movies currently showing in cinemas",
-    "onStreamingTitle": "On streaming",
-    "onStreamingSub": "Movies available to watch now",
+    "upcomingTitle": "Upcoming releases",
+    "upcomingSub": "Movies scheduled to premiere in the coming months",
     "ratedTitle": "Rated",
     "ratedSub": "Movies you have already rated",
     "exploreMovies": "Explore movies"
@@ -123,7 +120,7 @@
     "step2Title": "Notifications",
     "step2Sub": "When do you want to receive alerts?",
     "genres": ["Action", "Drama", "Comedy", "Horror", "Sci-Fi", "Romance", "Thriller", "Documentary", "Animation", "Crime"],
-    "notifOptions": ["Cinema releases", "Now streaming", "New episode", "VIP reminders"],
+    "notifOptions": ["Cinema releases", "Now streaming", "New episode", "PRO reminders"],
     "back": "Back",
     "next": "Next",
     "begin": "Get started"

@@ -499,7 +499,7 @@ export default function StatsPage() {
           {/* ── Tabs ── */}
           <div style={{ display:'flex', gap:8, margin:'12px 16px 0' }}>
             {([{ id:'series', label: t('statsPage.series') },{ id:'filmes', label: t('statsPage.moviesTab') }] as const).map(({ id, label }) => (
-              <button key={id} onClick={() => setTab(id)} style={{ padding:'8px 20px', borderRadius:24, background: tab===id ? T.pink : 'transparent', border: tab===id ? 'none' : `1px solid ${T.border}`, color: tab===id ? '#fff' : T.t2, fontSize:14, fontWeight: tab===id ? 800 : 600, fontFamily:"'Area','Inter',sans-serif", cursor:'pointer', transition:'all 0.2s' } as React.CSSProperties}>
+              <button key={id} onClick={() => setTab(id)} style={{ padding:'8px 20px', borderRadius:24, background: tab===id ? T.active : 'transparent', border: tab===id ? 'none' : `1px solid ${T.border}`, color: tab===id ? '#fff' : T.t2, fontSize:14, fontWeight: tab===id ? 800 : 600, fontFamily:"'Area','Inter',sans-serif", cursor:'pointer', transition:'all 0.2s' } as React.CSSProperties}>
                 {label}
               </button>
             ))}

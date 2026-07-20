@@ -8,11 +8,11 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, GlassHeader, Txt, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { notifInboxStore, listStore, prefsStore, isNotifEnabled, type InboxNotif, type NotifPrefKey } from '@/lib/store';
+import { notifInboxStore, listStore, prefsStore, profileStore, isNotifEnabled, syncProReminderNotifications, type InboxNotif, type NotifPrefKey } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack, navigateTo } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbNotifStore, type NotifDoc } from '@/lib/db';
+import { dbNotifStore, dbProSettingsStore, type NotifDoc } from '@/lib/db';
 import { tmdbImg } from '@/lib/tmdb';
 
 type ActiveTab = 'account' | 'app';
@@ -160,19 +160,40 @@ export default function NotificationsPage() {
     if (loading) return;
     if (!uid) { setAppNotifs([]); return; }
     seedIfEmpty(uid);
+    const reminderSettings = profileStore.get(uid).proMember === true
+      ? syncProReminderNotifications(uid)
+      : null;
+    if (reminderSettings && firebaseConfigured) {
+      dbProSettingsStore.set(getDB(), uid, reminderSettings).catch(() => {});
+    }
     setAppNotifs(notifInboxStore.get(uid));
   }, [uid, loading]);
+
+  // Account notifications are Firestore-backed React state, so they must be
+  // dropped immediately when the authenticated account changes.
+  useEffect(() => {
+    setAccountNotifs([]);
+    setAccountLoading(false);
+    setAccountLoaded(false);
+  }, [uid]);
 
   /* ── Load "Minha conta" (Firestore) once per session ── */
   useEffect(() => {
     if (loading || !uid || accountLoaded) return;
     if (!firebaseConfigured) { setAccountLoaded(true); return; }
+    let cancelled = false;
     setAccountLoading(true);
     dbNotifStore.listForUser(getDB(), uid).then(list => {
+      if (cancelled) return;
       setAccountNotifs(list);
       setAccountLoading(false);
       setAccountLoaded(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setAccountLoading(false);
+      setAccountLoaded(true);
     });
+    return () => { cancelled = true; };
   }, [uid, loading, accountLoaded]);
 
   /* ── Mark all read ── */
@@ -261,13 +282,13 @@ export default function NotificationsPage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => setTab(key)} style={{
-                  flex: 1, padding: '12px 4px 10px', background: 'none', border: 'none',
+                  flex: 1, padding: '10px 4px', background: active ? '#fff' : 'transparent', border: 'none',
+                  borderRadius: 20,
                   cursor: 'pointer', position: 'relative',
-                  borderBottom: active ? '2px solid #C069FF' : '2px solid transparent',
-                  transition: 'border-color 0.2s',
+                  transition: 'background 0.2s',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <Txt size={13} weight={active ? 700 : 500} color={active ? '#C069FF' : T.t3}>{label}</Txt>
+                    <Txt size={13} weight={active ? 700 : 500} color={active ? T.active : T.t3}>{label}</Txt>
                     {count > 0 && (
                       <div style={{ minWidth: 18, height: 18, borderRadius: 9, background: '#C069FF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
                         <Txt size={10} weight={700} color="#fff">{count > 99 ? '99+' : count}</Txt>

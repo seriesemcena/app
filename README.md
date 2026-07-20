@@ -29,4 +29,4 @@ A chave TMDB já está em `.env.local` (apenas server-side, nunca exposta ao cli
 
 ## Próxima iteração
 
-Calendar, Lists, Profile, VIP, Notifications, Settings, Expenses, Recommendations, AI Assistant, Episode, Actor.
+Calendar, Lists, Profile, PRO, Notifications, Settings, Expenses, Recommendations, AI Assistant, Episode, Actor.

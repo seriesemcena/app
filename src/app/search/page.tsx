@@ -18,6 +18,7 @@ import '@/lib/i18n';
 
 type FilterType = 'series' | 'movies' | 'people' | 'users';
 type SortOrder = 'relevance' | 'newest' | 'oldest';
+type TrendingType = 'tv' | 'movie';
 type RecentItem = { id: number; title: string; type: string; poster_path?: string | null };
 
 const RECENT_KEY = 'sec_recent_search_v1';
@@ -43,6 +44,7 @@ export default function SearchPage() {
   const [filter, setFilter] = useState<FilterType>('series');
   const [sort, setSort] = useState<SortOrder>('relevance');
   const [sortOpen, setSortOpen] = useState(false);
+  const [trendingType, setTrendingType] = useState<TrendingType>('tv');
   const [focused, setFocused] = useState(false);
   const [recentSearches, setRecentSearches] = useState<RecentItem[]>([]);
   const [textlessPosters, setTextlessPosters] = useState<Record<number, string | null>>({});
@@ -95,7 +97,10 @@ export default function SearchPage() {
     } catch { setUserResults([]); setUserLoading(false); }
   }, [debouncedQ, filter]);
 
-  const { data: trending } = useTMDB(() => tmdb.trending('all', 'day'), []);
+  const { data: trending, loading: trendingLoading } = useTMDB(
+    () => tmdb.trending(trendingType, 'day'),
+    [trendingType]
+  );
   const { data: searchRes, loading: searchLoad, error: searchError, retry: retrySearch } = useTMDB(
     () => debouncedQ.length > 1 ? tmdb.search(debouncedQ) : Promise.resolve(null),
     [debouncedQ]
@@ -134,15 +139,18 @@ export default function SearchPage() {
   return (
     <Frame>
       <Screen style={{ background: 'transparent', position: 'relative' }}>
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', position: 'relative' } as React.CSSProperties}>
+        <div className="app-page-scroll" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', position: 'relative' } as React.CSSProperties}>
 
           {/* ── Header card ── */}
           <div style={{ position: 'relative', margin: '0 0 16px', overflow: 'hidden', borderRadius: '0 0 28px 28px', background: 'var(--c-card)' }}>
 
-            <div style={{ position: 'relative', zIndex: 1, padding: '16px 16px 20px' }}>
+            <div style={{
+              position: 'relative', zIndex: 1,
+              padding: 'calc(var(--safe-area-top) + 12px) calc(var(--safe-area-right) + 16px) 20px calc(var(--safe-area-left) + 16px)',
+            }}>
 
               {/* Linha 1: Avatar + Logo + Notificações */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', border: '2px solid rgba(255,255,255,0.25)' }} onClick={() => router.push(myProfileUrl)}>
                   {avatarImage
                     ? <img src={avatarImage} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -214,7 +222,7 @@ export default function SearchPage() {
                                 </div>;
                           })()}
                           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.80) 0%, rgba(0,0,0,0.20) 50%, transparent 100%)' }} />
-                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '8px 10px' }}>
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 14px' }}>
                             <Txt size={12} weight={700} color="#fff" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 } as React.CSSProperties}>
                               {item.title}
                             </Txt>
@@ -233,13 +241,41 @@ export default function SearchPage() {
 
             {!isSearching ? (
               <>
-                <Txt size={22} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>
-                  {t('search.trendingToday')}
-                </Txt>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+                  <Txt size={22} weight={800} color={T.t1} style={{ display: 'block', fontStretch: 'condensed' } as React.CSSProperties}>
+                    {t('search.trendingToday')}
+                  </Txt>
+                  <div role="tablist" aria-label={t('search.trendingToday')} style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {([
+                      ['tv', t('search.filter.series')],
+                      ['movie', t('search.filter.movies')],
+                    ] as const).map(([type, label]) => {
+                      const active = trendingType === type;
+                      return (
+                        <button
+                          key={type}
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setTrendingType(type)}
+                          style={{
+                            padding: '7px 13px', borderRadius: 18, flexShrink: 0,
+                            background: active ? '#fff' : T.card,
+                            border: active ? '1px solid #fff' : `1px solid ${T.border}`,
+                            color: active ? T.active : T.t2,
+                            fontSize: 12, fontWeight: 700,
+                            fontFamily: "'Area','Inter',sans-serif",
+                            cursor: 'pointer', transition: 'all 0.2s',
+                          }}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <MasonryGrid2
                   items={trending?.results?.slice(0, 12) ?? []}
                   onItem={openTitle}
-                  loading={!trending}
+                  loading={trendingLoading}
                   skeletonCount={6}
                   padding="0"
                 />
@@ -270,7 +306,7 @@ export default function SearchPage() {
                         onClick={() => setSortOpen((v) => !v)}
                         style={{
                           marginLeft: 'auto', width: 36, height: 36, borderRadius: 18, flexShrink: 0,
-                          background: sortOpen ? T.pink : T.card,
+                          background: sortOpen ? T.active : T.card,
                           border: 'none', cursor: 'pointer',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           transition: 'background 0.2s',
@@ -288,9 +324,9 @@ export default function SearchPage() {
                           <button
                             key={s}
                             onClick={() => { setSort(s); setSortOpen(false); }}
-                            style={{ width: '100%', padding: '13px 16px', background: sort === s ? 'rgba(192,105,255,0.08)' : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: "'Area','Inter',sans-serif" }}>
-                            <Txt size={14} weight={sort === s ? 700 : 500} color={sort === s ? T.pink : T.t1}>{t(`search.sort.${s}`)}</Txt>
-                            {sort === s && <Icon name="check" size={14} color={T.pink} />}
+                            style={{ width: '100%', padding: '13px 16px', background: sort === s ? '#fff' : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: "'Area','Inter',sans-serif" }}>
+                            <Txt size={14} weight={sort === s ? 700 : 500} color={sort === s ? T.active : T.t1}>{t(`search.sort.${s}`)}</Txt>
+                            {sort === s && <Icon name="check" size={14} color={T.active} />}
                           </button>
                         ))}
                       </div>

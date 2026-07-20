@@ -168,15 +168,18 @@ export const MetaChip = ({ label }: { label: string }) => (
 );
 
 export const Chip = ({ label, active, onClick, style = {} }: { label: string; active?: boolean; onClick?: () => void; style?: CSSProperties }) => (
-  <button onClick={onClick} style={{ padding: '7px 14px', borderRadius: 20, border: active ? 'none' : `1px solid ${T.border}`, background: active ? T.pink : 'transparent', color: active ? T.white : T.t2, fontSize: 12, fontWeight: active ? 700 : 500, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease', flexShrink: 0, ...style }}>{label}</button>
+  <button onClick={onClick} style={{ padding: '7px 14px', borderRadius: 20, border: active ? 'none' : `1px solid ${T.border}`, background: active ? T.active : 'transparent', color: active ? T.white : T.t2, fontSize: 12, fontWeight: active ? 700 : 500, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease', flexShrink: 0, ...style }}>{label}</button>
 );
 
-export const VIPBadge = ({ size = 'sm' }: { size?: 'sm' | 'md' }) => (
+export const PROBadge = ({ size = 'sm' }: { size?: 'sm' | 'md' }) => (
   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: T.goldDim, border: `1px solid rgba(245,197,24,0.3)`, borderRadius: 20, padding: size === 'sm' ? '3px 8px' : '5px 12px' }}>
     <Icon name="crown" size={size === 'sm' ? 10 : 13} color={T.gold} />
-    <Txt size={size === 'sm' ? 9 : 11} weight={700} color={T.gold}>VIP</Txt>
+    <Txt size={size === 'sm' ? 9 : 11} weight={700} color={T.gold}>PRO</Txt>
   </div>
 );
+
+/** @deprecated Compatibility alias for older imports; renders the PRO badge. */
+export const VIPBadge = PROBadge;
 
 export const Skeleton = ({ w, h, radius = 8, style = {} }: { w: number | string; h: number | string; radius?: number; style?: CSSProperties }) => {
   const [pulse, setPulse] = useState(false);
@@ -215,7 +218,10 @@ export const BottomSheet = ({ visible, onClose, title, children }: { visible: bo
       {visible && (
         <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, pointerEvents: 'auto', touchAction: 'none' }} />
       )}
-      <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
+      <div
+        aria-hidden={!visible}
+        className={`safe-bottom-sheet${visible ? ' keyboard-aware-bottom' : ''}`}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: visible ? 'auto' : 'none' }}>
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
           <div style={{ width: 40 }} />
           <div style={{ width: 40, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />

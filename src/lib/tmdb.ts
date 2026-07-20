@@ -25,6 +25,14 @@ export type TMDBItem = {
   credits?: { cast: any[]; crew: any[] };
   similar?: { results: TMDBItem[] };
   videos?: { results: any[] };
+  images?: {
+    posters?: Array<{
+      file_path: string;
+      iso_639_1: string | null;
+      vote_average?: number;
+      vote_count?: number;
+    }>;
+  };
 };
 
 export type TMDBImageSize = 'w92' | 'w154' | 'w185' | 'w300' | 'w342' | 'w500' | 'w780' | 'original';
@@ -67,10 +75,14 @@ export const tmdb = {
   onAir: () => get('/tv/on_the_air'),
   popular: (type: 'movie' | 'tv' = 'movie') => get(`/${type}/popular`),
   topRated: (type: 'movie' | 'tv' = 'movie') => get(`/${type}/top_rated`),
-  upcoming: () => get('/movie/upcoming'),
+  upcoming: (region = 'BR') => get('/movie/upcoming', { region }),
   search: (q: string) => get('/search/multi', { query: q }),
   movieDetail: (id: number | string) => get(`/movie/${id}`, { append_to_response: 'credits,similar,videos' }),
   tvDetail: (id: number | string) => get(`/tv/${id}`, { append_to_response: 'credits,similar,videos' }),
+  titleDetail: (type: 'movie' | 'tv', id: number | string) => get(`/${type}/${id}`, {
+    append_to_response: 'credits,similar,videos,images',
+    include_image_language: 'null',
+  }),
   season: (tvId: number | string, n: number) => get(`/tv/${tvId}/season/${n}`),
   personDetail: (id: number | string) => get(`/person/${id}`, { append_to_response: 'movie_credits,tv_credits,images' }),
   discover: (type: 'movie' | 'tv', params: Record<string, string>) => get(`/discover/${type}`, params),

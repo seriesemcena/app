@@ -45,6 +45,7 @@ function CommentsPageInner() {
   const [toast, setToast]     = useState<string | false>(false);
 
   /* fixed composer */
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [comment, setComment]           = useState('');
   const [showMore, setShowMore]         = useState(false);
   const [composerPanel, setComposerPanel] = useState<'gif' | 'image' | null>(null);
@@ -63,6 +64,11 @@ function CommentsPageInner() {
   const replyInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2200); };
+
+  const openComposer = () => {
+    setComposerExpanded(true);
+    setTimeout(() => composerRef.current?.focus(), 80);
+  };
 
   useEffect(() => {
     if (!storageKey) return;
@@ -202,6 +208,7 @@ function CommentsPageInner() {
     setSpoiler(false);
     setShowMore(false);
     setComposerPanel(null);
+    setComposerExpanded(false);
     showToast(t('comments.published'));
 
     if (firebaseConfigured) {
@@ -362,7 +369,7 @@ function CommentsPageInner() {
               {SORT_OPTIONS.map(({ key, label }) => (
                 <button key={key} onClick={() => setSort(key)} style={{
                   padding: '7px 16px', borderRadius: 20, flexShrink: 0,
-                  background: sort === key ? T.pink : T.surface2,
+                  background: sort === key ? T.active : T.surface2,
                   border: sort === key ? 'none' : `1px solid ${T.border}`,
                   color: sort === key ? '#fff' : T.t2,
                   fontSize: 12, fontWeight: 700, cursor: 'pointer',
@@ -381,7 +388,7 @@ function CommentsPageInner() {
                 <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 24, lineHeight: 1.5 }}>
                   {t('comments.beFirst')}
                 </Txt>
-                <button onClick={() => composerRef.current?.focus()}
+                <button onClick={openComposer}
                   style={{ padding: '12px 28px', borderRadius: 24, background: T.pink, border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px ${T.pinkGlow}` }}>
                   <Txt size={14} weight={700} color="#fff">{t('comments.commentNow')}</Txt>
                 </button>
@@ -420,7 +427,7 @@ function CommentsPageInner() {
         <div className="keyboard-aware-bottom" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 60, padding: '48px calc(12px + var(--safe-area-right)) calc(12px + var(--interactive-safe-bottom)) calc(12px + var(--safe-area-left))', background: `linear-gradient(to bottom, transparent, ${T.bg} 34%)` }}>
 
           {/* More menu */}
-          {showMore && !composerPanel && (
+          {composerExpanded && showMore && !composerPanel && (
             <div style={{ position: 'absolute', bottom: 'calc(100% - 48px)', left: 12, width: 250, background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, overflow: 'hidden', boxShadow: '0 12px 36px rgba(0,0,0,0.34)' }}>
               {[
                 { label: spoiler ? t('comments.spoilerOn') : t('comments.markSpoiler'), icon: 'eye' as const, action: () => { setSpoiler(v => !v); setShowMore(false); } },
@@ -441,7 +448,7 @@ function CommentsPageInner() {
           )}
 
           {/* Giphy window */}
-          {composerPanel === 'gif' && (
+          {composerExpanded && composerPanel === 'gif' && (
             <div style={{ position: 'absolute', bottom: 'calc(100% - 48px)', left: 12, right: 12, maxHeight: '52vh', background: T.card, border: `1px solid ${T.border}`, borderRadius: 20, padding: 12, boxShadow: '0 12px 36px rgba(0,0,0,0.34)', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <input
@@ -477,7 +484,7 @@ function CommentsPageInner() {
           )}
 
           {/* External image URL window */}
-          {composerPanel === 'image' && (
+          {composerExpanded && composerPanel === 'image' && (
             <div style={{ position: 'absolute', bottom: 'calc(100% - 48px)', left: 12, right: 12, background: T.card, border: `1px solid ${T.border}`, borderRadius: 20, padding: 14, boxShadow: '0 12px 36px rgba(0,0,0,0.34)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <Txt size={14} weight={800}>{t('comments.useImage')}</Txt>
@@ -503,7 +510,20 @@ function CommentsPageInner() {
           )}
 
           {/* Composer dock */}
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 22, padding: 8, boxShadow: '0 8px 28px rgba(0,0,0,0.24)' }}>
+          {!composerExpanded ? (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={openComposer}
+                aria-label={t('comments.commentNow')}
+                style={{ minHeight: 48, padding: '0 20px', borderRadius: 24, background: T.pink, border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, boxShadow: `0 6px 20px ${T.pinkGlow}`, cursor: 'pointer', fontFamily: "'Area','Inter',sans-serif", fontSize: 14, fontWeight: 800 }}
+              >
+                <Icon name="reply" size={19} color="#fff" />
+                {t('comments.commentNow')}
+              </button>
+            </div>
+          ) : (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 22, padding: 10, boxShadow: '0 8px 28px rgba(0,0,0,0.24)' }}>
             {(selectedGif || imageUrl || spoiler) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 4px 8px' }}>
                 {spoiler && (
@@ -524,7 +544,16 @@ function CommentsPageInner() {
                 )}
               </div>
             )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            <textarea
+              ref={composerRef}
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder={t('comments.composerPlaceholder')}
+              maxLength={500}
+              rows={3}
+              style={{ width: '100%', minHeight: 92, maxHeight: 148, resize: 'none', overflowY: 'auto', boxSizing: 'border-box', background: T.surface2, border: 'none', borderRadius: 17, color: T.t1, fontSize: 14, lineHeight: 1.45, fontFamily: "'Area','Inter',sans-serif", padding: '12px 14px', outline: 'none', display: 'block', marginBottom: 8 }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
                 type="button"
                 onClick={() => {
@@ -536,25 +565,17 @@ function CommentsPageInner() {
               >
                 <Icon name={showMore || composerPanel ? 'close' : 'plus'} size={17} color={showMore || composerPanel ? '#fff' : T.t2} />
               </button>
-              <textarea
-                ref={composerRef}
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                placeholder={t('comments.composerPlaceholder')}
-                maxLength={500}
-                rows={1}
-                style={{ flex: 1, minWidth: 0, minHeight: 40, maxHeight: 92, resize: 'none', overflowY: 'auto', boxSizing: 'border-box', background: T.surface2, border: 'none', borderRadius: 20, color: T.t1, fontSize: 14, lineHeight: 1.4, fontFamily: "'Area','Inter',sans-serif", padding: '10px 14px', outline: 'none' }}
-              />
               <button
                 type="button"
                 onClick={submitComment}
                 disabled={!comment.trim() && !selectedGif && !imageUrl}
-                style={{ minHeight: 40, padding: '0 14px', borderRadius: 20, background: comment.trim() || selectedGif || imageUrl ? T.pink : T.surface2, border: 'none', color: comment.trim() || selectedGif || imageUrl ? '#fff' : T.t4, fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: comment.trim() || selectedGif || imageUrl ? 'pointer' : 'default', flexShrink: 0 }}
+                style={{ minHeight: 40, padding: '0 18px', borderRadius: 20, background: comment.trim() || selectedGif || imageUrl ? T.pink : T.surface2, border: 'none', color: comment.trim() || selectedGif || imageUrl ? '#fff' : T.t4, fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: comment.trim() || selectedGif || imageUrl ? 'pointer' : 'default', flex: 1 }}
               >
                 {t('comments.publish')}
               </button>
             </div>
           </div>
+          )}
         </div>
 
         <Toast msg={toast} visible={!!toast} />

@@ -44,7 +44,7 @@
     "title": "Comentários",
     "sort": {
       "recentes": "Recentes",
-      "populares": "Populares"
+      "populares": "Mais curtidos"
     },
     "addPlaceholder": "Escreva seu comentário...",
     "replyPlaceholder": "Sua resposta...",
@@ -144,6 +144,19 @@
   "beFirstEpisode": "Seja o primeiro a avaliar este episódio!",
   "writeComment": "Escreva seu comentário...",
   "noRatingYet": "Sem avaliações ainda",
+  "episodeCommunity": "Opiniões sobre o episódio",
+  "ratingsTab": "Avaliações",
+  "reactionsTab": "Reações",
+  "reactionStatsHint": "Reações escolhidas pelos membros",
+  "noReactionsYet": "Sem reações ainda",
+  "yourReaction": "Sua reação",
+  "addRatingOrReaction": "Escolha uma nota ou reação",
+  "reactionLoved": "Adorei",
+  "reactionHated": "Odiei",
+  "reactionShocked": "Chocado",
+  "reactionSad": "Triste",
+  "reactionAfraid": "Medo",
+  "reactionExpectedMore": "Esperava mais",
   "markAsWatched": "Marcar como assistido",
   "markedWatched": "Marcado como assistido ✓",
   "unmarkWatched": "Desmarcado",

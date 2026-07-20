@@ -8,22 +8,26 @@ import { T, type IconName } from '@/lib/tokens';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { navigateBack } from '@/lib/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { profileStore } from '@/lib/store';
+import { dbProfileStore } from '@/lib/db';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
 
 const PLAN_PRICES: Record<'monthly' | 'annual', { price: string }> = {
   monthly: { price: 'R$ 14,90' },
   annual:  { price: 'R$ 9,90'  },
 };
 
-const FEATURE_ICONS: IconName[] = ['bell', 'calendar', 'search', 'list', 'smile', 'eye', 'crown', 'fire'];
-const FEATURE_KEYS = ['alerts', 'calendar', 'filters', 'lists', 'ai', 'noAds', 'badge', 'stats'] as const;
+const FEATURE_ICONS: IconName[] = ['user', 'award', 'home', 'bell'];
+const FEATURE_KEYS = ['profileTheme', 'monthlyBadges', 'customHome', 'reminderLists'] as const;
 const TABLE_VALUES: [string, string][] = [
-  ['✓', '✓'], ['✓', '✓'], ['✓', '✓'], ['—', '✓'],
-  ['—', '✓'], ['—', '✓'], ['—', '✓'], ['—', '✓'],
+  ['✓', '✓'], ['✓', '✓'], ['—', '✓'], ['—', '✓'], ['—', '✓'], ['—', '✓'],
 ];
 
-export default function VIPPage() {
+export default function PROPage() {
   const router = useRouter();
   const { t } = useTranslation('settings');
+  const { user } = useAuth();
   const [plan, setPlan] = useState<'monthly' | 'annual'>('annual');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -42,8 +46,16 @@ export default function VIPPage() {
   const tableRows = t('vip.tableRows', { returnObjects: true }) as string[];
 
   const handleSubscribe = () => {
+    if (!user) { router.push('/auth'); return; }
     setLoading(true);
-    setTimeout(() => { setLoading(false); setSuccess(true); }, 1600);
+    setTimeout(() => {
+      const nextProfile = { ...profileStore.get(user.uid), proMember: true };
+      profileStore.set(nextProfile, user.uid);
+      window.dispatchEvent(new Event('maratonou:sync'));
+      if (firebaseConfigured) dbProfileStore.set(getDB(), user.uid, nextProfile).catch(() => {});
+      setLoading(false);
+      setSuccess(true);
+    }, 900);
   };
 
   if (success) return (
@@ -54,7 +66,7 @@ export default function VIPPage() {
         </div>
         <Txt size={26} weight={800} color={T.gold} style={{ display: 'block', textAlign: 'center', marginBottom: 8 }}>{t('vip.welcome')}</Txt>
         <Txt size={14} color={T.t2} style={{ display: 'block', textAlign: 'center', lineHeight: 1.6, marginBottom: 32 }}>{t('vip.welcomeDesc')}</Txt>
-        <Btn label={t('vip.goHome')} variant="gold" size="lg" full onClick={() => router.push('/home')} />
+        <Btn label={t('vip.goHome')} variant="gold" size="lg" full onClick={() => router.push('/settings/pro')} />
       </Screen>
     </Frame>
   );
