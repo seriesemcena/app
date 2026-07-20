@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 
 const ADMIN_ROLES = Object.freeze(['super_admin', 'admin', 'moderator', 'editor', 'support']);
 const ALL_PERMISSIONS = Object.freeze([
-  'dashboard.read',
+  'dashboard.read', 'dashboard.rebuild',
   'users.read', 'users.update', 'users.suspend', 'users.ban', 'users.delete', 'users.roles.manage',
   'content.read', 'content.create', 'content.update', 'content.publish', 'content.delete',
   'comments.read', 'comments.moderate', 'comments.delete',

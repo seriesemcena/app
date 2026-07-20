@@ -39,10 +39,10 @@ test('FCM registration and scheduled server workers are wired', () => {
 });
 
 test('admin exposes validated configurable notification templates', () => {
-  const admin = read('apps/admin/src/App.tsx');
+  const admin = `${read('apps/admin/src/App.tsx')}\n${read('apps/admin/src/views.tsx')}`;
   const api = read('functions/admin-api.js');
   const templates = read('src/lib/notificationTemplates.ts');
-  assert.match(admin, /Novo rascunho/);
+  assert.match(admin, /Criar rascunho/);
   assert.match(api, /status: 'draft'/);
   assert.match(api, /notifications\.send/);
   assert.match(templates, /validateNotificationTemplate/);

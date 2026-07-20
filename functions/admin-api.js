@@ -20,6 +20,7 @@ const db = getFirestore();
 const auth = getAuth();
 const appCheck = getAppCheck();
 const AUDIT_IP_HASH_SECRET = defineSecret('AUDIT_IP_HASH_SECRET');
+const TMDB_API_KEY = defineSecret('TMDB_API_KEY');
 const ACCESS_JWKS_TTL_MS = 5 * 60 * 1000;
 let accessJwksCache = null;
 
@@ -54,6 +55,11 @@ function sendError(res, error, requestIdValue) {
 }
 
 function emulatorMode() { return process.env.FUNCTIONS_EMULATOR === 'true' && process.env.NODE_ENV !== 'production'; }
+
+function secretConfigured(secret, fallbackName) {
+  try { return Boolean(secret.value()); }
+  catch { return Boolean(process.env[fallbackName]); }
+}
 
 function allowedOrigins() {
   const configured = String(process.env.ADMIN_ALLOWED_ORIGINS || 'https://admin.maratonou.com').split(',').map((value) => value.trim()).filter(Boolean);
@@ -249,6 +255,43 @@ async function dashboard() {
   return { metrics, metricsUpdatedAt: toIso(metricSnap.data()?.updatedAt), recentAudit: auditSnap.docs.map(documentData), unavailable: metricSnap.exists ? [] : ['metrics/global'] };
 }
 
+async function rebuildDashboardMetrics() {
+  // Aggregate count queries read index entries rather than downloading every
+  // document. This keeps the initialization bounded even as production grows.
+  const count = async (query) => Number((await query.count().get()).data().count || 0);
+  const [
+    usersTotal,
+    proMembersTotal,
+    activityTotal,
+    commentsTotal,
+    reportsTotal,
+    openReportsTotal,
+    notificationsTotal,
+    pendingNotificationJobs,
+  ] = await Promise.all([
+    count(db.collection('users')),
+    count(db.collection('users').where('profile.proMember', '==', true)),
+    count(db.collection('activity')),
+    count(db.collectionGroup('items')),
+    count(db.collection('reports')),
+    count(db.collection('reports').where('status', '==', 'open')),
+    count(db.collection('app_notifications')),
+    count(db.collection('notification_jobs').where('status', '==', 'pending')),
+  ]);
+  const metrics = {
+    usersTotal,
+    proMembersTotal,
+    activityTotal,
+    commentsTotal,
+    reportsTotal,
+    openReportsTotal,
+    notificationsTotal,
+    pendingNotificationJobs,
+  };
+  await db.doc('metrics/global').set({ ...metrics, updatedAt: FieldValue.serverTimestamp(), source: 'admin-aggregate-rebuild' }, { merge: true });
+  return metrics;
+}
+
 async function listUsers(cursor, limit) {
   const result = await auth.listUsers(Math.min(Math.max(Number(limit) || 25, 1), 50), cursor || undefined);
   const refs = result.users.map((user) => db.doc(`users/${user.uid}`));
@@ -319,6 +362,13 @@ async function route(req, res, actor, requestIdValue, parts) {
 
   if (resource === 'me' && method === 'GET') return send(res, 200, requestIdValue, { actor: { uid: actor.uid, email: actor.email, name: actor.name, role: actor.role, permissions: actor.role === 'super_admin' ? ['*'] : [...new Set(ROLE_PERMISSIONS[actor.role].concat(actor.extras))] } });
   if (resource === 'dashboard' && method === 'GET') { requirePermission(actor, 'dashboard.read'); return send(res, 200, requestIdValue, await dashboard()); }
+  if (resource === 'dashboard' && id === 'rebuild' && method === 'POST') {
+    requirePermission(actor, 'dashboard.rebuild');
+    await rateLimit(actor, 'dashboard.rebuild', 3, 3600);
+    const metrics = await rebuildDashboardMetrics();
+    await writeAudit(actor, req, requestIdValue, 'dashboard.rebuild', 'metrics', 'global', { metrics });
+    return send(res, 200, requestIdValue, await dashboard());
+  }
   if (resource === 'users' && method === 'GET' && !id) { requirePermission(actor, 'users.read'); return send(res, 200, requestIdValue, await listUsers(url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
   if (resource === 'users' && method === 'GET' && id) { requirePermission(actor, 'users.read'); return send(res, 200, requestIdValue, await userDetail(id)); }
   if (resource === 'content' && method === 'GET' && !id) { requirePermission(actor, 'content.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('content_overrides'), db.collection('content_overrides').orderBy('updatedAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
@@ -332,7 +382,7 @@ async function route(req, res, actor, requestIdValue, parts) {
     requirePermission(actor, 'integrations.read');
     return send(res, 200, requestIdValue, { items: [
       { id: 'firebase', configured: true },
-      { id: 'tmdb', configured: Boolean(process.env.TMDB_API_KEY) },
+      { id: 'tmdb', configured: secretConfigured(TMDB_API_KEY, 'TMDB_API_KEY') },
       { id: 'giphy', configured: Boolean(process.env.GIPHY_API_KEY) },
     ], nextCursor: null });
   }
@@ -353,19 +403,21 @@ async function route(req, res, actor, requestIdValue, parts) {
     await writeAudit(actor, req, requestIdValue, 'users.update', 'users', id, { before, after });
     return send(res, 200, requestIdValue, after);
   }
-  if (resource === 'users' && id && method === 'POST' && ['suspend', 'ban'].includes(action)) {
+  if (resource === 'users' && id && method === 'POST' && ['suspend', 'ban', 'restore'].includes(action)) {
     const permission = action === 'ban' ? 'users.ban' : 'users.suspend';
-    requirePermission(actor, permission); requireConfirmation(body, action === 'ban' ? 'BANIR' : 'SUSPENDER');
+    const confirmation = action === 'ban' ? 'BANIR' : action === 'suspend' ? 'SUSPENDER' : 'REATIVAR';
+    requirePermission(actor, permission); requireConfirmation(body, confirmation);
     if (action === 'ban') requireRecentAuth(actor);
     if (id === actor.uid) throw new ApiError(403, 'SELF_ACTION_DENIED', 'Você não pode suspender ou banir a própria conta.');
     const receipt = await claimIdempotency(actor, req, `users.${action}`);
     const before = await userDetail(id);
-    await auth.updateUser(id, { disabled: true });
+    await auth.updateUser(id, { disabled: action !== 'restore' });
     await auth.revokeRefreshTokens(id);
-    await db.doc(`users/${id}`).set({ accountStatus: action === 'ban' ? 'banned' : 'suspended', accountStatusReason: cleanString(body.reason, 500), accountStatusUpdatedAt: FieldValue.serverTimestamp(), accountStatusUpdatedBy: actor.uid }, { merge: true });
+    const accountStatus = action === 'ban' ? 'banned' : action === 'suspend' ? 'suspended' : 'active';
+    await db.doc(`users/${id}`).set({ accountStatus, accountStatusReason: cleanString(body.reason, 500), accountStatusUpdatedAt: FieldValue.serverTimestamp(), accountStatusUpdatedBy: actor.uid }, { merge: true });
     await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     await writeAudit(actor, req, requestIdValue, `users.${action}`, 'users', id, { before, reason: cleanString(body.reason, 500) });
-    return send(res, 200, requestIdValue, { uid: id, status: action === 'ban' ? 'banned' : 'suspended' });
+    return send(res, 200, requestIdValue, { uid: id, status: accountStatus });
   }
   if (resource === 'users' && id && method === 'DELETE') {
     requirePermission(actor, 'users.delete'); requireRecentAuth(actor); requireConfirmation(body, 'EXCLUIR');
@@ -399,16 +451,16 @@ async function route(req, res, actor, requestIdValue, parts) {
     await writeAudit(actor, req, requestIdValue, 'content.delete', 'content_overrides', id, { before: snap.data() });
     return send(res, 200, requestIdValue, { deleted: true });
   }
-  if (resource === 'comments' && id && action === 'hide' && method === 'POST') {
+  if (resource === 'comments' && id && ['hide', 'show'].includes(action) && method === 'POST') {
     requirePermission(actor, 'comments.moderate');
     const path = decodeCursor(id);
     if (!path || !/^reviews\/[^/]+\/items\/[^/]+$/.test(path)) throw new ApiError(400, 'INVALID_COMMENT_ID', 'Identificador de comentário inválido.');
     const ref = db.doc(path); const snap = await ref.get();
     if (!snap.exists) throw new ApiError(404, 'NOT_FOUND', 'Comentário não encontrado.');
-    const moderation = { hidden: true, reason: cleanString(body.reason, 500), updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid };
+    const moderation = { hidden: action === 'hide', reason: cleanString(body.reason, 500), updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid };
     await ref.set({ moderation }, { merge: true });
     await writeAudit(actor, req, requestIdValue, 'comments.moderate', 'reviews', path, { before: snap.data(), after: moderation });
-    return send(res, 200, requestIdValue, { hidden: true });
+    return send(res, 200, requestIdValue, { hidden: action === 'hide' });
   }
   if (resource === 'reports' && id && method === 'PATCH') {
     requirePermission(actor, 'reports.resolve');
@@ -516,7 +568,7 @@ exports.centralApi = onRequest({
   memory: '256MiB',
   maxInstances: 10,
   concurrency: 20,
-  secrets: [AUDIT_IP_HASH_SECRET],
+  secrets: [AUDIT_IP_HASH_SECRET, TMDB_API_KEY],
 }, async (req, res) => {
   const id = requestId(req);
   try {

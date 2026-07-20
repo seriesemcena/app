@@ -7,10 +7,12 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 test('admin is a separate build and the legacy page only redirects', () => {
   const legacy = read('src/app/admin/page.tsx');
   const page = read('apps/admin/src/App.tsx');
+  const views = read('apps/admin/src/views.tsx');
   const packageFile = JSON.parse(read('apps/admin/package.json'));
   assert.match(legacy, /redirect\(process\.env\.ADMIN_APP_URL/);
   assert.doesNotMatch(legacy, /AdminShell|firebase-admin|use client/);
-  assert.doesNotMatch(page, /SEED_|MockUser|localStorage|firebase-admin/);
+  assert.doesNotMatch(`${page}${views}`, /SEED_|MockUser|firebase-admin/);
+  assert.match(page, /maratonou-admin-theme/);
   assert.equal(packageFile.scripts.build, 'tsc -b && vite build');
 });
 
@@ -44,11 +46,11 @@ test('browser rules prevent users from granting themselves admin access', () => 
 });
 
 test('admin UI has explicit loading, error, empty and destructive confirmation states', () => {
-  const app = read('apps/admin/src/App.tsx');
-  assert.match(app, /Carregando métricas reais/);
+  const app = `${read('apps/admin/src/App.tsx')}\n${read('apps/admin/src/views.tsx')}\n${read('apps/admin/src/components.tsx')}`;
+  assert.match(app, /LoadingTable/);
   assert.match(app, /ErrorBox/);
-  assert.match(app, /Nenhum registro disponível/);
-  assert.match(app, /Digite EXCLUIR/);
+  assert.match(app, /Nenhum registro encontrado/);
+  assert.match(app, /expected="EXCLUIR"/);
   assert.match(app, /idempotencyKey/);
 });
 
