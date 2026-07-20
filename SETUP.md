@@ -40,8 +40,8 @@ cp .env.local.example .env.local
 
 ### 1.6 Configurar a administração separada
 
-O painel fica em `apps/admin`, é publicado separadamente no Cloudflare Pages e
-consome `api.maratonou.com/v1/admin/*`. Ele contém somente o Firebase Client SDK.
+O painel fica em `apps/admin`, é publicado como um segundo projeto Vercel e
+consome diretamente a URL HTTPS da Cloud Function `centralApi`. Ele contém somente o Firebase Client SDK.
 O Admin SDK fica em Cloud Functions, scripts locais controlados e rotas Next
 exclusivamente server-side.
 
@@ -49,8 +49,8 @@ exclusivamente server-side.
    JSON de service account.
 2. Execute `npm run admin:bootstrap -- --email usuario@dominio.com` e confirme
    interativamente o primeiro `super_admin`.
-3. Configure Cloudflare Access, App Check e as variáveis do backend conforme
-   `docs/`.
+3. Configure Firebase Auth/RBAC e as variáveis do backend conforme `docs/`.
+   Cloudflare Access é uma camada futura opcional (`disabled|monitor|required`).
 4. Não publique Functions/Storage antes de autorizar o plano Blaze.
 
 Consulte `ADMIN.md` e `docs/admin-architecture.md` para o fluxo completo.

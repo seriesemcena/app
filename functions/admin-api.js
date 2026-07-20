@@ -8,6 +8,7 @@ const { getAppCheck } = require('firebase-admin/app-check');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const {
   ALL_PERMISSIONS, ROLE_PERMISSIONS, ApiError, cleanForAudit, cleanString, decodeCursor,
   encodeCursor, isAdminRole, isPermission, requireConfirmation, roleCan,
@@ -18,6 +19,7 @@ if (!getApps().length) initializeApp();
 const db = getFirestore();
 const auth = getAuth();
 const appCheck = getAppCheck();
+const AUDIT_IP_HASH_SECRET = defineSecret('AUDIT_IP_HASH_SECRET');
 const ACCESS_JWKS_TTL_MS = 5 * 60 * 1000;
 let accessJwksCache = null;
 
@@ -63,7 +65,10 @@ function validateOrigin(req, res) {
   if (!origin || !allowedOrigins().has(origin)) throw new ApiError(403, 'ORIGIN_NOT_ALLOWED', 'Origem não autorizada.');
   res.set('Access-Control-Allow-Origin', origin);
   res.set('Vary', 'Origin');
-  res.set('Access-Control-Allow-Credentials', 'false');
+  // The admin client may use an HttpOnly Access cookie in the optional
+  // Cloudflare layer. An exact origin allowlist prevents wildcard credential
+  // sharing while keeping the same API compatible with a Vercel-only setup.
+  res.set('Access-Control-Allow-Credentials', 'true');
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, CF-Access-Jwt-Assertion, Idempotency-Key, X-Firebase-AppCheck, X-Request-Id');
   res.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
 }
@@ -82,12 +87,35 @@ async function requireCloudflareAccess(req) {
     logger.warn('Cloudflare Access bypass enabled in Firebase Emulator only');
     return null;
   }
+  const configuredMode = cleanString(process.env.CLOUDFLARE_ACCESS_ENFORCEMENT, 20).toLowerCase();
+  const mode = ['disabled', 'monitor', 'required'].includes(configuredMode) ? configuredMode : 'required';
+  if (mode === 'disabled') return null;
   const teamDomain = cleanString(process.env.CLOUDFLARE_ACCESS_TEAM_DOMAIN, 200).replace(/^https?:\/\//, '').replace(/\/$/, '');
   const audience = cleanString(process.env.CLOUDFLARE_ACCESS_AUDIENCE, 200);
-  if (!teamDomain || !audience) throw new ApiError(503, 'ACCESS_NOT_CONFIGURED', 'Cloudflare Access ainda não está configurado no backend.');
+  if (!teamDomain || !audience) {
+    if (mode === 'monitor') {
+      logger.warn('Cloudflare Access is not configured (monitor mode)');
+      return null;
+    }
+    throw new ApiError(503, 'ACCESS_NOT_CONFIGURED', 'Cloudflare Access ainda não está configurado no backend.');
+  }
   const token = req.get('cf-access-jwt-assertion');
-  if (!token) throw new ApiError(401, 'ACCESS_TOKEN_REQUIRED', 'Passe primeiro pelo Cloudflare Access.');
-  return verifyCloudflareJwtWithJwks(token, await getAccessJwks(teamDomain), { issuer: `https://${teamDomain}`, audience });
+  if (!token) {
+    if (mode === 'monitor') {
+      logger.warn('Cloudflare Access token missing (monitor mode)');
+      return null;
+    }
+    throw new ApiError(401, 'ACCESS_TOKEN_REQUIRED', 'Passe primeiro pelo Cloudflare Access.');
+  }
+  try {
+    return await verifyCloudflareJwtWithJwks(token, await getAccessJwks(teamDomain), { issuer: `https://${teamDomain}`, audience });
+  } catch (error) {
+    if (mode === 'monitor') {
+      logger.warn('Invalid Cloudflare Access token (monitor mode)');
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function verifyAppCheck(req) {
@@ -163,7 +191,9 @@ async function claimIdempotency(actor, req, action) {
 
 async function writeAudit(actor, req, requestIdValue, action, resource, resourceId, detail = {}, outcome = 'success') {
   const ip = req.get('cf-connecting-ip') || req.ip || '';
-  const secret = process.env.AUDIT_IP_HASH_SECRET || '';
+  let secret = '';
+  try { secret = AUDIT_IP_HASH_SECRET.value() || ''; }
+  catch { secret = process.env.AUDIT_IP_HASH_SECRET || ''; }
   const entry = {
     actorUid: actor?.uid || null, actorEmail: actor?.email || null, actorRole: actor?.role || null,
     action, resource, resourceId: String(resourceId || ''), outcome, requestId: requestIdValue,
@@ -486,6 +516,7 @@ exports.centralApi = onRequest({
   memory: '256MiB',
   maxInstances: 10,
   concurrency: 20,
+  secrets: [AUDIT_IP_HASH_SECRET],
 }, async (req, res) => {
   const id = requestId(req);
   try {

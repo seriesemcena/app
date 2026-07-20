@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const root = new URL('../../', import.meta.url);
 
-test('cadeia administrativa exige Access, App Check, token revogado, cadastro e permissão', async () => {
+test('cadeia administrativa avalia Access antes de App Check, token, cadastro e permissão', async () => {
   const source = await readFile(new URL('functions/admin-api.js', root), 'utf8');
   const order = [
     source.indexOf('requireCloudflareAccess(req)'),
@@ -18,6 +18,15 @@ test('cadeia administrativa exige Access, App Check, token revogado, cadastro e 
   assert.match(source, /record\.status !== 'active'/);
   assert.match(source, /record\.role !== decoded\.role/);
   assert.match(source, /Number\(record\.authVersion\) !== Number\(decoded\.authVersion\)/);
+  assert.match(source, /CLOUDFLARE_ACCESS_ENFORCEMENT/);
+});
+
+test('Access é opcional por configuração explícita e falha fechado sem configuração', async () => {
+  const source = await readFile(new URL('functions/admin-api.js', root), 'utf8');
+  assert.match(source, /\['disabled', 'monitor', 'required'\]/);
+  assert.match(source, /configuredMode\) \? configuredMode : 'required'/);
+  assert.match(source, /if \(mode === 'disabled'\) return null/);
+  assert.match(source, /Cloudflare Access token missing \(monitor mode\)/);
 });
 
 test('bypass de Access só pode existir no Emulator e fora de produção', async () => {
@@ -31,8 +40,10 @@ test('CORS administrativo é explícito e funções não mantêm instâncias que
   const source = await readFile(new URL('functions/admin-api.js', root), 'utf8');
   assert.match(source, /https:\/\/admin\.maratonou\.com/);
   assert.doesNotMatch(source, /Access-Control-Allow-Origin['"],?\s*['"]\*/);
+  assert.match(source, /Access-Control-Allow-Credentials', 'true'/);
   assert.doesNotMatch(source, /minInstances/);
   assert.match(source, /maxInstances: 10/);
+  assert.match(source, /secrets: \[AUDIT_IP_HASH_SECRET\]/);
 });
 
 test('operações críticas combinam intenção, autenticação recente e idempotência', async () => {

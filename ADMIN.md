@@ -6,7 +6,8 @@ Documentação principal:
 
 - [arquitetura e RBAC](docs/admin-architecture.md)
 - [bootstrap do primeiro super_admin](docs/firebase-admin-bootstrap.md)
-- [Cloudflare Pages e Zero Trust](docs/cloudflare-zero-trust.md)
+- [deploy do painel/API com Vercel e Firebase](docs/api-deployment.md)
+- [Cloudflare Zero Trust opcional](docs/cloudflare-zero-trust.md)
 - [App Check](docs/firebase-app-check.md)
 - [ambientes e Emulator](docs/environment-setup.md)
 - [deploy da API e Blaze](docs/api-deployment.md)

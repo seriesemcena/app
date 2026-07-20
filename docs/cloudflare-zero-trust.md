@@ -1,6 +1,6 @@
-# Cloudflare Pages e Zero Trust
+# Cloudflare Zero Trust (opcional, etapa futura)
 
-Nada nesta lista foi executado na conta Cloudflare. É uma checklist manual.
+Nada nesta lista foi executado na conta Cloudflare. A primeira implantação usa Vercel + Firebase Auth/RBAC; esta é uma checklist manual para defesa adicional futura.
 
 ## Cloudflare Pages (`admin.maratonou.com`)
 

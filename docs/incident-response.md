@@ -2,7 +2,7 @@
 
 ## Conta administrativa comprometida
 
-1. Bloqueie temporariamente o painel e a API administrativa no Cloudflare Access.
+1. Desative os documentos `adminUsers` afetados e revogue as sessões Firebase; se Cloudflare Access estiver ativo, bloqueie também sua política.
 2. Marque `adminUsers/{uid}.status=inactive` usando um operador seguro/Admin SDK.
 3. Remova claims, revogue refresh tokens e desative a conta Firebase se necessário.
 4. Consulte `auditLogs` por UID/requestId, preserve evidências e identifique registros afetados.

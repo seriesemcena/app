@@ -3,10 +3,10 @@
 ## Fluxo implementado
 
 ```text
-admin.maratonou.com (Cloudflare Pages + Access)
+admin.maratonou.com (projeto Vercel separado)
   -> Firebase Authentication (Client SDK, persistência de sessão do SDK)
-  -> api.maratonou.com/v1/admin/*
-  -> Origin + Cloudflare Access JWT + App Check
+  -> URL HTTPS da Cloud Function centralApi
+  -> Origin exata + Cloudflare Access opcional + App Check
   -> Firebase ID Token revogado + custom claim
   -> adminUsers/{uid} ativo + role/authVersion
   -> permissão granular + validação + rate limit
@@ -18,12 +18,14 @@ O painel está em `apps/admin`, possui build próprio e não importa o Admin SDK
 
 ## Autoridade
 
-São exigidas simultaneamente:
+São sempre exigidas simultaneamente:
 
 1. claim `{ admin: true, role, authVersion }` emitida pelo Admin SDK;
 2. `adminUsers/{uid}` com `status: active`;
 3. mesmo `role` e `authVersion` da claim;
 4. permissão da ação.
+
+Cloudflare Access é defesa adicional configurável por `CLOUDFLARE_ACCESS_ENFORCEMENT`. O padrão de segurança é `required` quando a variável está ausente; a implantação inicial na Vercel usa explicitamente `disabled`, sem remover nenhuma das verificações Firebase/RBAC acima. `monitor` valida quando houver token e registra ausências ou erros sem bloquear.
 
 Papéis: `super_admin`, `admin`, `moderator`, `editor`, `support`. A matriz completa e testada fica em `functions/admin-security.js`. Permissões extras só aceitam nomes da allowlist e somente a API de superadministrador pode gravá-las.
 
@@ -32,7 +34,7 @@ Alterar/remover um administrador incrementa `authVersion` e revoga refresh token
 ## Controles comuns
 
 - CORS por allowlist; nunca wildcard nas rotas administrativas.
-- JWT Access RS256 validado por assinatura, `kid`, issuer, audience, `exp` e `nbf`; JWKS com cache de 5 minutos.
+- Quando ativado, JWT Access RS256 validado por assinatura, `kid`, issuer, audience, `exp` e `nbf`; JWKS com cache de 5 minutos.
 - App Check manualmente verificado em modo `monitor` ou `required`.
 - ID Token verificado com checagem de revogação.
 - Rate limit transacional em `adminRateLimits`.

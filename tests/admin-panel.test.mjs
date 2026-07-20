@@ -19,6 +19,7 @@ test('central API authenticates and authorizes every admin resource on the serve
   const api = read('functions/admin-api.js');
   assert.match(legacy, /status: 410/);
   assert.match(api, /requireCloudflareAccess/);
+  assert.match(api, /CLOUDFLARE_ACCESS_ENFORCEMENT/);
   assert.match(api, /verifyAppCheck/);
   assert.match(api, /verifyIdToken\(match\[1\], true\)/);
   assert.match(api, /adminUsers\/\$\{decoded\.uid\}/);

@@ -39,7 +39,7 @@ function Login() {
   };
   return <main className="login"><section className="login-card">
     <span className="eyebrow">Acesso restrito</span><h1>Maratonou Admin</h1>
-    <p>Entre após passar pelo Cloudflare Access. A autenticação não concede acesso sem função administrativa ativa.</p>
+    <p>Entre com sua conta administrativa. A autenticação sozinha não concede acesso sem função e cadastro administrativo ativos.</p>
     {!firebaseConfigured && <div className="error">Configure as variáveis públicas do Firebase.</div>}
     <form onSubmit={(event) => { event.preventDefault(); void run(() => loginEmail(email.trim(), password)); }}>
       <label>E-mail<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>

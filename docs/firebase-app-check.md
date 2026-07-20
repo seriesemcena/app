@@ -2,7 +2,7 @@
 
 O código Web/PWA e o painel já inicializam `ReCaptchaEnterpriseProvider` quando a flag explícita está ativa. A API verifica `X-Firebase-AppCheck` manualmente, pois é um backend HTTP próprio. O padrão do backend é `monitor`; `required` rejeita token ausente/inválido.
 
-O App Check complementa Authentication, Cloudflare Access e RBAC. Ele não substitui nenhum deles. Provedores oficiais recomendados pelo Firebase: reCAPTCHA Enterprise na Web, App Attest/DeviceCheck em Apple e Play Integrity no Android. Veja [Firebase App Check](https://firebase.google.com/docs/app-check) e [reCAPTCHA Enterprise para Web](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider?hl=pt-br).
+O App Check complementa Authentication, RBAC e, futuramente, Cloudflare Access. Ele não substitui nenhum deles. Provedores oficiais recomendados pelo Firebase: reCAPTCHA Enterprise na Web, App Attest/DeviceCheck em Apple e Play Integrity no Android. Veja [Firebase App Check](https://firebase.google.com/docs/app-check) e [reCAPTCHA Enterprise para Web](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider?hl=pt-br).
 
 ## Ativação segura
 
