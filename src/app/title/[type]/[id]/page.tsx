@@ -559,13 +559,13 @@ export default function TitleDetailPage() {
                 const isActive = tab === tabKey;
                 const label = t(`tabs.${tabKey}`);
                 const tabBg     = isActive
-                  ? (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(10,10,12,0.88)')
+                  ? T.pillActiveBg
                   : (isDark ? 'rgba(255,255,255,0.06)' : '#fff');
                 const tabBorder = isActive
-                  ? (isDark ? '1px solid rgba(255,255,255,0.24)' : 'none')
+                  ? `1px solid ${T.pillActiveBorder}`
                   : (isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.11)');
                 const tabColor  = isActive
-                  ? '#fff'
+                  ? T.pillActiveText
                   : (isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)');
                 return (
                   <button
@@ -976,9 +976,9 @@ function MovieReviewsTab({ reviews, avgRating, totalRatings, onAddReview, onView
           {SORT_OPTIONS.map(({ key, label }) => (
             <button key={key} onClick={() => setSort(key)} style={{
               padding: '7px 16px', borderRadius: 20, flexShrink: 0,
-              background: sort === key ? T.active : T.surface2,
+              background: sort === key ? T.pillActiveBg : T.surface2,
               border: sort === key ? 'none' : `1px solid ${T.border}`,
-              color: sort === key ? '#fff' : T.t2,
+              color: sort === key ? T.pillActiveText : T.t2,
               fontSize: 12, fontWeight: 700, cursor: 'pointer',
               fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
             }}>{label}</button>

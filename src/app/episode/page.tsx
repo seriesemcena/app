@@ -343,9 +343,9 @@ function EpisodePageInner() {
                       onClick={() => setSocialTab(item.key)}
                       style={{
                         padding: '9px 18px', borderRadius: 999, cursor: 'pointer',
-                        background: active ? T.surface2 : 'transparent',
-                        border: `1px solid ${active ? T.t3 : T.border}`,
-                        color: active ? T.t1 : T.t3,
+                        background: active ? T.pillActiveBg : 'transparent',
+                        border: `1px solid ${active ? T.pillActiveBorder : T.border}`,
+                        color: active ? T.pillActiveText : T.t3,
                         fontSize: 13, fontWeight: 700,
                         fontFamily: "'Area','Inter',sans-serif",
                       }}>

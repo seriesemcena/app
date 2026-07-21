@@ -91,8 +91,8 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   return (
     <button onClick={onClick} style={{
       padding: '7px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
-      background: active ? T.active : 'rgba(255,255,255,0.08)',
-      color: active ? '#fff' : T.t2,
+      background: active ? T.pillActiveBg : 'rgba(255,255,255,0.08)',
+      color: active ? T.pillActiveText : T.t2,
       fontSize: 13, fontWeight: active ? 700 : 500,
       fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.15s',
     }}>
@@ -236,8 +236,8 @@ export default function CuradoriaPage() {
             {([['discover', '✦ Descobrir'], ['search', '⌕ Buscar']] as const).map(([id, label]) => (
               <button key={id} onClick={() => setMode(id)} style={{
                 padding: '10px 22px', borderRadius: 999, border: 'none',
-                background: mode === id ? '#fff' : 'rgba(255,255,255,0.10)',
-                color: mode === id ? '#111' : 'rgba(255,255,255,0.55)',
+                background: mode === id ? T.pillActiveBg : 'rgba(255,255,255,0.10)',
+                color: mode === id ? T.pillActiveText : 'rgba(255,255,255,0.55)',
                 fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif",
                 cursor: 'pointer', transition: 'all 0.2s',
               }}>

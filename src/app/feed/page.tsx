@@ -206,13 +206,13 @@ export default function FeedPage() {
                 padding: scrolled ? '6px 15px' : '8px 18px',
                 borderRadius: 24, flexShrink: 0,
                 background: feedTab === id
-                  ? (isDark ? 'rgba(255,255,255,0.95)' : 'rgba(10,10,12,0.88)')
+                  ? T.pillActiveBg
                   : (isDark ? 'rgba(255,255,255,0.12)' : '#fff'),
                 border: feedTab === id
                   ? 'none'
                   : (isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.11)'),
                 color: feedTab === id
-                  ? (isDark ? T.active : '#fff')
+                  ? T.pillActiveText
                   : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
                 fontSize: scrolled ? 13 : 14, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',

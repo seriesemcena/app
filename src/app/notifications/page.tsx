@@ -319,13 +319,13 @@ export default function NotificationsPage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => setTab(key)} style={{
-                  flex: 1, padding: '10px 4px', background: active ? '#fff' : 'transparent', border: 'none',
+                  flex: 1, padding: '10px 4px', background: active ? T.pillActiveBg : 'transparent', border: 'none',
                   borderRadius: 20,
                   cursor: 'pointer', position: 'relative',
                   transition: 'background 0.2s',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <Txt size={13} weight={active ? 700 : 500} color={active ? T.active : T.t3}>{label}</Txt>
+                    <Txt size={13} weight={active ? 700 : 500} color={active ? T.pillActiveText : T.t3}>{label}</Txt>
                     {count > 0 && (
                       <div style={{ minWidth: 18, height: 18, borderRadius: 9, background: '#C069FF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
                         <Txt size={10} weight={700} color="#fff">{count > 99 ? '99+' : count}</Txt>

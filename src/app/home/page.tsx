@@ -406,9 +406,9 @@ export default function HomePage() {
                   {(['para_voce','em_alta','novidades'] as const).map((id) => (
                     <button key={id} onClick={() => setHomeTab(id)} style={{
                       padding: `${pV}px ${pH}px`, minHeight: menuHeight, borderRadius: 20, flexShrink: 0,
-                      background: homeTab === id ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.12)',
-                      border: homeTab === id ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.22)',
-                      color: homeTab === id ? T.active : '#fff',
+                      background: homeTab === id ? T.pillActiveBg : 'rgba(255,255,255,0.12)',
+                      border: homeTab === id ? `1px solid ${T.pillActiveBorder}` : '1px solid rgba(255,255,255,0.22)',
+                      color: homeTab === id ? T.pillActiveText : '#fff',
                       fontSize: fs, fontWeight: 700, cursor: 'pointer',
                       fontFamily: "'Area','Inter',sans-serif",
                       backdropFilter: 'blur(24px) saturate(180%)',
@@ -826,12 +826,12 @@ export default function HomePage() {
                   <button key={f} className="home-filter-btn" onClick={() => { setTrendFilter(f); setTrendLimit(10); }} style={{
                     padding: '8px 20px', borderRadius: 24, flexShrink: 0,
                     background: trendFilter === f
-                      ? T.active
+                      ? T.pillActiveBg
                       : (isDark ? T.surface2 : '#fff'),
                     border: trendFilter === f
                       ? 'none'
                       : (isDark ? `1px solid ${T.border}` : '1px solid rgba(0,0,0,0.11)'),
-                    color: trendFilter === f ? '#fff' : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
+                    color: trendFilter === f ? T.pillActiveText : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
                     fontSize: 13, fontWeight: 700,
                     fontFamily: "'Area','Inter',sans-serif",
                     cursor: 'pointer', transition: 'all 0.2s',
@@ -857,12 +857,12 @@ export default function HomePage() {
                   <button key={f} className="home-filter-btn" onClick={() => { setNovFilter(f); setNovLimit(10); }} style={{
                     padding: '8px 20px', borderRadius: 24, flexShrink: 0,
                     background: novFilter === f
-                      ? T.active
+                      ? T.pillActiveBg
                       : (isDark ? T.surface2 : '#fff'),
                     border: novFilter === f
                       ? 'none'
                       : (isDark ? `1px solid ${T.border}` : '1px solid rgba(0,0,0,0.11)'),
-                    color: novFilter === f ? '#fff' : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
+                    color: novFilter === f ? T.pillActiveText : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
                     fontSize: 13, fontWeight: 700,
                     fontFamily: "'Area','Inter',sans-serif",
                     cursor: 'pointer', transition: 'all 0.2s',

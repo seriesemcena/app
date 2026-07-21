@@ -91,9 +91,9 @@ export default function ListsPage() {
                   minHeight: scrolled ? 34 : 36,
                   padding: scrolled ? '6px 15px' : '8px 18px',
                   borderRadius: 24, flexShrink: 0,
-                  background: active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.12)',
+                  background: active ? T.pillActiveBg : 'rgba(255,255,255,0.12)',
                   border: active ? 'none' : '1px solid rgba(255,255,255,0.20)',
-                  color: active ? T.active : 'rgba(255,255,255,0.80)',
+                  color: active ? T.pillActiveText : 'rgba(255,255,255,0.80)',
                   fontSize: scrolled ? 13 : 14, fontWeight: 700, cursor: 'pointer',
                   fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
                   backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
@@ -104,7 +104,7 @@ export default function ListsPage() {
                     <span style={{
                       background: active ? 'rgba(11,11,13,0.12)' : 'rgba(255,255,255,0.15)',
                       borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 800,
-                      color: active ? T.active : 'rgba(255,255,255,0.70)',
+                      color: active ? T.pillActiveText : 'rgba(255,255,255,0.70)',
                     }}>
                       {counts[id]}
                     </span>

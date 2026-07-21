@@ -262,9 +262,9 @@ export default function SearchPage() {
                           onClick={() => setTrendingType(type)}
                           style={{
                             padding: '7px 13px', borderRadius: 18, flexShrink: 0,
-                            background: active ? '#fff' : T.card,
-                            border: active ? '1px solid #fff' : `1px solid ${T.border}`,
-                            color: active ? T.active : T.t2,
+                            background: active ? T.pillActiveBg : T.card,
+                            border: active ? `1px solid ${T.pillActiveBorder}` : `1px solid ${T.border}`,
+                            color: active ? T.pillActiveText : T.t2,
                             fontSize: 12, fontWeight: 700,
                             fontFamily: "'Area','Inter',sans-serif",
                             cursor: 'pointer', transition: 'all 0.2s',
@@ -294,9 +294,9 @@ export default function SearchPage() {
                         onClick={() => setFilter(f)}
                         style={{
                           padding: '8px 18px', borderRadius: 24, flexShrink: 0,
-                          background: filter === f ? T.card : 'transparent',
+                          background: filter === f ? T.pillActiveBg : 'transparent',
                           border: filter === f ? 'none' : `1px solid ${T.border}`,
-                          color: filter === f ? '#fff' : T.t2,
+                          color: filter === f ? T.pillActiveText : T.t2,
                           fontSize: 13, fontWeight: 700,
                           fontFamily: "'Area','Inter',sans-serif",
                           cursor: 'pointer', transition: 'all 0.2s',

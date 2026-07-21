@@ -69,6 +69,30 @@ test('sticky navigation menus keep readable touch targets while compacting', asy
   }
 });
 
+test('active navigation pills use the shared light gray treatment', async () => {
+  const [css, tokens, ...pillSurfaces] = await Promise.all([
+    read('src/app/globals.css'),
+    read('src/lib/tokens.ts'),
+    read('src/components/primitives.tsx'),
+    read('src/app/home/page.tsx'),
+    read('src/app/series/page.tsx'),
+    read('src/app/movies/page.tsx'),
+    read('src/app/feed/page.tsx'),
+    read('src/app/search/page.tsx'),
+    read('src/app/notifications/page.tsx'),
+  ]);
+
+  assert.match(css, /--c-pill-active-bg:\s*#D8D8DE/);
+  assert.match(css, /--c-pill-active-text:\s*#111113/);
+  assert.match(tokens, /pillActiveBg:\s*'var\(--c-pill-active-bg\)'/);
+  assert.match(tokens, /pillActiveText:\s*'var\(--c-pill-active-text\)'/);
+
+  for (const surface of pillSurfaces) {
+    assert.match(surface, /T\.pillActiveBg/);
+    assert.match(surface, /T\.pillActiveText/);
+  }
+});
+
 test('Firebase messaging reuses the application service worker', async () => {
   const fcm = await read('src/lib/fcm.ts');
   const compatibilityWorker = await read('public/firebase-messaging-sw.js');

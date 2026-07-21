@@ -23,6 +23,9 @@ export const T = {
   /* form fields & frosted-glass buttons */
   inputBg:     'var(--c-input-bg)',   /* textarea / input background */
   glassBg:     'var(--c-glass-bg)',   /* frosted pill / icon-button bg */
+  pillActiveBg:     'var(--c-pill-active-bg)',
+  pillActiveText:   'var(--c-pill-active-text)',
+  pillActiveBorder: 'var(--c-pill-active-border)',
 
   /* always-white (text on coloured buttons, etc.) */
   white: '#FFFFFF',

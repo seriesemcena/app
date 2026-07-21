@@ -102,6 +102,9 @@
   --c-dim:       rgba(255,255,255,0.16);
   --c-input-bg:  rgba(255,255,255,0.06);
   --c-glass-bg:  rgba(255,255,255,0.10);
+  --c-pill-active-bg: #D8D8DE;
+  --c-pill-active-text: #111113;
+  --c-pill-active-border: rgba(255,255,255,0.34);
   --c-outer:     #080809;
   --c-body-text: #fff;
   /* Dark: bright pink → deep purple → transparent → dark bg */
@@ -135,6 +138,9 @@ html[data-keyboard-open="true"] {
   --c-dim:       rgba(0,0,0,0.14);
   --c-input-bg:  rgba(0,0,0,0.05);
   --c-glass-bg:  rgba(0,0,0,0.06);
+  --c-pill-active-bg: #D8D8DE;
+  --c-pill-active-text: #111113;
+  --c-pill-active-border: rgba(0,0,0,0.08);
   --c-outer:     #C7C7CC;
   --c-body-text: #1A1A1A;
   /* Light: orange blob → purple → transparent → white bg */

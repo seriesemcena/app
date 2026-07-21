@@ -912,9 +912,9 @@ function UserProfileInner() {
                 {(['followers', 'following'] as const).map(tab => (
                   <button key={tab} onClick={() => setSocialSheet(tab)} style={{
                     padding: '6px 16px', borderRadius: 20,
-                    background: socialSheet === tab ? T.active : T.surface2,
+                    background: socialSheet === tab ? T.pillActiveBg : T.surface2,
                     border: socialSheet === tab ? 'none' : `1px solid ${T.border}`,
-                    color: socialSheet === tab ? '#fff' : T.t2,
+                    color: socialSheet === tab ? T.pillActiveText : T.t2,
                     fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     fontFamily: "'Area','Inter',sans-serif",
                   }}>

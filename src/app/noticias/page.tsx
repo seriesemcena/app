@@ -220,9 +220,9 @@ export default function NoticiasPage() {
                 onClick={() => setActiveCat(cat.id)}
                 style={{
                   padding: '9px 20px', borderRadius: 24, flexShrink: 0,
-                  background: active ? T.white : 'transparent',
+                  background: active ? T.pillActiveBg : 'transparent',
                   border: active ? 'none' : `1px solid ${T.dim}`,
-                  color: active ? T.bg : T.t2,
+                  color: active ? T.pillActiveText : T.t2,
                   fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
                 }}

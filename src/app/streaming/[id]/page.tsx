@@ -423,8 +423,8 @@ function GlassTabs<T extends string>({ options, value, onChange, color }: {
   const inactiveBg     = isDark ? 'rgba(255,255,255,0.06)' : '#fff';
   const inactiveBorder = isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.11)';
   const inactiveColor  = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)';
-  const activeBg       = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(10,10,12,0.88)';
-  const activeBorder   = isDark ? '1px solid rgba(255,255,255,0.24)' : 'none';
+  const activeBg       = T.pillActiveBg;
+  const activeBorder   = `1px solid ${T.pillActiveBorder}`;
 
   return (
     <div style={{ display: 'flex', gap: 8, padding: '12px 16px 4px' }}>
@@ -436,7 +436,7 @@ function GlassTabs<T extends string>({ options, value, onChange, color }: {
             background: active ? activeBg : inactiveBg,
             border: active ? activeBorder : inactiveBorder,
             backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            color: active ? '#fff' : inactiveColor,
+            color: active ? T.pillActiveText : inactiveColor,
             fontSize: 13, fontWeight: active ? 700 : 500,
             fontFamily: "'Area','Inter',sans-serif",
             transition: 'all 0.2s',

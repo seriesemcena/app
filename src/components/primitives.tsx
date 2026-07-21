@@ -169,7 +169,7 @@ export const MetaChip = ({ label }: { label: string }) => (
 );
 
 export const Chip = ({ label, active, onClick, style = {} }: { label: string; active?: boolean; onClick?: () => void; style?: CSSProperties }) => (
-  <button onClick={onClick} style={{ padding: '7px 14px', borderRadius: 20, border: active ? 'none' : `1px solid ${T.border}`, background: active ? T.active : 'transparent', color: active ? T.white : T.t2, fontSize: 12, fontWeight: active ? 700 : 500, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease', flexShrink: 0, ...style }}>{label}</button>
+  <button onClick={onClick} style={{ padding: '7px 14px', borderRadius: 20, border: active ? `1px solid ${T.pillActiveBorder}` : `1px solid ${T.border}`, background: active ? T.pillActiveBg : 'transparent', color: active ? T.pillActiveText : T.t2, fontSize: 12, fontWeight: active ? 700 : 500, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease', flexShrink: 0, ...style }}>{label}</button>
 );
 
 export const PROBadge = ({ size = 'sm' }: { size?: 'sm' | 'md' }) => (

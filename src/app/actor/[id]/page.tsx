@@ -149,7 +149,7 @@ export default function ActorPage() {
             {/* ── Tabs filmografia ── */}
             <div style={{ display: 'flex', gap: 8, padding: '0 16px 12px', overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
               {tabs.map((t) => (
-                <button key={t} onClick={() => setTab(t)} style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: tab === t ? T.white : 'transparent', border: tab === t ? 'none' : `1px solid ${T.dim}`, color: tab === t ? T.bg : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s', textTransform: 'capitalize' }}>
+                <button key={t} onClick={() => setTab(t)} style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: tab === t ? T.pillActiveBg : 'transparent', border: tab === t ? `1px solid ${T.pillActiveBorder}` : `1px solid ${T.dim}`, color: tab === t ? T.pillActiveText : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s', textTransform: 'capitalize' }}>
                   {t}
                 </button>
               ))}

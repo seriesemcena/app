@@ -8,6 +8,7 @@ import { Screen, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { useAuth } from '@/hooks/useAuth';
 import { tmdb, tmdbImg, useTMDB, type TMDBItem } from '@/lib/tmdb';
+import { T } from '@/lib/tokens';
 
 const ANIM_CSS = `
   @keyframes scrollUp   { 0% { transform: translateY(0);    } 100% { transform: translateY(-50%); } }
@@ -299,7 +300,7 @@ export default function AuthPage() {
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 4, marginBottom: 22, border: '1px solid rgba(255,255,255,0.09)' }}>
               {(['login', 'register'] as const).map(m => (
                 <button key={m} onClick={() => { setMode(m); clearError(); }}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 11, background: mode === m ? 'rgba(255,255,255,0.12)' : 'transparent', border: mode === m ? '1px solid rgba(255,255,255,0.22)' : '1px solid transparent', color: mode === m ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 11, background: mode === m ? T.pillActiveBg : 'transparent', border: mode === m ? `1px solid ${T.pillActiveBorder}` : '1px solid transparent', color: mode === m ? T.pillActiveText : 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
                   {m === 'login' ? t('loginTab') : t('registerTabShort')}
                 </button>
               ))}

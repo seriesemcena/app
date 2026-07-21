@@ -437,9 +437,9 @@ function CommentsPageInner() {
               {SORT_OPTIONS.map(({ key, label }) => (
                 <button key={key} onClick={() => setSort(key)} style={{
                   padding: '7px 16px', borderRadius: 20, flexShrink: 0,
-                  background: sort === key ? T.active : T.surface2,
+                  background: sort === key ? T.pillActiveBg : T.surface2,
                   border: sort === key ? 'none' : `1px solid ${T.border}`,
-                  color: sort === key ? '#fff' : T.t2,
+                  color: sort === key ? T.pillActiveText : T.t2,
                   fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
                 }}>

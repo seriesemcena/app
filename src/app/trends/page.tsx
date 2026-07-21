@@ -96,7 +96,7 @@ export default function TrendsPage() {
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 } as React.CSSProperties}>
           {([['plataformas', 'Por plataforma'], ['geral', 'Geral']] as const).map(([id, label]) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: activeTab === id ? T.white : 'transparent', border: activeTab === id ? 'none' : `1px solid ${T.dim}`, color: activeTab === id ? T.bg : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
+              style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: activeTab === id ? T.pillActiveBg : 'transparent', border: activeTab === id ? `1px solid ${T.pillActiveBorder}` : `1px solid ${T.dim}`, color: activeTab === id ? T.pillActiveText : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
               {label}
             </button>
           ))}
@@ -106,7 +106,7 @@ export default function TrendsPage() {
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px 4px', flexShrink: 0 }}>
           {(['day', 'week'] as const).map(p => (
             <button key={p} onClick={() => setPeriod(p)}
-              style={{ padding: '6px 16px', borderRadius: 20, border: period === p ? 'none' : `1px solid ${T.border}`, background: period === p ? T.active : 'transparent', color: period === p ? T.white : T.t3, fontSize: 12, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.15s' }}>
+              style={{ padding: '6px 16px', borderRadius: 20, border: period === p ? `1px solid ${T.pillActiveBorder}` : `1px solid ${T.border}`, background: period === p ? T.pillActiveBg : 'transparent', color: period === p ? T.pillActiveText : T.t3, fontSize: 12, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.15s' }}>
               {p === 'day' ? 'Hoje' : 'Esta semana'}
             </button>
           ))}

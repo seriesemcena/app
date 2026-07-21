@@ -53,7 +53,7 @@ export default function RecommendationsPage() {
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px', overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0 } as React.CSSProperties}>
           {([['para_voce', 'Para Você'], ['filmes', 'Filmes'], ['series', 'Séries']] as const).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
-              style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: tab === id ? T.white : 'transparent', border: tab === id ? 'none' : `1px solid ${T.dim}`, color: tab === id ? T.bg : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
+              style={{ padding: '9px 20px', borderRadius: 24, flexShrink: 0, background: tab === id ? T.pillActiveBg : 'transparent', border: tab === id ? `1px solid ${T.pillActiveBorder}` : `1px solid ${T.dim}`, color: tab === id ? T.pillActiveText : T.t2, fontSize: 13, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', transition: 'all 0.2s' }}>
               {label}
             </button>
           ))}
