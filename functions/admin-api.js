@@ -22,6 +22,7 @@ const auth = getAuth();
 const appCheck = getAppCheck();
 const AUDIT_IP_HASH_SECRET = defineSecret('AUDIT_IP_HASH_SECRET');
 const TMDB_API_KEY = defineSecret('TMDB_API_KEY');
+const GIPHY_API_KEY = defineSecret('GIPHY_API_KEY');
 const ACCESS_JWKS_TTL_MS = 5 * 60 * 1000;
 let accessJwksCache = null;
 
@@ -449,7 +450,7 @@ async function route(req, res, actor, requestIdValue, parts) {
     return send(res, 200, requestIdValue, { items: [
       { id: 'firebase', configured: true },
       { id: 'tmdb', configured: secretConfigured(TMDB_API_KEY, 'TMDB_API_KEY') },
-      { id: 'giphy', configured: Boolean(process.env.GIPHY_API_KEY) },
+      { id: 'giphy', configured: secretConfigured(GIPHY_API_KEY, 'GIPHY_API_KEY') },
     ], nextCursor: null });
   }
 
@@ -634,7 +635,7 @@ exports.centralApi = onRequest({
   memory: '256MiB',
   maxInstances: 10,
   concurrency: 20,
-  secrets: [AUDIT_IP_HASH_SECRET, TMDB_API_KEY],
+  secrets: [AUDIT_IP_HASH_SECRET, TMDB_API_KEY, GIPHY_API_KEY],
 }, async (req, res) => {
   const id = requestId(req);
   try {
