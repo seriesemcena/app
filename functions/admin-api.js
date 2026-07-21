@@ -248,6 +248,101 @@ async function listQuery(collection, query, cursor, limit = 25) {
   return { items: snap.docs.map(documentData), nextCursor: snap.size === Math.min(Math.max(Number(limit) || 25, 1), 50) ? encodeCursor(snap.docs.at(-1).id) : null };
 }
 
+const BANNER_PAGES = Object.freeze(['home', 'search', 'profile']);
+
+function bannerDate(value, field) {
+  if (value == null || value === '') return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) throw new ApiError(422, 'INVALID_BANNER_DATE', `${field} possui uma data inválida.`);
+  return Timestamp.fromDate(parsed);
+}
+
+function bannerDestination(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  if (/^\/(?!\/)/.test(raw)) return raw.slice(0, 1000);
+  return safeHttpsUrl(raw);
+}
+
+function bannerHtml(value) {
+  const raw = typeof value === 'string' ? value.replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '') : '';
+  if (!raw.trim()) throw new ApiError(422, 'BANNER_HTML_REQUIRED', 'Insira o HTML do banner.');
+  if (raw.length > 20000) throw new ApiError(413, 'BANNER_HTML_TOO_LARGE', 'O HTML do banner deve ter no máximo 20 mil caracteres.');
+  if (/<\/?(?:script|iframe|object|embed|form|base|meta)\b|\bon[a-z]+\s*=|javascript\s*:/i.test(raw)) {
+    throw new ApiError(422, 'UNSAFE_BANNER_HTML', 'O HTML contém scripts, formulários ou atributos não permitidos.');
+  }
+  return raw;
+}
+
+function bannerPayload(input, actor, existing = {}) {
+  const kind = input.kind === 'html' ? 'html' : 'image';
+  const pages = [...new Set((Array.isArray(input.pages) ? input.pages : []).filter((page) => BANNER_PAGES.includes(page)))];
+  if (!pages.length) throw new ApiError(422, 'BANNER_PAGE_REQUIRED', 'Selecione ao menos uma página para o banner.');
+  const status = input.status === 'published' ? 'published' : 'draft';
+  const startsAt = bannerDate(input.startsAt, 'Início');
+  const endsAt = bannerDate(input.endsAt, 'Término');
+  if (startsAt && endsAt && startsAt.toMillis() >= endsAt.toMillis()) {
+    throw new ApiError(422, 'INVALID_BANNER_PERIOD', 'O término deve ser posterior ao início.');
+  }
+  const imageUrl = kind === 'image' ? safeHttpsUrl(input.imageUrl) : '';
+  if (kind === 'image' && !imageUrl) throw new ApiError(422, 'BANNER_IMAGE_REQUIRED', 'Informe a URL HTTPS da imagem.');
+  return {
+    name: cleanString(input.name, 120) || 'Banner sem nome',
+    kind,
+    pages,
+    status,
+    imageUrl,
+    html: kind === 'html' ? bannerHtml(input.html) : '',
+    destinationUrl: bannerDestination(input.destinationUrl),
+    altText: cleanString(input.altText, 180),
+    priority: Math.max(0, Math.min(100, Math.round(Number(input.priority) || 0))),
+    height: Math.max(80, Math.min(500, Math.round(Number(input.height) || 160))),
+    startsAt,
+    endsAt,
+    createdAt: existing.createdAt || FieldValue.serverTimestamp(),
+    createdBy: existing.createdBy || actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.uid,
+  };
+}
+
+function publicBannerPayload(data) {
+  return {
+    kind: data.kind, pages: data.pages, imageUrl: data.imageUrl, html: data.html,
+    destinationUrl: data.destinationUrl, altText: data.altText,
+    priority: data.priority, height: data.height, startsAt: data.startsAt,
+    endsAt: data.endsAt, publishedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function bannerDocumentData(snapshot) {
+  const data = snapshot.data() || {};
+  return {
+    id: snapshot.id,
+    name: cleanString(data.name, 120),
+    kind: data.kind === 'html' ? 'html' : 'image',
+    pages: Array.isArray(data.pages) ? data.pages.filter((page) => BANNER_PAGES.includes(page)) : [],
+    status: data.status === 'published' ? 'published' : 'draft',
+    imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl : '',
+    html: typeof data.html === 'string' ? data.html : '',
+    destinationUrl: typeof data.destinationUrl === 'string' ? data.destinationUrl : '',
+    altText: cleanString(data.altText, 180),
+    priority: Number(data.priority || 0),
+    height: Number(data.height || 160),
+    createdAt: toIso(data.createdAt), updatedAt: toIso(data.updatedAt),
+    startsAt: toIso(data.startsAt), endsAt: toIso(data.endsAt),
+  };
+}
+
+async function saveBanner(id, data) {
+  const batch = db.batch();
+  batch.set(db.doc(`app_banners/${id}`), data, { merge: true });
+  const publicRef = db.doc(`public_banners/${id}`);
+  if (data.status === 'published') batch.set(publicRef, publicBannerPayload(data));
+  else batch.delete(publicRef);
+  await batch.commit();
+}
+
 async function dashboard() {
   const [metricSnap, rankingsSnap, auditSnap] = await Promise.all([
     db.doc('metrics/global').get(),
@@ -439,6 +534,12 @@ async function route(req, res, actor, requestIdValue, parts) {
   if (resource === 'users' && method === 'GET' && !id) { requirePermission(actor, 'users.read'); return send(res, 200, requestIdValue, await listUsers(url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
   if (resource === 'users' && method === 'GET' && id) { requirePermission(actor, 'users.read'); return send(res, 200, requestIdValue, await userDetail(id)); }
   if (resource === 'content' && method === 'GET' && !id) { requirePermission(actor, 'content.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('content_overrides'), db.collection('content_overrides').orderBy('updatedAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
+  if (resource === 'banners' && method === 'GET' && !id) {
+    requirePermission(actor, 'content.read');
+    const page = await listQuery(db.collection('app_banners'), db.collection('app_banners').orderBy('updatedAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'));
+    const snapshots = await Promise.all(page.items.map((item) => db.doc(`app_banners/${item.id}`).get()));
+    return send(res, 200, requestIdValue, { ...page, items: snapshots.filter((snapshot) => snapshot.exists).map(bannerDocumentData) });
+  }
   if (resource === 'comments' && method === 'GET' && !id) { requirePermission(actor, 'comments.read'); return send(res, 200, requestIdValue, await listComments(url.searchParams.get('limit'))); }
   if (resource === 'reports' && method === 'GET' && !id) { requirePermission(actor, 'reports.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('reports'), db.collection('reports').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
   if (resource === 'notifications' && method === 'GET' && !id) { requirePermission(actor, 'notifications.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('notification_jobs'), db.collection('notification_jobs').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
@@ -495,6 +596,37 @@ async function route(req, res, actor, requestIdValue, parts) {
     await auth.deleteUser(id); await db.doc(`users/${id}`).delete();
     await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     await writeAudit(actor, req, requestIdValue, 'users.delete', 'users', id, { before });
+    return send(res, 200, requestIdValue, { deleted: true });
+  }
+  if (resource === 'banners' && method === 'POST' && !id) {
+    requirePermission(actor, 'content.create');
+    if (body.status === 'published') requirePermission(actor, 'content.publish');
+    const ref = db.collection('app_banners').doc();
+    const data = bannerPayload(body, actor);
+    await saveBanner(ref.id, data);
+    await writeAudit(actor, req, requestIdValue, 'banners.create', 'app_banners', ref.id, { after: data });
+    const saved = await ref.get();
+    return send(res, 201, requestIdValue, bannerDocumentData(saved));
+  }
+  if (resource === 'banners' && id && method === 'PATCH') {
+    requirePermission(actor, 'content.update');
+    if (body.status === 'published') requirePermission(actor, 'content.publish');
+    const ref = db.doc(`app_banners/${id}`); const before = await ref.get();
+    if (!before.exists) throw new ApiError(404, 'NOT_FOUND', 'Banner não encontrado.');
+    const data = bannerPayload(body, actor, before.data());
+    await saveBanner(id, data);
+    await writeAudit(actor, req, requestIdValue, 'banners.update', 'app_banners', id, { before: before.data(), after: data });
+    const saved = await ref.get();
+    return send(res, 200, requestIdValue, bannerDocumentData(saved));
+  }
+  if (resource === 'banners' && id && method === 'DELETE') {
+    requirePermission(actor, 'content.delete'); requireConfirmation(body, 'EXCLUIR');
+    const receipt = await claimIdempotency(actor, req, 'banners.delete');
+    const ref = db.doc(`app_banners/${id}`); const before = await ref.get();
+    if (!before.exists) throw new ApiError(404, 'NOT_FOUND', 'Banner não encontrado.');
+    const batch = db.batch(); batch.delete(ref); batch.delete(db.doc(`public_banners/${id}`)); await batch.commit();
+    await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await writeAudit(actor, req, requestIdValue, 'banners.delete', 'app_banners', id, { before: before.data() });
     return send(res, 200, requestIdValue, { deleted: true });
   }
   if (resource === 'content' && id && method === 'PATCH') {

@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { tmdbImg } from '@/lib/tmdb';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
+import { AppBannerSlot } from '@/components/AppBannerSlot';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
 type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
@@ -658,6 +659,8 @@ function UserProfileInner() {
               <Icon name="chevronR" size={15} color={T.t3} />
             </button>
           )}
+
+          <AppBannerSlot page="profile" />
 
           {/* ── Favoritos ── */}
           <PosterRow

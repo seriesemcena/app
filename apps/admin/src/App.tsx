@@ -6,6 +6,7 @@ import { AdminLayout, ErrorBox } from './components';
 import { auth, firebaseConfigured, loginEmail, loginGoogle, logout } from './firebase';
 import {
   AdminsView,
+  BannersView,
   CommentsView,
   DashboardView,
   GenericResourceView,
@@ -52,6 +53,7 @@ function CurrentView({ section, actor, search }: { section: Section; actor: Admi
   if (section === 'settings') return <SettingsView actor={actor}/>;
   if (section === 'integrations') return <IntegrationsView/>;
   if (section === 'admins') return <AdminsView actor={actor} search={search}/>;
+  if (section === 'content') return <BannersView actor={actor} search={search}/>;
   return <GenericResourceView section={section} search={search}/>;
 }
 

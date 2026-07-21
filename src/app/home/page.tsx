@@ -15,6 +15,7 @@ import '@/lib/i18n';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbProSettingsStore } from '@/lib/db';
+import { AppBannerSlot } from '@/components/AppBannerSlot';
 
 type HomeTab = 'para_voce' | 'em_alta' | 'novidades';
 
@@ -475,6 +476,8 @@ export default function HomePage() {
             <>
               {/* ── Content below hero ── */}
               <div style={{ background: 'var(--c-bg)', paddingTop: 12 }}>
+
+              <AppBannerSlot page="home" />
 
 
               {/* ── Minha lista (watching series) ── */}

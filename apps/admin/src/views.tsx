@@ -112,6 +112,115 @@ export function GenericResourceView({ section, search }: { section: 'content' | 
   return <div className="stack"><div className="toolbar"><div><h2>{section === 'content' ? 'Curadoria de conteúdo' : 'Histórico de auditoria'}</h2><p>{section === 'content' ? 'Overrides editoriais publicados no aplicativo.' : 'Registro imutável das operações administrativas.'}</p></div><PageActions onRefresh={() => void load()} busy={loading}/></div>{Boolean(error) && <ErrorBox error={error} onRetry={() => void load()}/>}<section className="panel">{loading && !items.length ? <LoadingTable/> : <DataTable columns={config.columns} items={items} search={search}/>} {cursor && <div className="load-more"><button className="button button-quiet" disabled={loading} onClick={() => void load(cursor, true)}>Carregar mais</button></div>}</section></div>;
 }
 
+type BannerKind = 'image' | 'html';
+type BannerPage = 'home' | 'search' | 'profile';
+type BannerForm = {
+  id: string;
+  name: string;
+  kind: BannerKind;
+  pages: BannerPage[];
+  imageUrl: string;
+  html: string;
+  destinationUrl: string;
+  altText: string;
+  status: 'draft' | 'published';
+  startsAt: string;
+  endsAt: string;
+  priority: number;
+  height: number;
+};
+
+const EMPTY_BANNER: BannerForm = {
+  id: '', name: '', kind: 'image', pages: ['home'], imageUrl: '', html: '',
+  destinationUrl: '', altText: '', status: 'draft', startsAt: '', endsAt: '',
+  priority: 0, height: 160,
+};
+
+function localDateTime(value: unknown) {
+  if (!value) return '';
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return '';
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function bannerFromItem(item: RecordItem): BannerForm {
+  return {
+    ...EMPTY_BANNER,
+    id: String(item.id || ''),
+    name: String(item.name || ''),
+    kind: item.kind === 'html' ? 'html' : 'image',
+    pages: (Array.isArray(item.pages) ? item.pages : []).filter((page): page is BannerPage => ['home', 'search', 'profile'].includes(String(page))),
+    imageUrl: String(item.imageUrl || ''),
+    html: String(item.html || ''),
+    destinationUrl: String(item.destinationUrl || ''),
+    altText: String(item.altText || ''),
+    status: item.status === 'published' ? 'published' : 'draft',
+    startsAt: localDateTime(item.startsAt),
+    endsAt: localDateTime(item.endsAt),
+    priority: Number(item.priority || 0),
+    height: Number(item.height || 160),
+  };
+}
+
+function bannerPreviewDocument(html: string) {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src https: data:; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"><style>*{box-sizing:border-box}html,body{margin:0;min-height:100%;overflow:hidden}body{display:grid;place-items:center;font-family:system-ui;background:transparent;color:#fff}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`;
+}
+
+export function BannersView({ actor, search }: { actor: AdminActor; search: string }) {
+  const { items, loading, error, load } = usePagedResource('/v1/admin/banners?limit=50');
+  const { items: overrides, loading: overridesLoading, error: overridesError, load: loadOverrides } = usePagedResource('/v1/admin/content?limit=25');
+  const [form, setForm] = useState<BannerForm>(EMPTY_BANNER);
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [deleting, setDeleting] = useState<RecordItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const update = <K extends keyof BannerForm>(key: K, value: BannerForm[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const togglePage = (page: BannerPage) => setForm((current) => ({ ...current, pages: current.pages.includes(page) ? current.pages.filter((value) => value !== page) : [...current.pages, page] }));
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSaving(true); setActionError(null);
+    try {
+      const body = { ...form, startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : '', endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : '' };
+      await api.request(form.id ? `/v1/admin/banners/${encodeURIComponent(form.id)}` : '/v1/admin/banners', { method: form.id ? 'PATCH' : 'POST', body });
+      setForm(EMPTY_BANNER); await load();
+    } catch (reason) { setActionError(reason); }
+    finally { setSaving(false); }
+  };
+  const remove = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true); setActionError(null);
+    try {
+      await api.request(`/v1/admin/banners/${encodeURIComponent(String(deleting.id))}`, { method: 'DELETE', body: { confirmation: 'EXCLUIR' }, idempotencyKey: crypto.randomUUID() });
+      if (form.id === deleting.id) setForm(EMPTY_BANNER);
+      setDeleting(null); await load();
+    } catch (reason) { setActionError(reason); }
+    finally { setDeleteBusy(false); }
+  };
+  const canSave = form.id ? can(actor.permissions, 'content.update') : can(actor.permissions, 'content.create');
+  return <div className="stack">
+    <div className="toolbar"><div><h2>Banners do aplicativo</h2><p>Publique imagens ou HTML isolado na Home, Busca e Perfil.</p></div><PageActions onRefresh={() => void load()} busy={loading}><button className="button button-quiet" onClick={() => setForm(EMPTY_BANNER)}><Icon name="plus" size={17}/>Novo banner</button></PageActions></div>
+    <div className="feedback notification-info"><span className="feedback-icon"><Icon name="content"/></span><div><strong>HTML protegido</strong><p>Scripts, formulários e eventos são bloqueados. Use o campo de destino para tornar o banner clicável.</p></div></div>
+    {(error || actionError) ? <ErrorBox error={error || actionError} onRetry={() => void load()}/> : null}
+    <div className="banner-admin-layout">
+      <form className="panel banner-form" onSubmit={(event) => void submit(event)}>
+        <div className="panel-title"><div><span className="eyebrow">{form.id ? 'Editando' : 'Novo banner'}</span><h2>{form.id ? form.name || 'Banner' : 'Configurar exibição'}</h2></div>{form.id && <button type="button" className="mini-button" onClick={() => setForm(EMPTY_BANNER)}>Cancelar edição</button>}</div>
+        <label>Nome interno<input required maxLength={120} value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Ex.: Lançamento da semana"/></label>
+        <div className="form-grid"><label>Formato<select value={form.kind} onChange={(event) => update('kind', event.target.value as BannerKind)}><option value="image">Imagem</option><option value="html">HTML</option></select></label><label>Status<select value={form.status} onChange={(event) => update('status', event.target.value as BannerForm['status'])}><option value="draft">Rascunho</option><option value="published">Publicado</option></select></label></div>
+        <fieldset className="banner-pages"><legend>Exibir em</legend>{([['home', 'Home'], ['search', 'Busca'], ['profile', 'Perfil']] as Array<[BannerPage, string]>).map(([page, label]) => <label key={page}><input type="checkbox" checked={form.pages.includes(page)} onChange={() => togglePage(page)}/><span>{label}</span></label>)}</fieldset>
+        {form.kind === 'image' ? <><label>URL HTTPS da imagem<input required type="url" value={form.imageUrl} onChange={(event) => update('imageUrl', event.target.value)} placeholder="https://…/banner.jpg"/></label><label>Texto alternativo<input maxLength={180} value={form.altText} onChange={(event) => update('altText', event.target.value)} placeholder="Descrição acessível da imagem"/></label></> : <label>HTML do banner<textarea required maxLength={20000} value={form.html} onChange={(event) => update('html', event.target.value)} placeholder="<div style=&quot;...&quot;>...</div>"/></label>}
+        <label>Destino ao tocar<input value={form.destinationUrl} onChange={(event) => update('destinationUrl', event.target.value)} placeholder="/title/movie/123 ou https://maratonou.com/…"/></label>
+        <div className="form-grid"><label>Início opcional<input type="datetime-local" value={form.startsAt} onChange={(event) => update('startsAt', event.target.value)}/></label><label>Término opcional<input type="datetime-local" value={form.endsAt} onChange={(event) => update('endsAt', event.target.value)}/></label></div>
+        <div className="form-grid"><label>Prioridade<input type="number" min="0" max="100" value={form.priority} onChange={(event) => update('priority', Number(event.target.value))}/></label><label>Altura do HTML<input type="number" min="80" max="500" disabled={form.kind !== 'html'} value={form.height} onChange={(event) => update('height', Number(event.target.value))}/></label></div>
+        {(form.kind === 'image' ? form.imageUrl : form.html) && <div className="banner-preview"><span>Prévia</span>{form.kind === 'image' ? <img src={form.imageUrl} alt={form.altText || ''}/> : <iframe title="Prévia do banner HTML" sandbox="" srcDoc={bannerPreviewDocument(form.html)} style={{ height: Math.min(form.height, 260) }}/>}</div>}
+        {canSave && <button className="button button-primary button-wide" disabled={saving || !form.pages.length}>{saving ? 'Salvando…' : form.id ? 'Salvar alterações' : 'Criar banner'}</button>}
+      </form>
+      <section className="panel banner-list-panel"><div className="panel-title"><div><span className="eyebrow">Campanhas</span><h2>Banners cadastrados</h2></div></div>{loading && !items.length ? <LoadingTable/> : <DataTable search={search} items={items} columns={[{ key: 'name', label: 'Banner' }, { key: 'kind', label: 'Formato', render: (item) => item.kind === 'html' ? 'HTML' : 'Imagem' }, { key: 'pages', label: 'Páginas', render: (item) => (Array.isArray(item.pages) ? item.pages : []).map((page) => ({ home: 'Home', search: 'Busca', profile: 'Perfil' }[String(page)] || String(page))).join(', ') }, { key: 'status', label: 'Status', render: (item) => <StatusBadge value={item.status}/> }, { key: 'updatedAt', label: 'Atualizado', render: (item) => formatDate(item.updatedAt) }]} actions={(item) => <div className="row-actions"><button className="mini-button" onClick={() => setForm(bannerFromItem(item))}>Editar</button>{can(actor.permissions, 'content.delete') && <button className="mini-button danger-text" onClick={() => setDeleting(item)}>Excluir</button>}</div>}/>}</section>
+    </div>
+    {overridesError ? <ErrorBox error={overridesError} onRetry={() => void loadOverrides()}/> : <section className="panel"><div className="panel-title"><div><span className="eyebrow">Curadoria existente</span><h2>Overrides editoriais</h2><p>Os ajustes de títulos e destaques existentes continuam preservados.</p></div></div>{overridesLoading && !overrides.length ? <LoadingTable/> : <DataTable search={search} items={overrides} columns={resourceConfig.content!.columns}/>}</section>}
+    <ConfirmDialog open={!!deleting} title="Excluir banner" message={`${String(deleting?.name || 'O banner')} será removido do painel e do aplicativo.`} expected="EXCLUIR" busy={deleteBusy} onClose={() => setDeleting(null)} onConfirm={() => void remove()}/>
+  </div>;
+}
+
 export function UsersView({ actor, search }: { actor: AdminActor; search: string }) {
   const { items, cursor, loading, error, load } = usePagedResource('/v1/admin/users?limit=25');
   const [dialog, setDialog] = useState<{ item: RecordItem; action: 'suspend' | 'ban' | 'restore' } | null>(null);

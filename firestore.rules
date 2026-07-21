@@ -236,6 +236,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Only the sanitized, published projection is readable by the app.
+    // Drafts and administrative metadata remain server-only in app_banners.
+    match /public_banners/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /app_banners/{id} {
+      allow read, write: if false;
+    }
+
     match /admin_audit_logs/{id} {
       allow read, write: if false;
     }

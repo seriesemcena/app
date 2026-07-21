@@ -15,6 +15,7 @@ import { AppErrorState } from '@/components/AppStates';
 import { getDB } from '@/lib/firebase';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
+import { AppBannerSlot } from '@/components/AppBannerSlot';
 
 type FilterType = 'series' | 'movies' | 'people' | 'users';
 type SortOrder = 'relevance' | 'newest' | 'oldest';
@@ -235,6 +236,8 @@ export default function SearchPage() {
               )}
             </div>
           </div>
+
+          <AppBannerSlot page="search" />
 
           {/* ── Content ── */}
           <div style={{ padding: '0 16px 24px' }}>
