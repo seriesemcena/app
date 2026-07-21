@@ -195,14 +195,15 @@ export default function FeedPage() {
           <div style={{
             position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
-            padding: scrolled ? '2px 16px 8px' : '8px 16px 10px',
+            padding: scrolled ? '4px 16px 10px' : '8px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',
             background: 'transparent',
             transition: 'padding 0.25s ease',
           } as React.CSSProperties}>
             {([['para_voce', 'Para você'], ['seguindo', 'Seguindo']] as const).map(([id, label]) => (
               <button key={id} onClick={() => setFeedTab(id)} style={{
-                padding: scrolled ? '4.5px 13px' : '7px 16px',
+                minHeight: scrolled ? 34 : 36,
+                padding: scrolled ? '6px 15px' : '8px 18px',
                 borderRadius: 24, flexShrink: 0,
                 background: feedTab === id
                   ? (isDark ? 'rgba(255,255,255,0.95)' : 'rgba(10,10,12,0.88)')
@@ -213,7 +214,7 @@ export default function FeedPage() {
                 color: feedTab === id
                   ? (isDark ? T.active : '#fff')
                   : (isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.60)'),
-                fontSize: scrolled ? 11 : 12, fontWeight: 700, cursor: 'pointer',
+                fontSize: scrolled ? 13 : 14, fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.25s ease',
                 backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
               } as React.CSSProperties}>{label}</button>

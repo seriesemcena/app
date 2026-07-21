@@ -348,7 +348,7 @@ export default function TitleDetailPage() {
             display: 'flex', justifyContent: 'center', alignItems: 'center',
             overflow: 'hidden',
             opacity: showNavTitle ? 1 : 0,
-            transform: showNavTitle ? 'translate(-50%, -50%)' : 'translate(-50%, calc(-50% + 6px))',
+            transform: showNavTitle ? 'translate(-50%, calc(-50% + 3px))' : 'translate(-50%, calc(-50% + 8px))',
             transition: 'opacity 0.22s ease, transform 0.22s ease',
             pointerEvents: 'none',
           } as React.CSSProperties}>

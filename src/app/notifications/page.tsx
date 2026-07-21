@@ -82,6 +82,7 @@ export default function NotificationsPage() {
 
   const [tab, setTab]             = useState<ActiveTab>('account');
   const [toast, setToast]         = useState<string | false>(false);
+  const [clearing, setClearing]   = useState(false);
 
   // "Minha conta" state
   const [accountNotifs, setAccountNotifs] = useState<(NotifDoc & { docId: string })[]>([]);
@@ -216,6 +217,31 @@ export default function NotificationsPage() {
     showToast(t('allRead'));
   };
 
+  /* ── Permanently clear the active inbox ── */
+  const clearNotifications = async () => {
+    if (clearing || !window.confirm(t('clearConfirm'))) return;
+    setClearing(true);
+    try {
+      if (tab === 'account') {
+        if (firebaseConfigured && uid) await dbNotifStore.clearAll(getDB(), uid);
+        setAccountNotifs([]);
+        setAccountCursor(null);
+        setAccountHasMore(false);
+      } else {
+        if (firebaseConfigured && uid) await dbAppNotifStore.clearAll(getDB(), uid);
+        notifInboxStore.clear(uid);
+        setAppNotifs([]);
+        setAppCursor(null);
+        setAppHasMore(false);
+      }
+      showToast(t('cleared'));
+    } catch {
+      showToast(t('clearError'));
+    } finally {
+      setClearing(false);
+    }
+  };
+
   /* ── Mark one read ── */
   const markOne = (id: string) => {
     notifInboxStore.markRead(id, uid);
@@ -253,6 +279,7 @@ export default function NotificationsPage() {
   const accountUnread = visibleAccount.filter(n => !n.read).length;
   const appUnread     = visibleApp.filter(n => !n.read).length;
   const currentUnread = tab === 'account' ? accountUnread : appUnread;
+  const currentCount = tab === 'account' ? accountNotifs.length : appNotifs.length;
 
   /* ── Grouped lists ── */
   const accountGrouped = groupByDay(visibleAccount.map(n => ({ ...n, _ts: n.createdAt })));
@@ -312,6 +339,27 @@ export default function NotificationsPage() {
         </div>
 
         <ScrollArea>
+          {currentCount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 16px 0' }}>
+              <button
+                type="button"
+                onClick={clearNotifications}
+                disabled={clearing}
+                aria-label={t('clear')}
+                style={{
+                  padding: '7px 11px', borderRadius: 18,
+                  background: 'rgba(255,90,95,0.10)',
+                  border: '1px solid rgba(255,90,95,0.18)',
+                  color: '#FF7378', cursor: clearing ? 'default' : 'pointer',
+                  fontSize: 11, fontWeight: 700,
+                  fontFamily: "'Area','Inter',sans-serif",
+                  opacity: clearing ? 0.55 : 1,
+                }}
+              >
+                {clearing ? t('clearing') : t('clear')}
+              </button>
+            </div>
+          )}
           <div style={{ padding: '16px 16px 0' }}>
 
             {/* ══ MINHA CONTA tab ══ */}

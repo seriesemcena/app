@@ -11,6 +11,21 @@ test('app inbox removes legacy demo notifications instead of recreating them', (
   assert.match(page, /dbAppNotifStore\.listPage/);
 });
 
+test('users can permanently clear each notification inbox', () => {
+  const page = read('src/app/notifications/page.tsx');
+  const db = read('src/lib/db.ts');
+  const rules = read('firestore.rules');
+
+  assert.match(page, /clearNotifications/);
+  assert.match(page, /window\.confirm\(t\('clearConfirm'\)\)/);
+  assert.match(page, /dbNotifStore\.clearAll/);
+  assert.match(page, /dbAppNotifStore\.clearAll/);
+  assert.match(page, /notifInboxStore\.clear\(uid\)/);
+  assert.equal((db.match(/async clearAll\(db: Firestore, uid: string\)/g) ?? []).length, 2);
+  assert.match(db, /batch\.delete\(entry\.ref\)/);
+  assert.match(rules, /match \/app_notifications\/\{id\}[\s\S]*allow delete: if activeUser\(\)[\s\S]*resource\.data\.recipientId == request\.auth\.uid/);
+});
+
 test('movie streaming alerts require a verified flatrate provider transition', () => {
   const notifier = read('src/lib/releaseNotifier.ts');
   assert.doesNotMatch(notifier, /data\.release_date/);

@@ -8,6 +8,11 @@
   },
   "markAll": "Mark all",
   "allRead": "All marked as read",
+  "clear": "Clear notifications",
+  "clearing": "Clearing…",
+  "clearConfirm": "Clear all notifications in this tab? This action cannot be undone.",
+  "cleared": "Notifications cleared",
+  "clearError": "Notifications could not be cleared",
   "empty": {
     "account": {
       "title": "No notifications",

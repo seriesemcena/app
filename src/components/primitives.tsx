@@ -92,8 +92,9 @@ export function GlassHeader({
 
       {/* Conteúdo — logo + botões */}
       <div style={{
-        position: 'relative', zIndex: 2,
-        height: 56, marginTop: 'var(--safe-area-top)',
+        position: 'absolute', zIndex: 2,
+        top: 'var(--safe-area-top)', left: 0, right: 0,
+        height: 56,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', padding: '0 12px',
       }}>
@@ -115,7 +116,7 @@ export function GlassHeader({
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               opacity: showNavTitle ? 1 : 0,
-              transform: showNavTitle ? 'translateY(0)' : 'translateY(6px)',
+              transform: showNavTitle ? 'translateY(3px)' : 'translateY(8px)',
               transition: 'opacity 0.22s ease, transform 0.22s ease',
               pointerEvents: 'none',
             } as CSSProperties}>

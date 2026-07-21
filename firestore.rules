@@ -165,11 +165,13 @@ service cloud.firestore {
     }
 
     // Automated content notifications are produced by Cloud Functions.
-    // The client may only read its own documents and mark them as read.
+    // The recipient may read, mark as read or dismiss/delete its own inbox.
     match /app_notifications/{id} {
       allow read: if request.auth != null
                   && resource.data.recipientId == request.auth.uid;
-      allow create, delete: if false;
+      allow create: if false;
+      allow delete: if activeUser()
+                    && resource.data.recipientId == request.auth.uid;
       allow update: if activeUser()
                     && resource.data.recipientId == request.auth.uid
                     && request.resource.data.diff(resource.data)

@@ -257,6 +257,12 @@ html[data-keyboard-open="true"] .tab-bar-wrap {
    grid so useful content remains visible above the floating toolbar. */
 @media (max-width: 767px) and (display-mode: standalone) {
   :root {
+    /* iOS installed PWAs can report 100dvh without the status/home-indicator
+       regions even with viewport-fit=cover. The shell would then end early,
+       leaving a black strip below the floating toolbar. In standalone mode
+       there is no collapsing browser chrome, so 100vh is the stable full
+       screen measurement. */
+    --app-height: 100vh;
     --toolbar-height: calc(72px + max(6px, var(--safe-area-bottom)));
   }
 
@@ -268,6 +274,13 @@ html[data-keyboard-open="true"] .tab-bar-wrap {
   .masonry-skeleton {
     aspect-ratio: 5 / 5.75 !important;
   }
+}
+
+/* navigator.standalone is the compatibility path used by older iOS PWAs.
+   AppRuntimeContext exposes it as data attributes after hydration, so this
+   keeps the same full-screen correction when the media query is unavailable. */
+html[data-platform="ios"][data-standalone="true"][data-capacitor="false"] {
+  --app-height: 100vh;
 }
 
 @supports (-webkit-touch-callout: none) {

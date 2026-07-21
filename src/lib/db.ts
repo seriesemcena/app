@@ -1230,6 +1230,23 @@ export const dbNotifStore = {
       }
     } catch {}
   },
+
+  async clearAll(db: Firestore, uid: string): Promise<void> {
+    for (;;) {
+      const q = query(
+        collection(db, 'notifications'),
+        where('recipientId', '==', uid),
+        limit(FIRESTORE_PAGE_SIZE),
+      );
+      const snap = await getDocs(q);
+      dataCostDebug.query('notifications:account-clear', snap.size);
+      if (snap.empty) return;
+      const batch = writeBatch(db);
+      snap.docs.forEach((entry) => batch.delete(entry.ref));
+      await batch.commit();
+      if (snap.size < FIRESTORE_PAGE_SIZE) return;
+    }
+  },
 };
 
 // ── Automated app notifications ──────────────────────────────────────
@@ -1298,6 +1315,22 @@ export const dbAppNotifStore = {
       if (snap.empty) return;
       const batch = writeBatch(db);
       snap.docs.forEach((entry) => batch.update(entry.ref, { read: true }));
+      await batch.commit();
+      if (snap.size < FIRESTORE_PAGE_SIZE) return;
+    }
+  },
+  async clearAll(db: Firestore, uid: string): Promise<void> {
+    for (;;) {
+      const q = query(
+        collection(db, 'app_notifications'),
+        where('recipientId', '==', uid),
+        limit(FIRESTORE_PAGE_SIZE),
+      );
+      const snap = await getDocs(q);
+      dataCostDebug.query('notifications:app-clear', snap.size);
+      if (snap.empty) return;
+      const batch = writeBatch(db);
+      snap.docs.forEach((entry) => batch.delete(entry.ref));
       await batch.commit();
       if (snap.size < FIRESTORE_PAGE_SIZE) return;
     }

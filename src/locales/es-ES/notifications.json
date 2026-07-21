@@ -8,6 +8,11 @@
   },
   "markAll": "Marcar todo",
   "allRead": "Todo marcado como leído",
+  "clear": "Limpiar notificaciones",
+  "clearing": "Limpiando…",
+  "clearConfirm": "¿Limpiar todas las notificaciones de esta pestaña? Esta acción no se puede deshacer.",
+  "cleared": "Notificaciones eliminadas",
+  "clearError": "No se pudieron limpiar las notificaciones",
   "empty": {
     "account": {
       "title": "Sin notificaciones",

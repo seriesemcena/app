@@ -76,6 +76,15 @@ const BRL_NUMBER = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, ma
 
 const formatPrice = (value: number) => BRL_NUMBER.format(Math.round((value + 1e-9) * 100) / 100);
 
+const parsePrice = (value: string) => {
+  const compact = value.trim().replace(/\s/g, '');
+  const normalized = compact.includes(',')
+    ? compact.replace(/\./g, '').replace(',', '.')
+    : compact;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 type Sub = { id: string; streamId: string; name: string; color: string; plan: string; price: number; active: boolean };
 
 function StreamingLogo({ streamId, name, isDark, size }: { streamId: string; name: string; isDark: boolean; size: number }) {
@@ -112,6 +121,9 @@ export default function ExpensesPage() {
   const [selStream, setSelStream] = useState<Stream | null>(null);
   const [selPlan, setSelPlan] = useState(0);
   const [customPrice, setCustomPrice] = useState('');
+  const [editingSub, setEditingSub] = useState<Sub | null>(null);
+  const [editPlan, setEditPlan] = useState('');
+  const [editPrice, setEditPrice] = useState('');
   const [showNavTitle, setShowNavTitle] = useState(false);
   const titleRef = useRef<HTMLDivElement>(null);
 
@@ -180,6 +192,24 @@ export default function ExpensesPage() {
 
   const removeSub = (id: string) => save(subs.filter((s) => s.id !== id));
   const toggleSub = (id: string) => save(subs.map((s) => s.id === id ? { ...s, active: !s.active } : s));
+  const openEditSub = (sub: Sub) => {
+    setEditingSub(sub);
+    setEditPlan(sub.plan);
+    setEditPrice(formatPrice(sub.price));
+  };
+  const closeEditSub = () => {
+    setEditingSub(null);
+    setEditPlan('');
+    setEditPrice('');
+  };
+  const updateSub = () => {
+    if (!editingSub) return;
+    const price = parsePrice(editPrice);
+    const plan = editPlan.trim();
+    if (!price || !plan) return;
+    save(subs.map((sub) => sub.id === editingSub.id ? { ...sub, plan, price } : sub));
+    closeEditSub();
+  };
 
   const activeSubs = subs.filter((s) => s.active);
   const monthly = activeSubs.reduce((t, s) => t + s.price, 0);
@@ -299,6 +329,9 @@ export default function ExpensesPage() {
                       <Txt size={11} color={T.t3}>{s.plan} · R$ {formatPrice(s.price)}{t('expenses.perMonth')}</Txt>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
+                      <button aria-label={t('expenses.editSubscription')} onClick={() => openEditSub(s)} style={{ width: 28, height: 28, borderRadius: 14, background: 'rgba(192,105,255,0.15)', border: `1px solid ${T.pink}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="edit" size={13} color={T.pink} />
+                      </button>
                       <button onClick={() => toggleSub(s.id)} style={{ width: 28, height: 28, borderRadius: 14, background: s.active ? 'rgba(192,105,255,0.15)' : T.surface2, border: `1px solid ${s.active ? T.pink : T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Icon name={s.active ? 'check' : 'close'} size={13} color={s.active ? T.pink : T.t3} />
                       </button>
@@ -369,6 +402,61 @@ export default function ExpensesPage() {
               </div>
             </div>
           )}
+        </BottomSheet>
+
+        <BottomSheet visible={editingSub !== null} onClose={closeEditSub} title={t('expenses.editSubscription')}>
+          {editingSub && (() => {
+            const stream = PRESET_STREAMS.find((item) => item.id === editingSub.streamId);
+            const validPrice = parsePrice(editPrice) !== null;
+            const canSave = editPlan.trim().length > 0 && validPrice;
+            return (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, padding: 12, background: T.surface, borderRadius: T.radiusSm }}>
+                  <StreamingLogo streamId={editingSub.streamId} name={editingSub.name} isDark={isDark} size={40} />
+                  <div style={{ minWidth: 0 }}>
+                    <Txt size={15} weight={700} style={{ display: 'block' }}>{editingSub.name}</Txt>
+                    <Txt size={11} color={T.t3}>{t('expenses.editDetail')}</Txt>
+                  </div>
+                </div>
+
+                {stream && stream.plans.length > 0 && (
+                  <>
+                    <Txt size={12} color={T.t3} weight={700} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{t('expenses.availablePlans')}</Txt>
+                    <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', marginBottom: 16, paddingBottom: 2 } as React.CSSProperties}>
+                      {stream.plans.map((plan) => {
+                        const selected = editPlan === plan.label;
+                        return (
+                          <button key={plan.label} onClick={() => { setEditPlan(plan.label); setEditPrice(formatPrice(plan.price)); }} style={{ minHeight: 36, padding: '7px 13px', borderRadius: 18, flexShrink: 0, background: selected ? 'rgba(192,105,255,0.15)' : T.surface, border: `1px solid ${selected ? T.pink : T.border}`, color: selected ? T.pink : T.t2, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif" }}>
+                            {plan.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                <label style={{ display: 'block', marginBottom: 14 }}>
+                  <Txt size={12} color={T.t3} weight={700} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{t('expenses.planName')}</Txt>
+                  <input value={editPlan} onChange={(event) => setEditPlan(event.target.value)} placeholder={t('expenses.planNamePlaceholder')}
+                    style={{ width: '100%', padding: '12px 16px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, color: T.t1, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none', boxSizing: 'border-box' }} />
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 18 }}>
+                  <Txt size={12} color={T.t3} weight={700} style={{ display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>{t('expenses.monthlyPrice')}</Txt>
+                  <div style={{ position: 'relative' }}>
+                    <Txt size={14} weight={700} color={T.t2} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>R$</Txt>
+                    <input value={editPrice} onChange={(event) => setEditPrice(event.target.value)} inputMode="decimal" placeholder={t('expenses.customPricePlaceholder')}
+                      style={{ width: '100%', padding: '12px 16px 12px 44px', background: T.surface, border: `1px solid ${editPrice && !validPrice ? T.red : T.border}`, borderRadius: T.radiusSm, color: T.t1, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                </label>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <Btn label={t('expenses.cancel')} variant="ghost" onClick={closeEditSub} style={{ flex: 1 }} />
+                  <Btn label={t('expenses.saveChanges')} variant="pink" onClick={updateSub} disabled={!canSave} style={{ flex: 2 }} />
+                </div>
+              </div>
+            );
+          })()}
         </BottomSheet>
       </Screen>
     </Frame>

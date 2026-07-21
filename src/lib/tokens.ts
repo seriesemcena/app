@@ -49,4 +49,4 @@ export type IconName =
   | 'film' | 'tv' | 'crown' | 'close' | 'info' | 'eye' | 'share'
   | 'fire' | 'mappin' | 'wifi' | 'lock' | 'smile' | 'message' | 'flag'
   | 'chart' | 'chevronLeft' | 'chevronRight' | 'bookmark' | 'award' | 'clock' | 'menuDots'
-  | 'moon' | 'logout' | 'reply';
+  | 'moon' | 'logout' | 'reply' | 'edit';

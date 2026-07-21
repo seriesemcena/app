@@ -379,10 +379,11 @@ export default function HomePage() {
 
           {/* ── Sticky header + tabs ── */}
           {(() => {
-            const pV  = 6  - scrollRatio * 2;   // padding vertical: 6 → 4px
-            const pH  = 14 - scrollRatio * 4;   // padding horizontal: 14 → 10px
-            const fs  = 12 - scrollRatio * 1;   // font-size: 12 → 11px
-            const pbRow = 10 - scrollRatio * 4; // row bottom padding: 10 → 6px
+            const pV  = 8  - scrollRatio * 2;   // padding vertical: 8 → 6px
+            const pH  = 16 - scrollRatio * 3;   // padding horizontal: 16 → 13px
+            const fs  = 14 - scrollRatio * 1;   // font-size: 14 → 13px
+            const menuHeight = 36 - scrollRatio * 2; // altura: 36 → 34px
+            const pbRow = 12 - scrollRatio * 4; // row bottom padding: 12 → 8px
             return (
               <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, overflow: 'visible', paddingTop: 'var(--safe-area-top)' } as React.CSSProperties}>
                 {[{ blur: 22, end: 35 }, { blur: 14, end: 60 }, { blur: 7, end: 80 }, { blur: 3, end: 95 }].map(({ blur, end }, i) => (
@@ -404,7 +405,7 @@ export default function HomePage() {
                 <div style={{ position: 'relative', zIndex: 2, padding: `0 16px ${pbRow}px`, display: 'flex', gap: 6 }}>
                   {(['para_voce','em_alta','novidades'] as const).map((id) => (
                     <button key={id} onClick={() => setHomeTab(id)} style={{
-                      padding: `${pV}px ${pH}px`, borderRadius: 20, flexShrink: 0,
+                      padding: `${pV}px ${pH}px`, minHeight: menuHeight, borderRadius: 20, flexShrink: 0,
                       background: homeTab === id ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.12)',
                       border: homeTab === id ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.22)',
                       color: homeTab === id ? T.active : '#fff',
@@ -629,14 +630,14 @@ export default function HomePage() {
                           </div>
                           {/* Info */}
                           <div style={{ flex: 1, minWidth: 0, padding: '14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 6 }}>{item.title}</Txt>
+                            <Txt size={16} weight={800} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 7 }}>{item.title}</Txt>
                             {seasonNumber && episodeNumber ? (
                               <>
-                                <Txt size={12} color={T.t3} style={{ display: 'block', lineHeight: 1.35 }}>{t('season', { number: seasonNumber, ns: 'title' })}</Txt>
-                                <Txt size={12} color={T.t3} style={{ display: 'block', lineHeight: 1.35 }}>{t('episode', { number: episodeNumber, ns: 'title' })}</Txt>
+                                <Txt size={13} weight={600} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>{t('season', { number: seasonNumber, ns: 'title' })}</Txt>
+                                <Txt size={13} weight={600} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>{t('episode', { number: episodeNumber, ns: 'title' })}</Txt>
                               </>
                             ) : (
-                              <Txt size={12} color={T.t3} style={{ display: 'block' }}>{t('watching')}</Txt>
+                              <Txt size={13} weight={600} color={T.t3} style={{ display: 'block' }}>{t('watching')}</Txt>
                             )}
                           </div>
                           <Icon name="chevronR" size={16} color={T.t4} style={{ alignSelf: 'center', marginRight: 14 }} />

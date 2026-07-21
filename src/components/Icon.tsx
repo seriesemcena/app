@@ -31,6 +31,7 @@ import {
   MedalRibbonStar,
   MenuDots,
   Moon,
+  Pen2,
   Play,
   Reply,
   SettingsMinimalistic,
@@ -102,6 +103,7 @@ const ICONS: Record<IconName, typeof Home> = {
   moon: Moon,
   logout: Logout2,
   reply: Reply,
+  edit: Pen2,
 };
 
 const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlain', 'crown', 'fire', 'menuDots']);
@@ -150,6 +152,7 @@ const SF_SYMBOLS: Record<IconName, string> = {
   moon: 'moon',
   logout: 'rectangle.portrait.and.arrow.right',
   reply: 'arrowshape.turn.up.left',
+  edit: 'pencil',
 };
 
 const nativeSymbolCache = new Map<string, Promise<string | null>>();

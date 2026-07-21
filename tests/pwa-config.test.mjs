@@ -44,8 +44,29 @@ test('mobile shell centralizes viewport, safe areas and keyboard insets', async 
 
   assert.match(css, /@supports \(height: 100svh\)/);
   assert.match(css, /@supports \(height: 100dvh\)/);
+  assert.match(css, /display-mode: standalone[\s\S]*--app-height:\s*100vh/);
+  assert.match(css, /data-platform=["']ios["'][\s\S]*data-standalone=["']true["'][\s\S]*--app-height:\s*100vh/);
   assert.match(runtime, /visualViewport/);
   assert.match(runtime, /dataset\.keyboardOpen/);
+});
+
+test('sticky navigation menus keep readable touch targets while compacting', async () => {
+  const [home, ...tabbedPages] = await Promise.all([
+    read('src/app/home/page.tsx'),
+    read('src/app/series/page.tsx'),
+    read('src/app/movies/page.tsx'),
+    read('src/app/feed/page.tsx'),
+    read('src/app/lists/page.tsx'),
+  ]);
+
+  assert.match(home, /const fs\s*=\s*14\s*-\s*scrollRatio\s*\*\s*1/);
+  assert.match(home, /const menuHeight\s*=\s*36\s*-\s*scrollRatio\s*\*\s*2/);
+  assert.match(home, /<Txt size=\{16\} weight=\{800\}/);
+
+  for (const page of tabbedPages) {
+    assert.match(page, /minHeight:\s*scrolled\s*\?\s*34\s*:\s*36/);
+    assert.match(page, /fontSize:\s*scrolled\s*\?\s*13\s*:\s*14/);
+  }
 });
 
 test('Firebase messaging reuses the application service worker', async () => {
