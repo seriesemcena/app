@@ -481,8 +481,8 @@ export const TMDBGridCard = ({
 };
 
 /* ─────────────────────────────────────────────────────────────
-   MasonryGrid2 — grade masonry 2 colunas com alturas variáveis
-   Distribui items alternadamente nas colunas (0,2,4… / 1,3,5…)
+   MasonryGrid2 — grade responsiva, com duas colunas no mobile.
+   O grid mantém os cards em pares por linha mesmo quando os títulos variam.
    ───────────────────────────────────────────────────────────── */
 export const MasonryGrid2 = ({
   items, onItem, loading = false, skeletonCount = 8, getTag, padding = '0 16px',

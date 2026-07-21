@@ -66,8 +66,18 @@ type HomeSectionGridProps = {
 function HomeSectionGrid({
   title, items, loading, limit = 10, loadMoreLabel, onItem, onLoadMore,
 }: HomeSectionGridProps) {
-  const sliced = (items || []).slice(0, limit);
-  const hasMore = !loading && (items || []).length > limit;
+  const uniqueItems = (items || []).filter((item, idx, all) =>
+    all.findIndex((candidate) =>
+      candidate.id === item.id
+      && (candidate.media_type ?? (candidate as any).type) === (item.media_type ?? (item as any).type)
+    ) === idx
+  );
+  const limitedItems = uniqueItems.slice(0, limit);
+  const evenCount = limitedItems.length > 1
+    ? limitedItems.length - (limitedItems.length % 2)
+    : limitedItems.length;
+  const sliced = limitedItems.slice(0, evenCount);
+  const hasMore = !loading && uniqueItems.length > sliced.length;
   return (
     <div style={{ marginBottom: 28 }}>
       {title && <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, paddingRight: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>}

@@ -432,13 +432,15 @@ h3, h4, h5, h6, p {
 .news-desktop { display: none; }
 
 /* ── Responsive masonry grid ── */
-.masonry-cols { columns: 2; column-gap: 13px; }
-.masonry-item { break-inside: avoid; margin-bottom: 13px; }
+.masonry-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+.masonry-item { min-width: 0; }
 
 @media (min-width: 768px) {
-  /* Switch from CSS columns to CSS grid for uniform card heights */
-  .masonry-cols { columns: unset; display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
-  .masonry-item { break-inside: unset; margin-bottom: 0; }
+  .masonry-cols { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
   /* Lists page: 2 columns instead of 4 */
   .masonry-2col .masonry-cols { grid-template-columns: repeat(2, 1fr); }
