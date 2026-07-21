@@ -3,6 +3,7 @@ import type { CursorPage } from '@maratonou/api-client';
 import { api, type AdminActor, type Dashboard, type DashboardPeriod, type DashboardRankingItem } from './api';
 import { can, formatDate, formatNumber, humanize, stringValue, type Section } from './admin-model';
 import { ConfirmDialog, EmptyState, ErrorBox, Icon, LoadingTable, StatusBadge } from './components';
+import { sendUserPasswordReset } from './firebase';
 
 type RecordItem = Record<string, unknown>;
 type Column = { key: string; label: string; render?: (item: RecordItem) => ReactNode };
@@ -225,6 +226,64 @@ export function UsersView({ actor, search }: { actor: AdminActor; search: string
   const { items, cursor, loading, error, load } = usePagedResource('/v1/admin/users?limit=25');
   const [dialog, setDialog] = useState<{ item: RecordItem; action: 'suspend' | 'ban' | 'restore' } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [manager, setManager] = useState<RecordItem | null>(null);
+  const [managerEmail, setManagerEmail] = useState('');
+  const [deletionReason, setDeletionReason] = useState('Solicitação do titular da conta.');
+  const [managerBusy, setManagerBusy] = useState<'password' | 'email' | 'pro' | ''>('');
+  const [managerError, setManagerError] = useState<unknown>(null);
+  const [managerMessage, setManagerMessage] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ item: RecordItem; reason: string } | null>(null);
+  const openManager = (item: RecordItem) => {
+    setManager(item); setManagerEmail(String(item.email || ''));
+    setDeletionReason('Solicitação do titular da conta.');
+    setManagerError(null); setManagerMessage('');
+  };
+  const updateManagedUser = (result: RecordItem) => {
+    setManager((current) => current ? { ...current, ...result } : current);
+  };
+  const resetPassword = async () => {
+    if (!manager) return;
+    setManagerBusy('password'); setManagerError(null); setManagerMessage('');
+    try {
+      const result = await api.request<{ email: string }>(`/v1/admin/users/${encodeURIComponent(String(manager.uid))}/password-reset`, { method: 'POST', body: {}, idempotencyKey: crypto.randomUUID() });
+      await sendUserPasswordReset(result.email);
+      setManagerMessage(`E-mail de redefinição enviado para ${result.email}.`);
+    } catch (reason) { setManagerError(reason); }
+    finally { setManagerBusy(''); }
+  };
+  const updateEmail = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); if (!manager) return;
+    setManagerBusy('email'); setManagerError(null); setManagerMessage('');
+    try {
+      const result = await api.request<RecordItem>(`/v1/admin/users/${encodeURIComponent(String(manager.uid))}/email`, { method: 'POST', body: { email: managerEmail, confirmation: 'ALTERAR EMAIL' }, idempotencyKey: crypto.randomUUID() });
+      updateManagedUser(result); setManagerEmail(String(result.email || managerEmail));
+      setManagerMessage('E-mail alterado. As sessões anteriores do usuário foram revogadas.');
+      await load();
+    } catch (reason) { setManagerError(reason); }
+    finally { setManagerBusy(''); }
+  };
+  const togglePro = async () => {
+    if (!manager) return;
+    const enabled = !Boolean(manager.proMember);
+    setManagerBusy('pro'); setManagerError(null); setManagerMessage('');
+    try {
+      const result = await api.request<RecordItem>(`/v1/admin/users/${encodeURIComponent(String(manager.uid))}/pro`, { method: 'POST', body: { enabled, confirmation: enabled ? 'ATIVAR PRO' : 'REMOVER PRO' }, idempotencyKey: crypto.randomUUID() });
+      updateManagedUser(result);
+      setManagerMessage(enabled ? 'Plano PRO ativado para este usuário.' : 'Plano PRO removido deste usuário.');
+      await load();
+    } catch (reason) { setManagerError(reason); }
+    finally { setManagerBusy(''); }
+  };
+  const removeUser = async () => {
+    if (!deleteTarget) return;
+    setBusy(true); setManagerError(null);
+    try {
+      await api.request(`/v1/admin/users/${encodeURIComponent(String(deleteTarget.item.uid))}`, { method: 'DELETE', body: { confirmation: 'EXCLUIR', reason: deleteTarget.reason }, idempotencyKey: crypto.randomUUID() });
+      setDeleteTarget(null); await load();
+    } catch (reason) {
+      setDeleteTarget(null); setManagerError(reason);
+    } finally { setBusy(false); }
+  };
   const act = async () => {
     if (!dialog) return;
     setBusy(true);
@@ -234,13 +293,28 @@ export function UsersView({ actor, search }: { actor: AdminActor; search: string
       setDialog(null); await load();
     } finally { setBusy(false); }
   };
-  return <div className="stack"><div className="toolbar"><div><h2>Base de usuários</h2><p>Contas do Firebase Authentication combinadas aos perfis do Firestore.</p></div><PageActions onRefresh={() => void load()} busy={loading}/></div>{Boolean(error) && <ErrorBox error={error} onRetry={() => void load()}/>}<section className="panel">{loading && !items.length ? <LoadingTable/> : <DataTable search={search} items={items} columns={[
-    { key: 'displayName', label: 'Usuário', render: (item) => <div className="primary-cell"><span className="mini-avatar">{String(item.displayName || item.email || '?').slice(0, 1).toUpperCase()}</span><div><strong>{stringValue(item.displayName)}</strong><small>{stringValue(item.email)}</small></div></div> },
-    { key: 'accountStatus', label: 'Status', render: (item) => <StatusBadge value={item.accountStatus}/> },
-    { key: 'proMember', label: 'Plano', render: (item) => <span className={item.proMember ? 'pro-label' : ''}>{item.proMember ? 'PRO' : 'Gratuito'}</span> },
-    { key: 'createdAt', label: 'Cadastro', render: (item) => formatDate(item.createdAt) },
-    { key: 'lastSignInAt', label: 'Último acesso', render: (item) => formatDate(item.lastSignInAt) },
-  ]} actions={(item) => String(item.uid) === actor.uid ? <span className="muted">Sua conta</span> : <div className="row-actions">{String(item.accountStatus) === 'active' ? <>{can(actor.permissions, 'users.suspend') && <button className="mini-button" onClick={() => setDialog({ item, action: 'suspend' })}>Suspender</button>}{can(actor.permissions, 'users.ban') && <button className="mini-button danger-text" onClick={() => setDialog({ item, action: 'ban' })}>Banir</button>}</> : can(actor.permissions, 'users.suspend') && <button className="mini-button" onClick={() => setDialog({ item, action: 'restore' })}>Reativar</button>}</div>}/>} {cursor && <div className="load-more"><button className="button button-quiet" onClick={() => void load(cursor, true)}>Carregar mais</button></div>}</section><ConfirmDialog open={!!dialog} title={dialog?.action === 'restore' ? 'Reativar conta' : dialog?.action === 'ban' ? 'Banir usuário' : 'Suspender usuário'} message={`${stringValue(dialog?.item.email)} será ${dialog?.action === 'restore' ? 'reativado' : dialog?.action === 'ban' ? 'banido' : 'suspenso'}. A ação será registrada na auditoria.`} expected={dialog?.action === 'ban' ? 'BANIR' : dialog?.action === 'suspend' ? 'SUSPENDER' : 'REATIVAR'} busy={busy} onClose={() => setDialog(null)} onConfirm={() => void act()}/></div>;
+  return <div className="stack">
+    <div className="toolbar"><div><h2>Base de usuários</h2><p>Contas do Firebase Authentication combinadas aos perfis do Firestore.</p></div><PageActions onRefresh={() => void load()} busy={loading}/></div>
+    {Boolean(error) && <ErrorBox error={error} onRetry={() => void load()}/>} {!manager && Boolean(managerError) && <ErrorBox error={managerError}/>}<section className="panel">{loading && !items.length ? <LoadingTable/> : <DataTable search={search} items={items} columns={[
+      { key: 'displayName', label: 'Usuário', render: (item) => <div className="primary-cell"><span className="mini-avatar">{String(item.displayName || item.email || '?').slice(0, 1).toUpperCase()}</span><div><strong>{stringValue(item.displayName)}</strong><small>{stringValue(item.email)}</small></div></div> },
+      { key: 'accountStatus', label: 'Status', render: (item) => <StatusBadge value={item.accountStatus}/> },
+      { key: 'proMember', label: 'Plano', render: (item) => <span className={item.proMember ? 'pro-label' : ''}>{item.proMember ? 'PRO' : 'Gratuito'}</span> },
+      { key: 'createdAt', label: 'Cadastro', render: (item) => formatDate(item.createdAt) },
+      { key: 'lastSignInAt', label: 'Último acesso', render: (item) => formatDate(item.lastSignInAt) },
+    ]} actions={(item) => String(item.uid) === actor.uid ? <span className="muted">Sua conta</span> : <div className="row-actions"><button className="mini-button" onClick={() => openManager(item)}>Gerenciar</button>{String(item.accountStatus) === 'active' ? <>{can(actor.permissions, 'users.suspend') && <button className="mini-button" onClick={() => setDialog({ item, action: 'suspend' })}>Suspender</button>}{can(actor.permissions, 'users.ban') && <button className="mini-button danger-text" onClick={() => setDialog({ item, action: 'ban' })}>Banir</button>}</> : can(actor.permissions, 'users.suspend') && <button className="mini-button" onClick={() => setDialog({ item, action: 'restore' })}>Reativar</button>}</div>}/>} {cursor && <div className="load-more"><button className="button button-quiet" onClick={() => void load(cursor, true)}>Carregar mais</button></div>}</section>
+    {manager && <div className="modal-backdrop"><section className="modal user-manager-modal" role="dialog" aria-modal="true" aria-labelledby="user-manager-title"><div className="modal-title"><div><span className="eyebrow">Perfil do usuário</span><h2 id="user-manager-title">Gerenciar usuário</h2></div><button className="icon-button" type="button" aria-label="Fechar" onClick={() => setManager(null)}><Icon name="close"/></button></div>
+      <div className="managed-user-identity"><span className="mini-avatar">{String(manager.displayName || manager.email || '?').slice(0, 1).toUpperCase()}</span><div><strong>{stringValue(manager.displayName)}</strong><span>{stringValue(manager.email)}</span><small>UID: {stringValue(manager.uid)}</small></div><span className={manager.proMember ? 'pro-label' : 'muted'}>{manager.proMember ? 'PRO' : 'Gratuito'}</span></div>
+      {managerError ? <ErrorBox error={managerError}/> : null}{managerMessage && <div className="feedback feedback-success"><span className="feedback-icon"><Icon name="check"/></span><div><strong>Ação concluída</strong><p>{managerMessage}</p></div></div>}
+      <div className="user-management-grid">
+        {can(actor.permissions, 'users.password.reset') && <section className="user-management-card"><div><strong>Redefinição de senha</strong><p>Envia o e-mail oficial do Firebase para que o usuário escolha uma nova senha.</p></div><button className="button button-quiet" disabled={!!managerBusy} onClick={() => void resetPassword()}>{managerBusy === 'password' ? 'Enviando…' : 'Enviar e-mail'}</button></section>}
+        {can(actor.permissions, 'users.pro.manage') && <section className="user-management-card"><div><strong>Plano do usuário</strong><p>{manager.proMember ? 'O usuário possui acesso aos recursos PRO.' : 'Ative manualmente o acesso aos recursos PRO.'}</p></div><button className={`button ${manager.proMember ? 'button-quiet' : 'button-primary'}`} disabled={!!managerBusy} onClick={() => void togglePro()}>{managerBusy === 'pro' ? 'Salvando…' : manager.proMember ? 'Remover PRO' : 'Ativar PRO'}</button></section>}
+      </div>
+      {can(actor.permissions, 'users.email.update') && <form className="user-email-form" onSubmit={(event) => void updateEmail(event)}><div><strong>Alterar e-mail</strong><p>O novo endereço ficará não verificado e as sessões anteriores serão revogadas.</p></div><div className="user-email-controls"><input required type="email" value={managerEmail} onChange={(event) => setManagerEmail(event.target.value)} aria-label="Novo e-mail do usuário"/><button className="button button-quiet" disabled={!!managerBusy || managerEmail.trim().toLowerCase() === String(manager.email || '').toLowerCase()}>{managerBusy === 'email' ? 'Alterando…' : 'Salvar e-mail'}</button></div></form>}
+      {can(actor.permissions, 'users.delete') && <section className="user-delete-zone"><div><strong>Excluir conta a pedido do usuário</strong><p>Remove o acesso ao Firebase Authentication, o perfil e os dados privados vinculados ao documento da conta.</p></div><label>Motivo registrado na auditoria<textarea maxLength={500} required value={deletionReason} onChange={(event) => setDeletionReason(event.target.value)}/></label><button className="button button-danger" disabled={!deletionReason.trim()} onClick={() => { setDeleteTarget({ item: manager, reason: deletionReason.trim() }); setManager(null); }}>Excluir conta</button></section>}
+    </section></div>}
+    <ConfirmDialog open={!!dialog} title={dialog?.action === 'restore' ? 'Reativar conta' : dialog?.action === 'ban' ? 'Banir usuário' : 'Suspender usuário'} message={`${stringValue(dialog?.item.email)} será ${dialog?.action === 'restore' ? 'reativado' : dialog?.action === 'ban' ? 'banido' : 'suspenso'}. A ação será registrada na auditoria.`} expected={dialog?.action === 'ban' ? 'BANIR' : dialog?.action === 'suspend' ? 'SUSPENDER' : 'REATIVAR'} busy={busy} onClose={() => setDialog(null)} onConfirm={() => void act()}/>
+    <ConfirmDialog open={!!deleteTarget} title="Excluir conta definitivamente" message={`${stringValue(deleteTarget?.item.email)} será removido do Firebase. Motivo: ${deleteTarget?.reason || 'Solicitação do usuário.'}`} expected="EXCLUIR" busy={busy} onClose={() => setDeleteTarget(null)} onConfirm={() => void removeUser()}/>
+  </div>;
 }
 
 export function CommentsView({ actor, search }: { actor: AdminActor; search: string }) {

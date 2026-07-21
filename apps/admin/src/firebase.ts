@@ -5,6 +5,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   setPersistence,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -53,6 +54,11 @@ export const loginGoogle = async () => {
 export const loginEmail = async (email: string, password: string) => {
   if (!auth) throw new Error('Firebase não configurado.');
   await signInWithEmailAndPassword(auth, email, password);
+};
+
+export const sendUserPasswordReset = async (email: string) => {
+  if (!auth) throw new Error('Firebase não configurado.');
+  await sendPasswordResetEmail(auth, email);
 };
 
 export const logout = async () => { if (auth) await signOut(auth); };

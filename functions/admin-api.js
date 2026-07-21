@@ -63,6 +63,12 @@ function secretConfigured(secret, fallbackName) {
   catch { return Boolean(process.env[fallbackName]); }
 }
 
+function normalizedEmail(value) {
+  const email = cleanString(value, 254).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, 'INVALID_EMAIL', 'Informe um e-mail válido.');
+  return email;
+}
+
 function allowedOrigins() {
   const configured = String(process.env.ADMIN_ALLOWED_ORIGINS || 'https://admin.maratonou.com').split(',').map((value) => value.trim()).filter(Boolean);
   return new Set(emulatorMode() ? [...configured, 'http://127.0.0.1:4173', 'http://localhost:4173'] : configured.filter((value) => value.startsWith('https://')));
@@ -478,11 +484,12 @@ async function userDetail(uid) {
   const user = await auth.getUser(uid).catch(() => null);
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'Usuário não encontrado.');
   const profile = await db.doc(`users/${uid}`).get();
+  const profileData = profile.data()?.profile || {};
   return {
     uid: user.uid, email: user.email || '', displayName: user.displayName || '',
     disabled: user.disabled, createdAt: user.metadata.creationTime,
     lastSignInAt: user.metadata.lastSignInTime,
-    profile: cleanForAudit(profile.data()?.profile || {}),
+    profile: cleanForAudit(profileData), proMember: profileData.proMember === true,
     accountStatus: profile.data()?.accountStatus || 'active',
   };
 }
@@ -565,10 +572,57 @@ async function route(req, res, actor, requestIdValue, parts) {
     if (Object.keys(authUpdate).length) await auth.updateUser(id, authUpdate);
     const profileUpdate = {};
     if (displayName) profileUpdate.name = displayName;
-    if (typeof body.proMember === 'boolean') profileUpdate.proMember = body.proMember;
+    if (typeof body.proMember === 'boolean') {
+      requirePermission(actor, 'users.pro.manage');
+      profileUpdate.proMember = body.proMember;
+    }
     if (Object.keys(profileUpdate).length) await db.doc(`users/${id}`).set({ profile: profileUpdate, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     const after = await userDetail(id);
     await writeAudit(actor, req, requestIdValue, 'users.update', 'users', id, { before, after });
+    return send(res, 200, requestIdValue, after);
+  }
+  if (resource === 'users' && id && action === 'password-reset' && method === 'POST') {
+    requirePermission(actor, 'users.password.reset');
+    await rateLimit(actor, 'users.password.reset', 10, 3600);
+    const user = await auth.getUser(id).catch(() => null);
+    if (!user?.email) throw new ApiError(404, 'USER_EMAIL_NOT_FOUND', 'A conta não possui um e-mail válido para redefinição.');
+    const receipt = await claimIdempotency(actor, req, 'users.password.reset');
+    await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await writeAudit(actor, req, requestIdValue, 'users.password_reset_requested', 'users', id, { email: user.email, delivery: 'firebase_auth_client' });
+    return send(res, 200, requestIdValue, { uid: id, email: user.email, requested: true });
+  }
+  if (resource === 'users' && id && action === 'pro' && method === 'POST') {
+    requirePermission(actor, 'users.pro.manage');
+    const enabled = body.enabled === true;
+    requireConfirmation(body, enabled ? 'ATIVAR PRO' : 'REMOVER PRO');
+    if (id === actor.uid) throw new ApiError(403, 'SELF_UPDATE_DENIED', 'Use a área de conta para alterar seu próprio plano.');
+    const receipt = await claimIdempotency(actor, req, 'users.pro.manage');
+    const before = await userDetail(id);
+    await db.doc(`users/${id}`).set({ profile: { proMember: enabled }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    const after = await userDetail(id);
+    await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await writeAudit(actor, req, requestIdValue, enabled ? 'users.pro_enable' : 'users.pro_disable', 'users', id, { before, after });
+    return send(res, 200, requestIdValue, after);
+  }
+  if (resource === 'users' && id && action === 'email' && method === 'POST') {
+    requirePermission(actor, 'users.email.update'); requireRecentAuth(actor); requireConfirmation(body, 'ALTERAR EMAIL');
+    if (id === actor.uid) throw new ApiError(403, 'SELF_UPDATE_DENIED', 'Use a área de conta para alterar seu próprio e-mail.');
+    const adminRecord = await db.doc(`adminUsers/${id}`).get();
+    if (adminRecord.exists && adminRecord.data().status === 'active') throw new ApiError(409, 'ACTIVE_ADMIN', 'Altere primeiro o acesso desta conta na seção Administradores.');
+    const email = normalizedEmail(body.email);
+    const before = await userDetail(id);
+    if (String(before.email).toLowerCase() === email) throw new ApiError(409, 'EMAIL_UNCHANGED', 'Este já é o e-mail atual da conta.');
+    const receipt = await claimIdempotency(actor, req, 'users.email.update');
+    try { await auth.updateUser(id, { email, emailVerified: false }); }
+    catch (error) {
+      if (error?.code === 'auth/email-already-exists') throw new ApiError(409, 'EMAIL_ALREADY_EXISTS', 'Este e-mail já pertence a outra conta.');
+      if (error?.code === 'auth/invalid-email') throw new ApiError(400, 'INVALID_EMAIL', 'Informe um e-mail válido.');
+      throw error;
+    }
+    await auth.revokeRefreshTokens(id);
+    const after = await userDetail(id);
+    await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await writeAudit(actor, req, requestIdValue, 'users.email_update', 'users', id, { before, after });
     return send(res, 200, requestIdValue, after);
   }
   if (resource === 'users' && id && method === 'POST' && ['suspend', 'ban', 'restore'].includes(action)) {
@@ -593,9 +647,9 @@ async function route(req, res, actor, requestIdValue, parts) {
     const adminRecord = await db.doc(`adminUsers/${id}`).get();
     if (adminRecord.exists && adminRecord.data().status === 'active') throw new ApiError(409, 'ACTIVE_ADMIN', 'Remova primeiro o acesso administrativo desta conta.');
     const receipt = await claimIdempotency(actor, req, 'users.delete'); const before = await userDetail(id);
-    await auth.deleteUser(id); await db.doc(`users/${id}`).delete();
+    await auth.deleteUser(id); await db.recursiveDelete(db.doc(`users/${id}`));
     await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
-    await writeAudit(actor, req, requestIdValue, 'users.delete', 'users', id, { before });
+    await writeAudit(actor, req, requestIdValue, 'users.delete', 'users', id, { before, reason: cleanString(body.reason, 500) || 'Solicitação do titular da conta.' });
     return send(res, 200, requestIdValue, { deleted: true });
   }
   if (resource === 'banners' && method === 'POST' && !id) {

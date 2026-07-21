@@ -43,7 +43,7 @@ test('CORS administrativo é explícito e funções não mantêm instâncias que
   assert.match(source, /Access-Control-Allow-Credentials', 'true'/);
   assert.doesNotMatch(source, /minInstances/);
   assert.match(source, /maxInstances: 10/);
-  assert.match(source, /secrets: \[AUDIT_IP_HASH_SECRET, TMDB_API_KEY\]/);
+  assert.match(source, /secrets: \[AUDIT_IP_HASH_SECRET, TMDB_API_KEY, GIPHY_API_KEY\]/);
 });
 
 test('operações críticas combinam intenção, autenticação recente e idempotência', async () => {

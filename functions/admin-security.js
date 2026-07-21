@@ -6,7 +6,8 @@ const crypto = require('node:crypto');
 const ADMIN_ROLES = Object.freeze(['super_admin', 'admin', 'moderator', 'editor', 'support']);
 const ALL_PERMISSIONS = Object.freeze([
   'dashboard.read', 'dashboard.rebuild',
-  'users.read', 'users.update', 'users.suspend', 'users.ban', 'users.delete', 'users.roles.manage',
+  'users.read', 'users.update', 'users.password.reset', 'users.email.update',
+  'users.pro.manage', 'users.suspend', 'users.ban', 'users.delete', 'users.roles.manage',
   'content.read', 'content.create', 'content.update', 'content.publish', 'content.delete',
   'comments.read', 'comments.moderate', 'comments.delete',
   'ratings.read', 'ratings.moderate',
@@ -21,7 +22,8 @@ const ALL_PERMISSIONS = Object.freeze([
 const ROLE_PERMISSIONS = Object.freeze({
   super_admin: Object.freeze(['*']),
   admin: Object.freeze([
-    'dashboard.read', 'users.read', 'users.update', 'users.suspend', 'users.ban',
+    'dashboard.read', 'users.read', 'users.update', 'users.password.reset',
+    'users.email.update', 'users.pro.manage', 'users.suspend', 'users.ban',
     'content.read', 'content.create', 'content.update', 'content.publish',
     'comments.read', 'comments.moderate', 'comments.delete',
     'ratings.read', 'ratings.moderate', 'reports.read', 'reports.resolve',
@@ -37,7 +39,10 @@ const ROLE_PERMISSIONS = Object.freeze({
     'dashboard.read', 'content.read', 'content.create', 'content.update',
     'content.publish', 'notifications.read', 'notifications.create',
   ]),
-  support: Object.freeze(['dashboard.read', 'users.read', 'reports.read', 'reports.resolve']),
+  support: Object.freeze([
+    'dashboard.read', 'users.read', 'users.password.reset',
+    'reports.read', 'reports.resolve',
+  ]),
 });
 
 class ApiError extends Error {

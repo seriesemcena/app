@@ -29,6 +29,11 @@ test('matriz de RBAC não concede privilégios de super_admin aos demais papéis
   }
   assert.equal(roleCan('moderator', 'comments.delete'), true);
   assert.equal(roleCan('editor', 'content.update'), true);
+  assert.equal(roleCan('admin', 'users.email.update'), true);
+  assert.equal(roleCan('admin', 'users.pro.manage'), true);
+  assert.equal(roleCan('support', 'users.password.reset'), true);
+  assert.equal(roleCan('support', 'users.email.update'), false);
+  assert.equal(roleCan('admin', 'users.delete'), false);
   assert.equal(new Set(ALL_PERMISSIONS).size, ALL_PERMISSIONS.length);
 });
 
