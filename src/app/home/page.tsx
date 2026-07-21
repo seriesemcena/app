@@ -7,7 +7,8 @@ import { Icon } from '@/components/Icon';
 import { TMDBBackdrop, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, normalizeTMDBImageUrl, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
-import { DEFAULT_PRO_HOME_SECTIONS, listStore, profileStore, proSettingsStore, sliderStore, syncProReminderNotifications, type ProHomeSectionKey, type SliderItem, type SliderCategory } from '@/lib/store';
+import { DEFAULT_PRO_HOME_SECTIONS, epWatchedStore, listStore, profileStore, proSettingsStore, sliderStore, syncProReminderNotifications, type ProHomeSectionKey, type SliderItem, type SliderCategory } from '@/lib/store';
+import { getPersonalizedRecommendations, type PersonalizedRecommendations } from '@/lib/personalizedRecommendations';
 import { checkUpcomingReleases } from '@/lib/releaseNotifier';
 import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
@@ -146,6 +147,9 @@ export default function HomePage() {
   const [trendLimit, setTrendLimit]     = useState(10);
   const [novLimit, setNovLimit]         = useState(10);
   const [homeSections, setHomeSections] = useState(DEFAULT_PRO_HOME_SECTIONS);
+  const [recommendations, setRecommendations] = useState<PersonalizedRecommendations | null>(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(true);
+  const [recommendationRevision, setRecommendationRevision] = useState(0);
 
   const heroScrollRef = useRef<HTMLDivElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
@@ -262,6 +266,47 @@ export default function HomePage() {
   const { data: topRatedTV,   loading: lTRTV }    = useTMDB(() => tmdb.topRated('tv'), []);
   const { data: nowPlaying,   loading: lNP }      = useTMDB(() => tmdb.nowPlaying(), []);
   const { data: onAir,        loading: lOA }      = useTMDB(() => tmdb.onAir(), []);
+
+  /* ── recommendations inferred from what this user actually watches ── */
+  useEffect(() => {
+    const refresh = () => setRecommendationRevision((revision) => revision + 1);
+    window.addEventListener('maratonou:sync', refresh);
+    return () => window.removeEventListener('maratonou:sync', refresh);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRecommendationsLoading(true);
+
+    const watching = listStore.get('watching');
+    const watched = listStore.get('watched');
+    const excluded = [
+      ...listStore.get('want'),
+      ...watching,
+      ...watched,
+      ...listStore.get('favorites'),
+    ];
+
+    getPersonalizedRecommendations({
+      watching,
+      watched,
+      excluded,
+      episodeHistory: epWatchedStore.getAll(),
+    }).then((personalized) => {
+      if (!cancelled) setRecommendations(personalized);
+    }).catch(() => {
+      if (!cancelled) setRecommendations(null);
+    }).finally(() => {
+      if (!cancelled) setRecommendationsLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [user?.uid, i18n.language, recommendationRevision]);
+
+  const recommendedSeries = recommendations?.tv.length ? recommendations.tv : topRatedTV?.results;
+  const recommendedMovies = recommendations?.movie.length ? recommendations.movie : topRatedMov?.results;
+  const recommendedSeriesLoading = recommendationsLoading || (!recommendedSeries && lTRTV);
+  const recommendedMoviesLoading = recommendationsLoading || (!recommendedMovies && lTRM);
 
   /* ── hero slider — admin slider with TMDB trending fallback ── */
   const heroes: SliderItem[] = useMemo(() => {
@@ -553,46 +598,46 @@ export default function HomePage() {
                   <div className="home-watching-list" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {watchingItems.map((item) => {
                       const thumbUrl = tmdbImg(item.backdrop_path, 'w342') ?? tmdbImg(item.poster_path, 'w342') ?? undefined;
+                      const tagStyles: Record<WatchingTag, { bg: string; color: string; label: string }> = {
+                        em_breve:      { bg: '#D92FFF', color: '#fff', label: t('tags.em_breve') },
+                        novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo') },
+                        nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido') },
+                        atrasado:      { bg: '#e0352b', color: '#fff', label: t('tags.atrasado') },
+                      };
+                      const seasonNumber = item.tag === 'em_breve' && item.nextSeason
+                        ? item.nextSeason
+                        : item.lastSeason;
+                      const episodeNumber = item.tag === 'em_breve' && item.nextEpisode
+                        ? item.nextEpisode
+                        : item.lastEpisode;
                       return (
                         <button
                           key={item.id}
                           onClick={() => router.push(`/title/${item.type}/${item.id}`)}
                           style={{ width: '100%', minHeight: 101, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
                           {/* Landscape thumbnail */}
-                          <div style={{ width: 148, minHeight: 101, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
+                          <div style={{ width: 148, minHeight: 101, overflow: 'hidden', flexShrink: 0, background: T.surface2, position: 'relative' }}>
                             {thumbUrl
                               ? <img src={thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                               : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={22} color={T.t4} /></div>
                             }
+                            {item.tag && (
+                              <span style={{ position: 'absolute', left: 10, bottom: 9, display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, background: tagStyles[item.tag].bg, boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
+                                <Txt size={9} weight={800} color={tagStyles[item.tag].color} style={{ letterSpacing: '0.4px', lineHeight: 1 }}>{tagStyles[item.tag].label}</Txt>
+                              </span>
+                            )}
                           </div>
                           {/* Info */}
                           <div style={{ flex: 1, minWidth: 0, padding: '14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 10 }}>{item.title}</Txt>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                              {item.tag && (() => {
-                                const tagStyles: Record<WatchingTag, { bg: string; color: string; label: string }> = {
-                                  em_breve:      { bg: '#D92FFF',  color: '#fff', label: t('tags.em_breve') },
-                                  novo:          { bg: '#CCFF84',  color: '#000', label: t('tags.novo') },
-                                  nao_assistido: { bg: '#FB772D',  color: '#fff', label: t('tags.nao_assistido') },
-                                  atrasado:      { bg: '#e0352b',  color: '#fff', label: t('tags.atrasado') },
-                                };
-                                const s = tagStyles[item.tag];
-                                return (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 7px', borderRadius: 6, background: s.bg }}>
-                                    <Txt size={10} weight={800} color={s.color} style={{ letterSpacing: '0.4px', lineHeight: 1 }}>{s.label}</Txt>
-                                  </span>
-                                );
-                              })()}
-                              <Txt size={12} color={T.t3}>
-                                {item.tag === 'em_breve' && item.nextSeason && item.nextEpisode
-                                  ? `T${item.nextSeason} · Ep ${item.nextEpisode}`
-                                  : item.tag === 'novo' && item.lastSeason && item.lastEpisode
-                                    ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
-                                    : item.lastSeason && item.lastEpisode
-                                      ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
-                                      : t('watching')}
-                              </Txt>
-                            </div>
+                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 6 }}>{item.title}</Txt>
+                            {seasonNumber && episodeNumber ? (
+                              <>
+                                <Txt size={12} color={T.t3} style={{ display: 'block', lineHeight: 1.35 }}>{t('season', { number: seasonNumber, ns: 'title' })}</Txt>
+                                <Txt size={12} color={T.t3} style={{ display: 'block', lineHeight: 1.35 }}>{t('episode', { number: episodeNumber, ns: 'title' })}</Txt>
+                              </>
+                            ) : (
+                              <Txt size={12} color={T.t3} style={{ display: 'block' }}>{t('watching')}</Txt>
+                            )}
                           </div>
                           <Icon name="chevronR" size={16} color={T.t4} style={{ alignSelf: 'center', marginRight: 14 }} />
                         </button>
@@ -603,10 +648,10 @@ export default function HomePage() {
               </div>}
 
               {/* ── Séries recomendadas ── */}
-              {showSection('recommendedSeries') && <HomeSectionGrid title={t('sections.recommendedSeries')} items={topRatedTV?.results} loading={lTRTV} loadMoreLabel={t('loadMore')} onItem={openTitle} />}
+              {showSection('recommendedSeries') && <HomeSectionGrid title={t('sections.recommendedSeries')} items={recommendedSeries} loading={recommendedSeriesLoading} loadMoreLabel={t('loadMore')} onItem={openTitle} />}
 
               {/* ── Filmes recomendados ── */}
-              {showSection('recommendedMovies') && <HomeSectionGrid title={t('sections.recommendedMovies')} items={topRatedMov?.results} loading={lTRM} loadMoreLabel={t('loadMore')} onItem={openTitle} />}
+              {showSection('recommendedMovies') && <HomeSectionGrid title={t('sections.recommendedMovies')} items={recommendedMovies} loading={recommendedMoviesLoading} loadMoreLabel={t('loadMore')} onItem={openTitle} />}
 
               {/* ── Streamings ── */}
               {showSection('streamings') && <div style={{ marginBottom: 28 }}>

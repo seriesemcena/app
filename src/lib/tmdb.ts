@@ -84,6 +84,7 @@ export const tmdb = {
   topRated: (type: 'movie' | 'tv' = 'movie') => get(`/${type}/top_rated`),
   upcoming: (region = 'BR') => get('/movie/upcoming', { region }),
   search: (q: string) => get('/search/multi', { query: q }),
+  basicTitle: (type: 'movie' | 'tv', id: number | string) => get(`/${type}/${id}`),
   movieDetail: (id: number | string) => get(`/movie/${id}`, { append_to_response: 'credits,similar,videos' }),
   tvDetail: (id: number | string) => get(`/tv/${id}`, { append_to_response: 'credits,similar,videos' }),
   titleDetail: (type: 'movie' | 'tv', id: number | string) => get(`/${type}/${id}`, {
