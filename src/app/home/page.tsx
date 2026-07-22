@@ -46,7 +46,7 @@ const PLATFORMS = [
   { id: 307,  name: 'Globoplay',    logo: 'globoplay'     },
   { id: 531,  name: 'Paramount+',   logo: 'paramountplus' },
   { id: 350,  name: 'Apple TV+',    logo: 'appletv'       },
-  { id: 34,   name: 'MGM+',         logo: 'mgm'           },
+  { id: 2141, name: 'MGM+',         logo: 'mgm'           },
 ];
 
 const STREAM_NOISE = `url("data:image/svg+xml,%3Csvg xmlns%3D'http://www.w3.org/2000/svg'%3E%3Cfilter id%3D'n'%3E%3CfeTurbulence type%3D'fractalNoise' baseFrequency%3D'.75' numOctaves%3D'4'/%3E%3C/filter%3E%3Crect width%3D'100%25' height%3D'100%25' filter%3D'url(%23n)'/%3E%3C/svg%3E")`;

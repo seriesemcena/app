@@ -13,6 +13,8 @@ import { profileStore, type Profile } from '@/lib/store';
 import { withProfileOrigin } from '@/lib/navigation';
 import { AI_CURATION_ENABLED, PRO_SELF_SERVICE_ENABLED } from '@/lib/features';
 
+const COMMUNITY_URL = 'https://community.maratonou.com';
+
 /* ── iOS-style switch (accent = app purple) ──
    Purely visual: the whole row is the interactive element (a nested
    button-in-button is invalid HTML and breaks hydration). */
@@ -242,6 +244,7 @@ export default function SettingsPage() {
 
             {/* ══ Geral ══ */}
             <Group rows={[
+              { icon: 'message', label: t('items.support'), onClick: () => window.location.assign(COMMUNITY_URL) },
               { icon: 'info',  label: t('items.about'), sub: t('items.iconsCredit'), right: null },
               { icon: 'share', label: t('items.rate'),  onClick: () => {} },
             ]} />

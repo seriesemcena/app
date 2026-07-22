@@ -42,6 +42,7 @@ async function enrichWithTMDB(show: TVMazeShow): Promise<EnrichedShow> {
     url.searchParams.set('external_source', 'imdb_id');
     url.searchParams.set('language', i18next.language || 'pt-BR');
     const res = await fetch(url.toString());
+    if (!res.ok) return show;
     const data = await res.json();
     const tv = data.tv_results?.[0];
     const mv = data.movie_results?.[0];
@@ -70,7 +71,24 @@ const PLATFORM_CHANNEL: Record<string, string[]> = {
   '119':  ['Prime Video', 'Amazon Prime Video'],
   '307':  ['Globoplay'],
   '531':  ['Paramount+', 'Paramount Plus'],
+  '350':  ['Apple TV+', 'Apple TV Plus', 'Apple TV'],
+  '2141': ['MGM+', 'MGM Plus'],
+  // Mantém compatibilidade com links salvos antes da atualização do ID no TMDB.
+  '34':   ['MGM+', 'MGM Plus'],
 };
+
+function normalizeChannelName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9+]/gi, '')
+    .toLowerCase();
+}
+
+function channelMatches(channel: string, aliases: string[]): boolean {
+  const normalized = normalizeChannelName(channel);
+  return aliases.some(alias => normalizeChannelName(alias) === normalized);
+}
 
 async function fetchTVMazeDay(date: string): Promise<TVMazeEp[]> {
   try {
@@ -397,7 +415,14 @@ const PLATFORMS: Record<string, { name: string; color: string; logo: string }> =
   '307':  { name: 'Globoplay',   color: '#E8441C', logo: 'globoplay'     },
   '531':  { name: 'Paramount+',  color: '#0064FF', logo: 'paramountplus' },
   '350':  { name: 'Apple TV+',   color: '#000000', logo: 'appletv'       },
+  '2141': { name: 'MGM+',        color: '#1A1A2E', logo: 'mgm'           },
   '34':   { name: 'MGM+',        color: '#1A1A2E', logo: 'mgm'           },
+};
+
+const PROVIDER_FILTER: Record<string, string> = {
+  // O MGM+ no Brasil aparece no TMDB pelos canais Amazon e Apple.
+  '2141': '2141|2142',
+  '34': '2141|2142',
 };
 
 function getWeekRange() {
@@ -405,10 +430,8 @@ function getWeekRange() {
   const day = now.getDay() || 7; // 1=Mon … 7=Sun
   const monday = new Date(now); monday.setDate(now.getDate() - day + 1);
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  // Estende 7 dias para trás para capturar lançamentos com lag de provider no TMDB
-  const startExtended = new Date(monday); startExtended.setDate(monday.getDate() - 7);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { start: fmt(startExtended), end: fmt(sunday) };
+  return { start: fmt(monday), end: fmt(sunday) };
 }
 
 /* ── Tab pills com glass effect ── */
@@ -523,6 +546,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
   const isDark = theme === 'dark';
   const { t } = useTranslation('home');
   const platform = PLATFORMS[id] ?? { name: 'Streaming', color: '#555' };
+  const providerFilter = PROVIDER_FILTER[id] ?? id;
   const { start, end } = getWeekRange();
 
   /* ── Banner liquid glass tokens ── */
@@ -564,9 +588,9 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
 
   /* ── Em alta ── */
   const { data: trendTV,    loading: lTV  } = useTMDB(() =>
-    tmdb.discover('tv',    { with_watch_providers: id, watch_region: 'BR', sort_by: 'popularity.desc' }), [id]);
+    tmdb.discover('tv',    { with_watch_providers: providerFilter, watch_region: 'BR', with_watch_monetization_types: 'flatrate', sort_by: 'popularity.desc' }), [providerFilter]);
   const { data: trendMovie, loading: lMov } = useTMDB(() =>
-    tmdb.discover('movie', { with_watch_providers: id, watch_region: 'BR', sort_by: 'popularity.desc' }), [id]);
+    tmdb.discover('movie', { with_watch_providers: providerFilter, watch_region: 'BR', with_watch_monetization_types: 'flatrate', sort_by: 'popularity.desc' }), [providerFilter]);
 
   /* ── Estreias da semana: TVMaze para séries, TMDB para filmes ── */
   const [tvmazeShows, setTvmazeShows] = useState<EnrichedShow[]>([]);
@@ -581,7 +605,7 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
         const allEps = results.flat() as TVMazeEp[];
         const filtered = allEps.filter(ep => {
           const ch = ep._embedded?.show?.webChannel?.name ?? '';
-          return channelNames.some(n => ch.toLowerCase().includes(n.toLowerCase()));
+          return channelMatches(ch, channelNames);
         });
         const seen = new Set<number>();
         const raw: TVMazeShow[] = [];
@@ -589,10 +613,10 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
           const show = ep._embedded?.show;
           if (show && !seen.has(show.id)) { seen.add(show.id); raw.push({ ...show, tvmazeAirdate: ep.airdate }); }
         }
-        // Enriquecer com dados pt-BR do TMDB em paralelo
-        // Mantém só os que o TMDB localizou → proxy de "disponível no Brasil"
+        // Enriquece com dados pt-BR do TMDB em paralelo. Se a associação pelo
+        // IMDb falhar, mantém o card do TVMaze em vez de apagar um lançamento real.
         const enriched = await Promise.all(raw.map(enrichWithTMDB));
-        setTvmazeShows(enriched.filter(s => s.tmdbId != null));
+        setTvmazeShows(enriched);
         setLoadingTVMaze(false);
       })
       .catch(() => setLoadingTVMaze(false));
@@ -601,10 +625,13 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
   /* Filmes: TMDB com provider + semana atual */
   const { data: newMovie, loading: lNMov } = useTMDB(() =>
     tmdb.discover('movie', {
-      with_watch_providers: id, watch_region: 'BR',
-      'primary_release_date.gte': start, 'primary_release_date.lte': end,
-      sort_by: 'primary_release_date.desc',
-    }), [start, end, id]);
+      with_watch_providers: providerFilter,
+      with_watch_monetization_types: 'flatrate',
+      watch_region: 'BR', region: 'BR',
+      with_release_type: '4|6',
+      'release_date.gte': start, 'release_date.lte': end,
+      sort_by: 'release_date.desc',
+    }), [start, end, providerFilter]);
 
   const openTitle = (item: TMDBItem) => {
     const n = normalize(item);

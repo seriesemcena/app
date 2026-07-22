@@ -11,7 +11,7 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
       with a strict segment grammar (no "..", no "//", no query smuggling).
    2. Per-IP rate limit — generous (poster grids fire dozens of parallel
       calls per page) but far below scraping throughput. */
-const ENDPOINT_OK = /^\/(movie|tv|search|discover|person|trending)(\/[A-Za-z0-9_-]+)+$/;
+const ENDPOINT_OK = /^(?:\/(?:movie|tv|search|discover|person|trending)(?:\/[A-Za-z0-9_-]+)+|\/find\/tt\d+)$/;
 
 type TmdbPayload = Record<string, any>;
 
