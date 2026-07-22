@@ -11,6 +11,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
 import { profileStore, type Profile } from '@/lib/store';
 import { withProfileOrigin } from '@/lib/navigation';
+import { AI_CURATION_ENABLED, PRO_SELF_SERVICE_ENABLED } from '@/lib/features';
 
 /* ── iOS-style switch (accent = app purple) ──
    Purely visual: the whole row is the interactive element (a nested
@@ -161,7 +162,7 @@ export default function SettingsPage() {
             </div>
 
             {/* ══ Banner PRO ══ */}
-            {!isPro ? (
+            {!isPro ? (PRO_SELF_SERVICE_ENABLED ? (
               <div
                 onClick={() => router.push(withProfileOrigin('/pro'))}
                 style={{
@@ -183,7 +184,7 @@ export default function SettingsPage() {
                   <Txt size={12} weight={800} color="#fff">{t('vip.subscribe')}</Txt>
                 </div>
               </div>
-            ) : (
+            ) : null) : (
               <div
                 onClick={() => router.push(withProfileOrigin('/settings/pro'))}
                 style={{
@@ -220,7 +221,7 @@ export default function SettingsPage() {
 
             {/* ══ Conteúdo & preferências ══ */}
             <Group rows={[
-              { icon: 'star',  label: t('vip.aiCuration'),    onClick: () => router.push(withProfileOrigin('/curadoria')) },
+              ...(AI_CURATION_ENABLED ? [{ icon: 'star' as IconName, label: t('vip.aiCuration'), onClick: () => router.push(withProfileOrigin('/curadoria')) }] : []),
               { icon: 'chart', label: t('vip.accountStats'),  onClick: () => router.push(withProfileOrigin('/stats')) },
               { icon: 'wifi',  label: t('items.streamings'),  onClick: () => router.push(withProfileOrigin('/settings/streamings')) },
               { icon: 'heart', label: t('items.genres'),      onClick: () => router.push(withProfileOrigin('/settings/genres')) },

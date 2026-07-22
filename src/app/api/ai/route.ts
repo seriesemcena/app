@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AI_CURATION_ENABLED } from '@/lib/features';
 import { verifyIdToken, rateLimit } from '@/lib/serverAuth';
 
 export async function POST(req: NextRequest) {
+  if (!AI_CURATION_ENABLED) {
+    return NextResponse.json({ error: 'feature disabled' }, { status: 503 });
+  }
   let body: { prompt?: string; metrics?: { genre?: string; minRating?: number; lang?: string; decade?: string } };
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: 'invalid body' }, { status: 400 });

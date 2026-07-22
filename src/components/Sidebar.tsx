@@ -5,13 +5,14 @@ import { Icon } from './Icon';
 import { Logo } from './primitives';
 import { useMyProfileUrl } from '@/hooks/useMyProfileUrl';
 import type { IconName } from '@/lib/tokens';
+import { AI_CURATION_ENABLED } from '@/lib/features';
 
 const BASE_NAV: Array<{ id: string; icon: IconName; href: string; label: string }> = [
   { id: 'home',    icon: 'home',    href: '/home',    label: 'Home'   },
   { id: 'series',  icon: 'tv',      href: '/series',  label: 'Séries' },
   { id: 'movies',  icon: 'film',    href: '/movies',  label: 'Filmes' },
   { id: 'feed',      icon: 'message', href: '/feed',      label: 'Atividade'   },
-  { id: 'curadoria', icon: 'award',   href: '/curadoria', label: 'Curadoria IA' },
+  ...(AI_CURATION_ENABLED ? [{ id: 'curadoria', icon: 'award' as IconName, href: '/curadoria', label: 'Curadoria IA' }] : []),
   { id: 'profile',   icon: 'user',    href: '/profile',   label: 'Perfil'       },
 ];
 

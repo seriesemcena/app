@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyIdToken, rateLimit } from '@/lib/serverAuth';
+import { AI_CURATION_ENABLED } from '@/lib/features';
 
 export type Suggestion = {
   title: string;
@@ -108,6 +109,9 @@ const DEFAULT_FALLBACK: Suggestion[] = [
 
 // ── Route handler ──────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  if (!AI_CURATION_ENABLED) {
+    return NextResponse.json({ error: 'feature disabled' }, { status: 503 });
+  }
   let body: {
     mode?: string;
     query?: string;

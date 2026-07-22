@@ -49,19 +49,43 @@ test('Home personalization and PRO profile appearance are applied at render time
   assert.match(notifications, /profileStore\.get\(uid\)\.proMember === true/);
 });
 
-test('PRO is opt-in in the prototype and is never inferred from authentication alone', async () => {
-  const [store, settings, profile, landing] = await Promise.all([
+test('PRO is opt-in, admin-managed and never inferred from authentication alone', async () => {
+  const [store, settings, profile, landing, rules, adminApi, features] = await Promise.all([
     read('src/lib/store.ts'),
     read('src/app/settings/page.tsx'),
     read('src/app/user/[username]/page.tsx'),
     read('src/app/vip/page.tsx'),
+    read('firestore.rules'),
+    read('functions/admin-api.js'),
+    read('src/lib/features.ts'),
   ]);
 
   assert.match(store, /proMember: false/);
   assert.match(settings, /profile\?\.proMember === true/);
   assert.match(profile, /activeProfile\?\.proMember === true/);
   assert.doesNotMatch(settings, /const isPro = !!user/);
-  assert.match(landing, /proMember: true/);
+  assert.doesNotMatch(landing, /proMember: true/);
+  assert.match(features, /PRO_SELF_SERVICE_ENABLED = false/);
+  assert.match(rules, /isProMember\(request\.resource\.data\) == isProMember\(resource\.data\)/);
+  assert.match(adminApi, /users\.pro\.manage/);
+});
+
+test('AI curation is hidden and blocked in both UI and API', async () => {
+  const [features, bootstrap, settings, sidebar, curationApi, assistantApi] = await Promise.all([
+    read('src/lib/features.ts'),
+    read('src/components/AppBootstrap.tsx'),
+    read('src/app/settings/page.tsx'),
+    read('src/components/Sidebar.tsx'),
+    read('src/app/api/curadoria/route.ts'),
+    read('src/app/api/ai/route.ts'),
+  ]);
+
+  assert.match(features, /AI_CURATION_ENABLED = false/);
+  assert.match(bootstrap, /!AI_CURATION_ENABLED/);
+  assert.match(settings, /AI_CURATION_ENABLED \?/);
+  assert.match(sidebar, /AI_CURATION_ENABLED \?/);
+  assert.match(curationApi, /if \(!AI_CURATION_ENABLED\)/);
+  assert.match(assistantApi, /if \(!AI_CURATION_ENABLED\)/);
 });
 
 test('custom reminder lists are grouped, private and safely migrated', async () => {

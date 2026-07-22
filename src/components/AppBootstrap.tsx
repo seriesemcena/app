@@ -11,6 +11,7 @@ import { T } from '@/lib/tokens';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAppSettings } from '@/context/AppSettingsContext';
 import { initializeFirebaseAppCheck } from '@/lib/firebase';
+import { AI_CURATION_ENABLED } from '@/lib/features';
 
 export function AppBootstrap({ children }: { children: ReactNode }) {
   useEffect(() => { void initializeFirebaseAppCheck(); }, []);
@@ -36,7 +37,9 @@ export function AppBootstrap({ children }: { children: ReactNode }) {
 
   const maintenanceAllowed = pathname.startsWith('/admin') || pathname.startsWith('/auth');
   const disabledFeature =
-    (!settings.commentsEnabled && (pathname.startsWith('/comments') || pathname.startsWith('/add-comment')))
+    (!AI_CURATION_ENABLED && (pathname.startsWith('/curadoria') || pathname.startsWith('/ai-assistant')))
+      ? 'A Curadoria por IA está temporariamente desativada.'
+      : (!settings.commentsEnabled && (pathname.startsWith('/comments') || pathname.startsWith('/add-comment')))
       ? 'Os comentários estão temporariamente desativados.'
       : (!settings.reviewsEnabled && pathname.startsWith('/reviews'))
         ? 'As avaliações estão temporariamente desativadas.'

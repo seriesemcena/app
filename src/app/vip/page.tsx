@@ -2,16 +2,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Btn, Txt } from '@/components/primitives';
+import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T, type IconName } from '@/lib/tokens';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { navigateBack } from '@/lib/navigation';
-import { useAuth } from '@/hooks/useAuth';
-import { profileStore } from '@/lib/store';
-import { dbProfileStore } from '@/lib/db';
-import { firebaseConfigured, getDB } from '@/lib/firebase';
+import { PRO_SELF_SERVICE_ENABLED } from '@/lib/features';
 
 const PLAN_PRICES: Record<'monthly' | 'annual', { price: string }> = {
   monthly: { price: 'R$ 14,90' },
@@ -27,10 +24,7 @@ const TABLE_VALUES: [string, string][] = [
 export default function PROPage() {
   const router = useRouter();
   const { t } = useTranslation('settings');
-  const { user } = useAuth();
   const [plan, setPlan] = useState<'monthly' | 'annual'>('annual');
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
 
   const PLANS = {
     monthly: { label: t('vip.planMonthly'), price: PLAN_PRICES.monthly.price, period: t('vip.perMonth'), save: null as string | null },
@@ -44,32 +38,6 @@ export default function PROPage() {
   }));
 
   const tableRows = t('vip.tableRows', { returnObjects: true }) as string[];
-
-  const handleSubscribe = () => {
-    if (!user) { router.push('/auth'); return; }
-    setLoading(true);
-    setTimeout(() => {
-      const nextProfile = { ...profileStore.get(user.uid), proMember: true };
-      profileStore.set(nextProfile, user.uid);
-      window.dispatchEvent(new Event('maratonou:sync'));
-      if (firebaseConfigured) dbProfileStore.set(getDB(), user.uid, nextProfile).catch(() => {});
-      setLoading(false);
-      setSuccess(true);
-    }, 900);
-  };
-
-  if (success) return (
-    <Frame>
-      <Screen style={{ alignItems: 'center', justifyContent: 'center', padding: 32 }}>
-        <div style={{ width: 80, height: 80, borderRadius: 40, background: T.goldDim, border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: `0 0 40px rgba(245,197,24,0.3)` }}>
-          <Icon name="crown" size={36} color={T.gold} />
-        </div>
-        <Txt size={26} weight={800} color={T.gold} style={{ display: 'block', textAlign: 'center', marginBottom: 8 }}>{t('vip.welcome')}</Txt>
-        <Txt size={14} color={T.t2} style={{ display: 'block', textAlign: 'center', lineHeight: 1.6, marginBottom: 32 }}>{t('vip.welcomeDesc')}</Txt>
-        <Btn label={t('vip.goHome')} variant="gold" size="lg" full onClick={() => router.push('/settings/pro')} />
-      </Screen>
-    </Frame>
-  );
 
   return (
     <Frame>
@@ -139,9 +107,9 @@ export default function PROPage() {
               })}
             </div>
 
-            <button onClick={handleSubscribe} disabled={loading} style={{ width: '100%', padding: '16px 0', borderRadius: T.radiusSm, background: loading ? T.surface2 : `linear-gradient(135deg,${T.gold},#d4a810)`, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
-              <Icon name="crown" size={18} color={loading ? T.t3 : '#000'} />
-              <Txt size={15} weight={800} color={loading ? T.t3 : '#000'}>{loading ? t('vip.processing') : t('vip.subscribeBtn')}</Txt>
+            <button disabled={!PRO_SELF_SERVICE_ENABLED} style={{ width: '100%', padding: '16px 0', borderRadius: T.radiusSm, background: T.surface2, border: `1px solid ${T.border}`, cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12, opacity: 0.72 }}>
+              <Icon name="crown" size={18} color={T.t3} />
+              <Txt size={15} weight={800} color={T.t3}>{t('vip.unavailable')}</Txt>
             </button>
 
             <div style={{ textAlign: 'center', marginBottom: 8 }}>
