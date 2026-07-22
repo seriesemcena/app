@@ -49,6 +49,7 @@ test('community publica ajuda para todos e restringe rascunhos aos editores', as
   await environment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'community_articles/publicado'), { status: 'published', title: 'Ajuda' });
     await setDoc(doc(context.firestore(), 'community_articles/rascunho'), { status: 'draft', title: 'Interno' });
+    await setDoc(doc(context.firestore(), 'community_articles/legado'), { status: 'draft', title: 'Legado' });
   });
   const anonymous = environment.unauthenticatedContext().firestore();
   await assertSucceeds(getDoc(doc(anonymous, 'community_articles/publicado')));
@@ -61,6 +62,10 @@ test('community publica ajuda para todos e restringe rascunhos aos editores', as
     body: 'Conteúdo', status: 'draft', featured: false, authorUid: 'editor-a',
     createdAt: new Date(), updatedAt: new Date(),
   }));
+  await assertSucceeds(updateDoc(doc(editor, 'community_articles/legado'), {
+    title: 'Legado atualizado', authorUid: 'editor-a', updatedAt: new Date(),
+  }));
+  await assertSucceeds(deleteDoc(doc(editor, 'community_articles/legado')));
   await assertFails(setDoc(doc(environment.authenticatedContext('user-a').firestore(), 'community_articles/invasao'), {
     title: 'Não', slug: 'nao', summary: 'Não', category: 'Conta', body: 'Não',
     status: 'published', featured: true, authorUid: 'user-a', createdAt: new Date(), updatedAt: new Date(),
@@ -89,4 +94,6 @@ test('community valida autoria de tópicos, respostas e moderação por claims',
   await assertFails(updateDoc(doc(user, 'community_topics/topic-a'), { status: 'resolved', updatedAt: new Date() }));
   const moderator = environment.authenticatedContext('moderator-a', { admin: true, role: 'moderator' }).firestore();
   await assertSucceeds(updateDoc(doc(moderator, 'community_topics/topic-a'), { status: 'resolved', updatedAt: new Date() }));
+  await assertSucceeds(deleteDoc(doc(moderator, 'community_topics/topic-a/replies/reply-a')));
+  await assertSucceeds(deleteDoc(doc(moderator, 'community_topics/topic-a')));
 });

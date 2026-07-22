@@ -291,12 +291,14 @@ service cloud.firestore {
                       'publishedAt'
                     ]);
       allow update: if canManageCommunityContent()
-                    && request.resource.data.authorUid == resource.data.authorUid
+                    && request.resource.data.authorUid
+                         == resource.data.get('authorUid', request.auth.uid)
                     && request.resource.data.status in ['draft', 'published']
                     && request.resource.data.diff(resource.data).affectedKeys()
                          .hasOnly([
                            'title', 'slug', 'summary', 'category', 'body',
-                           'status', 'featured', 'updatedAt', 'publishedAt'
+                           'status', 'featured', 'authorUid', 'updatedAt',
+                           'publishedAt'
                          ]);
       allow delete: if canManageCommunityContent();
     }
