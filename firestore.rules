@@ -27,6 +27,26 @@ service cloud.firestore {
       return request.auth != null && accountIsActive(request.auth.uid);
     }
 
+    function isMaratonouAdmin() {
+      return request.auth != null
+        && request.auth.token.admin == true
+        && request.auth.token.role in [
+          'super_admin', 'admin', 'moderator', 'editor', 'support'
+        ];
+    }
+
+    function canManageCommunityContent() {
+      return isMaratonouAdmin()
+        && request.auth.token.role in ['super_admin', 'admin', 'editor'];
+    }
+
+    function canModerateCommunity() {
+      return isMaratonouAdmin()
+        && request.auth.token.role in [
+          'super_admin', 'admin', 'moderator', 'support'
+        ];
+    }
+
     // ── Users ────────────────────────────────────────────────
     // Profiles are public inside the app (search, /user/<slug>,
     // follower lookups) → any signed-in account may read.
@@ -247,6 +267,84 @@ service cloud.firestore {
 
     match /app_banners/{id} {
       allow read, write: if false;
+    }
+
+    // ── Maratonou Community ─────────────────────────────────
+    // Published help content and discussions are publicly readable. The same
+    // Firebase account used by the app is required to participate, while the
+    // existing admin custom claims control authoring and moderation.
+    match /community_articles/{articleId} {
+      allow read: if resource.data.status == 'published'
+                  || canManageCommunityContent();
+      allow create: if canManageCommunityContent()
+                    && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.status in ['draft', 'published']
+                    && request.resource.data.keys().hasOnly([
+                      'title', 'slug', 'summary', 'category', 'body', 'status',
+                      'featured', 'authorUid', 'createdAt', 'updatedAt',
+                      'publishedAt'
+                    ]);
+      allow update: if canManageCommunityContent()
+                    && request.resource.data.authorUid == resource.data.authorUid
+                    && request.resource.data.status in ['draft', 'published']
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly([
+                           'title', 'slug', 'summary', 'category', 'body',
+                           'status', 'featured', 'updatedAt', 'publishedAt'
+                         ]);
+      allow delete: if canManageCommunityContent();
+    }
+
+    match /community_topics/{topicId} {
+      allow read: if true;
+      allow create: if activeUser()
+                    && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.status == 'open'
+                    && request.resource.data.category in [
+                      'Dúvida', 'Ideia', 'Problema', 'Elogio'
+                    ]
+                    && request.resource.data.keys().hasOnly([
+                      'title', 'body', 'category', 'status', 'authorUid',
+                      'authorName', 'createdAt', 'updatedAt'
+                    ]);
+      allow update: if (
+                      canModerateCommunity()
+                      && request.resource.data.authorUid == resource.data.authorUid
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['status', 'updatedAt'])
+                      && request.resource.data.status in [
+                        'open', 'planned', 'resolved', 'closed'
+                      ]
+                    ) || (
+                      activeUser()
+                      && resource.data.authorUid == request.auth.uid
+                      && request.resource.data.authorUid == resource.data.authorUid
+                      && request.resource.data.status == resource.data.status
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['title', 'body', 'category', 'updatedAt'])
+                    );
+      allow delete: if canModerateCommunity()
+                    || (activeUser() && resource.data.authorUid == request.auth.uid);
+
+      match /replies/{replyId} {
+        allow read: if true;
+        allow create: if activeUser()
+                      && request.resource.data.authorUid == request.auth.uid
+                      && request.resource.data.authorIsAdmin == isMaratonouAdmin()
+                      && request.resource.data.keys().hasOnly([
+                        'body', 'authorUid', 'authorName', 'authorIsAdmin',
+                        'createdAt', 'updatedAt'
+                      ]);
+        allow update: if (
+                        activeUser()
+                        && resource.data.authorUid == request.auth.uid
+                        && request.resource.data.authorUid == resource.data.authorUid
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['body', 'updatedAt'])
+                      ) || canModerateCommunity();
+        allow delete: if canModerateCommunity()
+                      || (activeUser() && resource.data.authorUid == request.auth.uid);
+      }
     }
 
     match /admin_audit_logs/{id} {
