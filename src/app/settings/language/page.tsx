@@ -10,25 +10,7 @@ import { SettingsCard, SettingsHeader } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
 import { useLocale, SUPPORTED_LOCALES } from '@/context/LocaleContext';
 import { navigateBack } from '@/lib/navigation';
-
-const COUNTRIES = [
-  { code: 'BR', label: 'Brasil' },
-  { code: 'US', label: 'United States' },
-  { code: 'GB', label: 'United Kingdom' },
-  { code: 'PT', label: 'Portugal' },
-  { code: 'ES', label: 'España' },
-  { code: 'MX', label: 'México' },
-  { code: 'AR', label: 'Argentina' },
-  { code: 'CO', label: 'Colombia' },
-  { code: 'CL', label: 'Chile' },
-  { code: 'FR', label: 'France' },
-  { code: 'DE', label: 'Deutschland' },
-  { code: 'IT', label: 'Italia' },
-  { code: 'JP', label: '日本' },
-  { code: 'KR', label: '대한민국' },
-  { code: 'CA', label: 'Canada' },
-  { code: 'AU', label: 'Australia' },
-];
+import { REGION_OPTIONS } from '@/lib/regions';
 
 export default function LanguagePage() {
   const router = useRouter();
@@ -104,13 +86,13 @@ export default function LanguagePage() {
               {t('language.countryLabel')}
             </Txt>
             <SettingsCard style={{ marginBottom: 24 }}>
-              {COUNTRIES.map((c, index) => (
+              {REGION_OPTIONS.map((c, index) => (
                 <OptionRow
                   key={c.code}
-                  label={`${c.code} — ${c.label}`}
+                  label={`${c.flag}  ${c.code} — ${c.label}`}
                   selected={country === c.code}
                   onSelect={() => handleCountry(c.code)}
-                  last={index === COUNTRIES.length - 1}
+                  last={index === REGION_OPTIONS.length - 1}
                 />
               ))}
             </SettingsCard>

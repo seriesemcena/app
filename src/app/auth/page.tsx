@@ -4,9 +4,13 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
-import { Screen, Logo } from '@/components/primitives';
+import { BottomSheet, Screen, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { useAuth } from '@/hooks/useAuth';
+import { SUPPORTED_LOCALES, useLocale } from '@/context/LocaleContext';
+import { getDefaultLocaleForCountry } from '@/lib/locale-utils';
+import { getRegion, REGION_OPTIONS, REGION_SELECTED_KEY } from '@/lib/regions';
+import { prefsStore } from '@/lib/store';
 import { tmdb, tmdbImg, useTMDB, type TMDBItem } from '@/lib/tmdb';
 import { T } from '@/lib/tokens';
 
@@ -74,6 +78,7 @@ export default function AuthPage() {
   const router = useRouter();
   const { t } = useTranslation('auth');
   const { user, loading: sessionLoading, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, offline } = useAuth();
+  const { country, setCountry, setLocale } = useLocale();
 
   const { data: trendingData } = useTMDB(() => tmdb.trending('all', 'week'), []);
   const posters: TMDBItem[] = ((trendingData as any)?.results ?? []).filter((i: TMDBItem) => i.poster_path).slice(0, 21);
@@ -81,7 +86,7 @@ export default function AuthPage() {
   const col2 = posters.filter((_, i) => i % 3 === 1);
   const col3 = posters.filter((_, i) => i % 3 === 2);
 
-  const [view,      setView]      = useState<'landing' | 'email'>('landing');
+  const [view,      setView]      = useState<'region' | 'landing' | 'email'>('region');
   const [mode,      setMode]      = useState<'login' | 'register'>('login');
   const [email,     setEmail]     = useState('');
   const [pass,      setPass]      = useState('');
@@ -89,6 +94,15 @@ export default function AuthPage() {
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const [regionPickerOpen, setRegionPickerOpen] = useState(false);
+
+  useEffect(() => {
+    let saved = false;
+    try { saved = localStorage.getItem(REGION_SELECTED_KEY) === '1'; } catch {}
+    if (!saved) return;
+    const frame = requestAnimationFrame(() => setView('landing'));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -104,6 +118,21 @@ export default function AuthPage() {
 
   const clearError = () => setError('');
 
+  const chooseRegion = (code: string) => {
+    const locale = getDefaultLocaleForCountry(code);
+    setCountry(code);
+    setLocale(locale);
+    prefsStore.set({ ...prefsStore.get(), country: code, locale });
+  };
+
+  const confirmRegion = () => {
+    const locale = getDefaultLocaleForCountry(country);
+    chooseRegion(country);
+    try { localStorage.setItem(REGION_SELECTED_KEY, '1'); } catch {}
+    document.documentElement.lang = locale;
+    setView('landing');
+  };
+
   const friendlyError = (code: string) => {
     const map: Record<string, string> = {
       'auth/user-not-found':          t('errors.userNotFound'),
@@ -113,7 +142,7 @@ export default function AuthPage() {
       'auth/invalid-email':           t('errors.invalidCredentials'),
       'auth/popup-closed-by-user':    t('errors.popupClosed'),
       'auth/cancelled-popup-request': t('errors.popupClosed'),
-      'auth/registrations-disabled':  'Novos cadastros estão temporariamente desativados.',
+      'auth/registrations-disabled':  t('errors.registrationsDisabled'),
     };
     return map[code] ?? t('errors.generic');
   };
@@ -173,6 +202,102 @@ export default function AuthPage() {
     letterSpacing: '-0.1px',
   });
 
+  const selectedRegion = getRegion(country);
+  const selectedLocale = getDefaultLocaleForCountry(country);
+  const selectedLanguage = SUPPORTED_LOCALES.find((item) => item.code === selectedLocale)?.label ?? selectedLocale;
+
+  /* ─────────────────────────── REGION VIEW ─────────────────────────── */
+  if (view === 'region') {
+    return (
+      <Frame>
+        <Screen style={{ background: '#0D0D0F', flexDirection: 'column' } as React.CSSProperties}>
+          <style>{ANIM_CSS}</style>
+
+          <div style={{ flex: 1, minHeight: 250, position: 'relative', overflow: 'hidden', background: '#0D0D0F' }}>
+            {posters.length > 0 && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: 8, padding: '0 8px', opacity: 0.34, zIndex: 0 }}>
+                <PosterCol items={col1} animClass="poster-col-up" />
+                <PosterCol items={col2} animClass="poster-col-down" />
+                <PosterCol items={col3} animClass="poster-col-up" />
+              </div>
+            )}
+            <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'linear-gradient(to bottom, #0D0D0F 0%, rgba(13,13,15,0.24) 35%, #0D0D0F 96%)' }} />
+            <div style={{ position: 'absolute', top: 'max(58px, calc(var(--safe-area-top) + 12px))', left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 2 }}>
+              <Logo height={22} />
+            </div>
+          </div>
+
+          <div style={{ background: '#161619', borderRadius: '36px 36px 0 0', marginTop: -36, zIndex: 10, position: 'relative', boxShadow: '0 -2px 40px rgba(0,0,0,0.6)', paddingBottom: 'calc(var(--safe-area-bottom) + 30px)' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 2 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.14)' }} />
+            </div>
+
+            <div style={{ padding: '16px 24px 0' }}>
+              <div style={{ width: 42, height: 42, marginBottom: 14, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'rgba(192,105,255,0.12)', border: '1px solid rgba(192,105,255,0.22)' }}>
+                <Icon name="mappin" size={21} color="#C069FF" />
+              </div>
+              <h1 style={{ margin: '0 0 7px', fontSize: 24, fontWeight: 900, color: 'rgba(255,255,255,0.94)', fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.6px' }}>
+                {t('region.title')}
+              </h1>
+              <p style={{ margin: '0 0 22px', color: 'rgba(255,255,255,0.44)', fontSize: 13, lineHeight: 1.5, fontFamily: "'Area','Inter',sans-serif" }}>
+                {t('region.subtitle')}
+              </p>
+
+              <label style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+                <span style={{ color: 'rgba(255,255,255,0.52)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: "'Area','Inter',sans-serif" }}>
+                  {t('region.label')}
+                </span>
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded={regionPickerOpen}
+                  onClick={() => setRegionPickerOpen(true)}
+                  style={{ position: 'relative', width: '100%', height: 56, padding: '0 44px 0 16px', display: 'flex', alignItems: 'center', borderRadius: 16, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.92)', fontSize: 14, fontWeight: 700, fontFamily: "'Area','Inter',sans-serif", outline: 'none', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  {selectedRegion.label}
+                  <Icon name="chevronD" size={16} color="rgba(255,255,255,0.46)" style={{ position: 'absolute', right: 15, pointerEvents: 'none' }} />
+                </button>
+              </label>
+
+              <div style={{ minHeight: 42, marginBottom: 18, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 12, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.48)' }}>
+                <Icon name="check" size={15} color="#C069FF" />
+                <span style={{ fontSize: 12, fontFamily: "'Area','Inter',sans-serif" }}>{t('region.language', { language: selectedLanguage })}</span>
+              </div>
+
+              <button onClick={confirmRegion} style={{ ...pillBtn(true), display: 'block' }}>
+                {t('region.continue')}
+              </button>
+            </div>
+          </div>
+
+          <BottomSheet visible={regionPickerOpen} onClose={() => setRegionPickerOpen(false)} title={t('region.label')}>
+            <div role="listbox" aria-label={t('region.label')} style={{ display: 'grid', gap: 6 }}>
+              {REGION_OPTIONS.map((region) => {
+                const selected = region.code === country;
+                return (
+                  <button
+                    key={region.code}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      chooseRegion(region.code);
+                      setRegionPickerOpen(false);
+                    }}
+                    style={{ width: '100%', minHeight: 48, padding: '0 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderRadius: 13, border: `1px solid ${selected ? 'rgba(192,105,255,0.36)' : 'rgba(255,255,255,0.08)'}`, background: selected ? 'rgba(192,105,255,0.12)' : 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: selected ? 800 : 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <span>{region.label}</span>
+                    {selected && <Icon name="check" size={16} color="#C069FF" />}
+                  </button>
+                );
+              })}
+            </div>
+          </BottomSheet>
+        </Screen>
+      </Frame>
+    );
+  }
+
   /* ─────────────────────────── LANDING VIEW ─────────────────────────── */
   if (view === 'landing') {
     return (
@@ -200,6 +325,13 @@ export default function AuthPage() {
             <div style={{ position: 'absolute', top: 'max(58px, calc(var(--safe-area-top) + 12px))', left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 2 }}>
               <Logo height={22} />
             </div>
+            <button
+              aria-label={t('region.change')}
+              onClick={() => setView('region')}
+              style={{ position: 'absolute', top: 'max(50px, calc(var(--safe-area-top) + 4px))', right: 18, minWidth: 54, height: 38, padding: '0 10px', zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 20, border: '1px solid rgba(255,255,255,0.16)', background: 'rgba(13,13,15,0.52)', backdropFilter: 'blur(14px)', color: 'rgba(255,255,255,0.85)', cursor: 'pointer' }}
+            >
+              <span style={{ fontSize: 11, fontWeight: 800, fontFamily: "'Area','Inter',sans-serif" }}>{selectedRegion.code}</span>
+            </button>
           </div>
 
           {/* ── Bottom sheet ── */}

@@ -63,7 +63,8 @@ const get = async (endpoint: string, params: Record<string, string> = {}) => {
   url.searchParams.set('endpoint', endpoint);
   const lang = i18next.language || 'pt-BR';
   url.searchParams.set('language', lang);
-  const region = lang.split('-')[1];
+  let region = lang.split('-')[1];
+  try { region = localStorage.getItem('sec_country_v1') || region; } catch {}
   if (region) url.searchParams.set('region', region);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const ttl = endpoint.startsWith('/search/') ? CACHE_TTL.recentList
@@ -82,7 +83,7 @@ export const tmdb = {
   onAir: () => get('/tv/on_the_air'),
   popular: (type: 'movie' | 'tv' = 'movie') => get(`/${type}/popular`),
   topRated: (type: 'movie' | 'tv' = 'movie') => get(`/${type}/top_rated`),
-  upcoming: (region = 'BR') => get('/movie/upcoming', { region }),
+  upcoming: (region?: string) => get('/movie/upcoming', region ? { region } : {}),
   search: (q: string) => get('/search/multi', { query: q }),
   basicTitle: (type: 'movie' | 'tv', id: number | string) => get(`/${type}/${id}`),
   movieDetail: (id: number | string) => get(`/movie/${id}`, { append_to_response: 'credits,similar,videos' }),

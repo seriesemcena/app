@@ -81,12 +81,23 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     import('@/lib/db').then(({ dbPrefsStore }) => {
       import('@/lib/firebase').then(({ getDB }) => {
         dbPrefsStore.get(getDB(), user.uid).then((prefs) => {
-          if (prefs.locale && prefs.locale !== locale) {
-            applyLocale(prefs.locale);
+          const saved = readSaved();
+          const nextLocale = prefs.locale || saved.locale;
+          const nextCountry = prefs.country || saved.country;
+
+          if (nextLocale !== locale) {
+            applyLocale(nextLocale);
           }
-          if (prefs.country && prefs.country !== country) {
-            setCountryState(prefs.country);
-            try { localStorage.setItem(COUNTRY_KEY, prefs.country); } catch {}
+          if (nextCountry !== country) {
+            setCountryState(nextCountry);
+            try { localStorage.setItem(COUNTRY_KEY, nextCountry); } catch {}
+          }
+          if (!prefs.locale || !prefs.country) {
+            dbPrefsStore.set(getDB(), user.uid, {
+              ...prefs,
+              locale: nextLocale,
+              country: nextCountry,
+            }).catch(() => {});
           }
         }).catch(() => {});
       });
