@@ -13,9 +13,11 @@ import { useAppSettings } from '@/context/AppSettingsContext';
 import { initializeFirebaseAppCheck } from '@/lib/firebase';
 import { AI_CURATION_ENABLED } from '@/lib/features';
 import { PushAlert } from '@/components/PushAlert';
+import { useDeepLinks } from '@/hooks/useDeepLinks';
 
 export function AppBootstrap({ children }: { children: ReactNode }) {
   useEffect(() => { void initializeFirebaseAppCheck(); }, []);
+  useDeepLinks();
   const { loading, initializationError } = useAuthContext();
   const { isOnline, isKeyboardOpen, retryConnection } = useAppRuntime();
   const { t } = useTranslation('errors');
