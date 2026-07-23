@@ -14,11 +14,27 @@
       },
       "oauth_client": [
         {
+          "client_id": "191621346277-21ahjqhie8uh7720ek1p75nk5oc61gd8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maratonou.app",
+            "certificate_hash": "e8e1e838c20adea060ac540ba0d6b4615e94d0ce"
+          }
+        },
+        {
           "client_id": "191621346277-dnl6ftd7rkkkden567niskd68sue57u6.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.maratonou.app",
             "certificate_hash": "5da66d9e899a6eeffe9d14be1124a0cb946d8259"
+          }
+        },
+        {
+          "client_id": "191621346277-kj5h91vl7gqofga2hkhg0sk5k1jkk9qe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maratonou.app",
+            "certificate_hash": "48817e61c3ad76d84855fcece5db3b88ca0f0c86"
           }
         },
         {
@@ -37,6 +53,13 @@
             {
               "client_id": "191621346277-a7mpqji61qn4ceavtl3n115hve0go74d.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "191621346277-7feunod7m34t9e99eu34ulus9q4h4itr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.maratonou.app"
+              }
             }
           ]
         }

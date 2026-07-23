@@ -21,6 +21,7 @@
     "admin:dev": "npm run dev --workspace @maratonou/admin",
     "admin:build": "npm run build --workspace @maratonou/admin",
     "admin:bootstrap": "node scripts/admin/bootstrap-admin.mjs",
+    "icons:generate": "node scripts/generate-streamline-flex-sprite.mjs",
     "firebase:emulators": "firebase emulators:start --project demo-maratonou",
     "migrate:firebase:dry": "node scripts/migrations/optimize-firestore.mjs",
     "migrate:firebase:apply": "node scripts/migrations/optimize-firestore.mjs --apply",
@@ -38,7 +39,6 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.3.1",
     "@capacitor/ios": "^8.3.1",
-    "@solar-icons/react": "^1.1.1",
     "@types/jszip": "^3.4.0",
     "firebase": "^12.12.1",
     "firebase-admin": "^13.10.0",
@@ -52,6 +52,7 @@
   "devDependencies": {
     "@capacitor/cli": "^8.3.1",
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@iconify-json/streamline-flex": "^1.2.3",
     "@types/node": "^20",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

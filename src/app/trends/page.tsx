@@ -7,15 +7,16 @@ import { Icon } from '@/components/Icon';
 import { MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
+import { STREAMING_COLORS } from '@/lib/streamingPlatforms';
 
 type TrendsPeriod = 'day' | 'week';
 
 /* streaming platforms with their TMDB watch_provider IDs */
 const PLATFORMS = [
   { id: 'netflix',   name: 'Netflix',    providerId: '8',   color: '#E50914', logo: 'N' },
-  { id: 'prime',     name: 'Prime',      providerId: '119', color: '#00A8E0', logo: 'P' },
-  { id: 'disney',    name: 'Disney+',    providerId: '337', color: '#113CCF', logo: 'D+' },
-  { id: 'hbo',       name: 'HBO Max',    providerId: '384', color: '#5800A0', logo: 'H' },
+  { id: 'prime',     name: 'Prime',      providerId: '119', color: STREAMING_COLORS.prime, logo: 'P' },
+  { id: 'disney',    name: 'Disney+',    providerId: '337', color: STREAMING_COLORS.disney, logo: 'D+' },
+  { id: 'hbo',       name: 'HBO Max',    providerId: '384', color: STREAMING_COLORS.hbo, logo: 'H' },
   { id: 'apple',     name: 'Apple TV+',  providerId: '350', color: '#444',    logo: '' },
   { id: 'paramount', name: 'Paramount+', providerId: '531', color: '#0064FF', logo: 'P+' },
 ];

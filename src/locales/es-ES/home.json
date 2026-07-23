@@ -52,6 +52,11 @@
     "series": "Series",
     "movies": "Películas"
   },
+  "view": {
+    "label": "Estilo de visualización",
+    "grid": "Mostrar como cuadrícula",
+    "list": "Mostrar como lista horizontal"
+  },
   "moreInfo": "Más info",
   "addToList": "Añadir a lista",
   "rate": "Valorar",

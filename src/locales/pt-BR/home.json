@@ -52,6 +52,11 @@
     "series": "Séries",
     "movies": "Filmes"
   },
+  "view": {
+    "label": "Estilo de exibição",
+    "grid": "Exibir em grade",
+    "list": "Exibir como lista horizontal"
+  },
   "moreInfo": "Mais informações",
   "addToList": "Adicionar à lista",
   "rate": "Avaliar",

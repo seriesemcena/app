@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import i18next from 'i18next';
 import '@/lib/i18n';
 import { navigateBack } from '@/lib/navigation';
+import { STREAMING_COLORS } from '@/lib/streamingPlatforms';
 
 /* ── TVMaze ── */
 type TVMazeShow = {
@@ -409,14 +410,14 @@ function MovieEstreiaGrid({ items, loading, onItem, platformName }: {
 
 const PLATFORMS: Record<string, { name: string; color: string; logo: string }> = {
   '8':    { name: 'Netflix',     color: '#E50914', logo: 'netflix'       },
-  '337':  { name: 'Disney+',     color: '#113CCF', logo: 'dineyplus'     },
-  '1899': { name: 'HBO Max',     color: '#002BE7', logo: 'hbomax'        },
-  '119':  { name: 'Prime Video', color: '#00A8E0', logo: 'primevideo'    },
-  '307':  { name: 'Globoplay',   color: '#E8441C', logo: 'globoplay'     },
+  '337':  { name: 'Disney+',     color: STREAMING_COLORS.disney, logo: 'dineyplus'     },
+  '1899': { name: 'HBO Max',     color: STREAMING_COLORS.hbo, logo: 'hbomax'        },
+  '119':  { name: 'Prime Video', color: STREAMING_COLORS.prime, logo: 'primevideo'    },
+  '307':  { name: 'Globoplay',   color: STREAMING_COLORS.globo, logo: 'globoplay'     },
   '531':  { name: 'Paramount+',  color: '#0064FF', logo: 'paramountplus' },
   '350':  { name: 'Apple TV+',   color: '#000000', logo: 'appletv'       },
-  '2141': { name: 'MGM+',        color: '#1A1A2E', logo: 'mgm'           },
-  '34':   { name: 'MGM+',        color: '#1A1A2E', logo: 'mgm'           },
+  '2141': { name: 'MGM+',        color: STREAMING_COLORS.mgm, logo: 'mgm'           },
+  '34':   { name: 'MGM+',        color: STREAMING_COLORS.mgm, logo: 'mgm'           },
 };
 
 const PROVIDER_FILTER: Record<string, string> = {

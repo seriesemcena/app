@@ -61,7 +61,7 @@ test('sticky navigation menus keep readable touch targets while compacting', asy
 
   assert.match(home, /const fs\s*=\s*14\s*-\s*scrollRatio\s*\*\s*1/);
   assert.match(home, /const menuHeight\s*=\s*36\s*-\s*scrollRatio\s*\*\s*2/);
-  assert.match(home, /<Txt size=\{16\} weight=\{800\}/);
+  assert.match(home, /fontSize:\s*fs,\s*fontWeight:\s*700/);
 
   for (const page of tabbedPages) {
     assert.match(page, /minHeight:\s*scrolled\s*\?\s*34\s*:\s*36/);

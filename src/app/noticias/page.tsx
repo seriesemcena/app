@@ -125,16 +125,16 @@ function ListCard({ post }: { post: NewsPost }) {
 
 /* ── Skeletons ───────────────────────────────────────────────── */
 function HeroSkeleton() {
-  return <div style={{ borderRadius: 18, aspectRatio: '16/9', background: T.surface }} />;
+  return <div className="img-skeleton" style={{ borderRadius: 18, aspectRatio: '16/9' }} />;
 }
 function ListSkeleton() {
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-      <div style={{ width: 110, height: 72, borderRadius: 12, background: T.surface, flexShrink: 0 }} />
+      <div className="img-skeleton" style={{ width: 110, height: 72, borderRadius: 12, flexShrink: 0 }} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ height: 13, width: '90%', borderRadius: 4, background: T.surface }} />
-        <div style={{ height: 13, width: '70%', borderRadius: 4, background: T.surface }} />
-        <div style={{ height: 10, width: '40%', borderRadius: 4, background: T.surface2 }} />
+        <div className="img-skeleton" style={{ height: 13, width: '90%', borderRadius: 4 }} />
+        <div className="img-skeleton" style={{ height: 13, width: '70%', borderRadius: 4 }} />
+        <div className="img-skeleton" style={{ height: 10, width: '40%', borderRadius: 4 }} />
       </div>
     </div>
   );

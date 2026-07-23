@@ -51,7 +51,7 @@ export default function ListsPage() {
   const activeTabMeta = TABS.find((t) => t.id === tab)!;
 
   const watchedTag = tab === 'watched'
-    ? () => ({ label: t('myList.watchedTag'), color: '#fff', bg: 'rgba(52,199,89,0.75)' })
+    ? () => ({ label: t('myList.watchedTag'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' as const })
     : undefined;
 
   return (

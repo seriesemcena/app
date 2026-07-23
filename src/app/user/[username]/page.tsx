@@ -9,7 +9,7 @@ import { ImgWithSkeleton } from '@/components/posters';
 import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, blockStore, type ProReminder, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore, dbBlockStore, dbUserStatsStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, getFollowRelationsPage, type FollowerInfo, type FollowPageCursor } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, dbBlockStore, dbUserStatsStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
 import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { usernameFromNameOrEmail } from '@/lib/username';
 import { useTheme } from '@/context/ThemeContext';
@@ -18,6 +18,8 @@ import '@/lib/i18n';
 import { tmdbImg } from '@/lib/tmdb';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { AppBannerSlot } from '@/components/AppBannerSlot';
+import { streamingColor } from '@/lib/streamingPlatforms';
+import { formatCurrency } from '@/lib/locale-utils';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
 type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
@@ -135,15 +137,10 @@ function UserProfileInner() {
   const [proReminders, setProReminders] = useState<ProReminder[]>([]);
 
   /* ── Social ── */
-  const [socialSheet,    setSocialSheet]    = useState<'followers' | 'following' | null>(null);
   const [followingNames, setFollowingNames] = useState<string[]>([]);
   const [myFollowing,    setMyFollowing]    = useState<string[]>([]);
   const [followers,      setFollowers]      = useState<FollowerInfo[]>([]);
   const [targetFollowing, setTargetFollowing] = useState(0);
-  const [followingPeople, setFollowingPeople] = useState<FollowerInfo[]>([]);
-  const [socialCursor, setSocialCursor] = useState<FollowPageCursor | null>(null);
-  const [socialHasMore, setSocialHasMore] = useState(false);
-  const [socialLoading, setSocialLoading] = useState(false);
 
   /* ── My own data (localStorage) ── */
   const myLists: Lists = useMemo(() => (isMe ? {
@@ -269,37 +266,6 @@ function UserProfileInner() {
     }
     return () => { alive = false; };
   }, [slug, isMe, user, loading]);
-
-  useEffect(() => {
-    if (!socialSheet || !firebaseConfigured) return;
-    const profileUid = isMe ? user?.uid : targetUid;
-    if (!profileUid) return;
-    let alive = true;
-    setSocialLoading(true);
-    setSocialCursor(null);
-    getFollowRelationsPage(getDB(), profileUid, socialSheet).then((page) => {
-      if (!alive) return;
-      if (socialSheet === 'followers' && page.items.length) setFollowers(page.items);
-      if (socialSheet === 'following') setFollowingPeople(page.items);
-      setSocialCursor(page.cursor);
-      setSocialHasMore(page.hasMore);
-    }).finally(() => { if (alive) setSocialLoading(false); });
-    return () => { alive = false; };
-  }, [socialSheet, isMe, user?.uid, targetUid]);
-
-  const loadMoreSocial = async () => {
-    if (!socialSheet || socialLoading || !socialHasMore || !socialCursor) return;
-    const profileUid = isMe ? user?.uid : targetUid;
-    if (!profileUid) return;
-    setSocialLoading(true);
-    try {
-      const page = await getFollowRelationsPage(getDB(), profileUid, socialSheet, socialCursor);
-      if (socialSheet === 'followers') setFollowers((current) => [...current, ...page.items]);
-      else setFollowingPeople((current) => [...current, ...page.items]);
-      setSocialCursor(page.cursor);
-      setSocialHasMore(page.hasMore);
-    } finally { setSocialLoading(false); }
-  };
 
   /* ── Real stats from the watched list (works for any profile) ── */
   const [realStats, setRealStats] = useState<{
@@ -517,14 +483,6 @@ function UserProfileInner() {
   );
   const followersVal    = Math.max(activeProfile?.counters?.followersCount ?? 0, followers.length);
   const topPct          = concluidos.length > 0 ? Math.max(1, Math.round(100 / (concluidos.length + 1))) : null;
-  const legacyFollowingPeople: FollowerInfo[] = followingNames.map((name) => ({
-    uid: `legacy:${name}`, username: name, name,
-    avatarImage: '', avatarLetter: name[0]?.toUpperCase() || '?', avatarGradient: '',
-  }));
-  const socialPeople = socialSheet === 'followers'
-    ? followers
-    : (followingPeople.length ? followingPeople : (isMe ? legacyFollowingPeople : []));
-
   const collageSources     = [...favoritos, ...minhaLista];
   const collagePosterItems = collageSources.filter(x => !!x.poster_path).slice(0, 6);
   const nextProReminder = isMe && isProProfile
@@ -676,13 +634,13 @@ function UserProfileInner() {
 
           {/* ── Seguindo / Seguidores ── */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '28px 16px 0' }}>
-            <button onClick={() => setSocialSheet('following')}
+            <button onClick={() => router.push(`/user/${encodeURIComponent(displayUsername)}/followers?tab=following`)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
               <Txt size={14} weight={900} color={T.t1}>{followingCount}</Txt>
               <Txt size={11} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>{t('followingLabel')}</Txt>
             </button>
             <div style={{ width: 1, height: 14, background: T.border, margin: '0 6px' }} />
-            <button onClick={() => setSocialSheet('followers')}
+            <button onClick={() => router.push(`/user/${encodeURIComponent(displayUsername)}/followers?tab=followers`)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 6, padding: 0 }}>
               <Txt size={14} weight={900} color={T.t1}>{followersVal}</Txt>
               <Txt size={11} weight={600} color={T.t3} style={{ letterSpacing: '0.4px', textTransform: 'uppercase' }}>{t('followersLabel')}</Txt>
@@ -764,9 +722,7 @@ function UserProfileInner() {
               catch { return []; }
             })();
             const userPlatforms = activeSubs.slice(0, 5);
-            const totalMonthly = userPlatforms.reduce((sum, platform) => sum + (Number(platform.price) || 0), 0);
-            const maxPlatformPrice = Math.max(...userPlatforms.map((platform) => Number(platform.price) || 0), 1);
-            const priceFormatter = new Intl.NumberFormat(i18n.language, { style: 'currency', currency: 'BRL' });
+            const monthlyStreamingTotal = activeSubs.reduce((total, subscription) => total + (Number(subscription.price) || 0), 0);
             const totalItems = (realStats?.moviesCount ?? 0) + (realStats?.tvCount ?? 0);
 
             return (
@@ -869,28 +825,27 @@ function UserProfileInner() {
                 <button onClick={() => router.push(withProfileOrigin('/expenses'))}
                   style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 126, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <Txt size={16} weight={800} color="#fff">{t('streaming')}</Txt>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                      <Txt size={16} weight={800} color="#fff">{t('streaming')}</Txt>
+                      <Txt size={11} color="rgba(255,255,255,0.42)">
+                        {t('monthlyExpenses')} · {formatCurrency(monthlyStreamingTotal, 'BRL', i18n.language)}
+                      </Txt>
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                       <Txt size={11} weight={700} color={T.pink}>{t('seeAll')}</Txt>
                       <Icon name="chevronR" size={11} color={T.pink} />
                     </div>
                   </div>
 
-                  <div data-summary-layout="stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8, width: '100%' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                      <Txt size={11} color="rgba(255,255,255,0.38)" style={{ whiteSpace: 'nowrap' }}>{t('monthlyExpenses')}</Txt>
-                      {userPlatforms.length > 0 && <Txt size={13} weight={800} color="#fff">{priceFormatter.format(totalMonthly)}</Txt>}
-                    </div>
-                    <div data-streaming-chart="compact" style={{ padding: '10px', borderRadius: 14, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                  <div data-summary-layout="stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%' }}>
+                    <div data-streaming-chart="compact" style={{ paddingTop: 2, overflow: 'hidden' }}>
                       {userPlatforms.length > 0 ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${userPlatforms.length}, minmax(0, 1fr))`, gap: 8, width: '100%', minWidth: 0 }}>
-                          {userPlatforms.map((p) => {
-                            const logo = STREAMING_LOGOS[p.streamId ?? ''] ?? STREAMING_LOGOS_BY_NAME[p.name];
-                            const value = Number(p.price) || 0;
-                            const width = `${Math.max(8, (value / maxPlatformPrice) * 100)}%`;
-                            return (
-                              <div key={p.name} aria-label={p.name} style={{ display: 'flex', flexDirection: 'column', flexWrap: 'nowrap', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                        <>
+                          <div data-streaming-logos style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 4, minWidth: 0 }}>
+                            {userPlatforms.map((p) => {
+                              const logo = STREAMING_LOGOS[p.streamId ?? ''] ?? STREAMING_LOGOS_BY_NAME[p.name];
+                              return (
+                                <div key={p.name} aria-label={p.name} style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                                   {logo ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={`/${logo}_logo.png`} alt="" style={{ width: '76%', height: '72%', objectFit: 'contain', display: 'block' }} />
@@ -898,13 +853,22 @@ function UserProfileInner() {
                                     <Txt size={11} weight={800} color="#fff">{p.name.slice(0, 1)}</Txt>
                                   )}
                                 </div>
-                                <div style={{ width: '100%', height: 5, borderRadius: 4, overflow: 'hidden', background: 'rgba(255,255,255,0.10)' }}>
-                                  <div style={{ width, height: '100%', borderRadius: 4, background: p.color || 'rgba(255,255,255,0.28)' }} />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
+                          <div data-streaming-track style={{ display: 'flex', width: '100%', height: 6, marginTop: 11, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.10)' }}>
+                            {userPlatforms.map((p) => (
+                              <div
+                                key={`track-${p.name}`}
+                                style={{
+                                  width: `${84 / userPlatforms.length}%`,
+                                  height: '100%',
+                                  background: streamingColor(p.streamId, streamingColor(p.name, p.color)),
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </>
                       ) : (
                         <Txt size={11} color="rgba(255,255,255,0.28)">{t('noExpenses')}</Txt>
                       )}
@@ -952,88 +916,6 @@ function UserProfileInner() {
           <div style={{ height: 90 }} />
         </ScrollArea>
 
-        {/* ── Bottom sheet: seguidores / seguindo ── */}
-        {socialSheet && (
-          <>
-            <div onClick={() => setSocialSheet(null)}
-              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.60)', zIndex: 40 }} />
-            <div style={{
-              position: 'absolute', left: 0, right: 0, bottom: 'var(--tab-h, 84px)', zIndex: 50,
-              background: T.surface, borderRadius: '20px 20px 0 0',
-              maxHeight: 'calc(85% - var(--tab-h, 84px))', display: 'flex', flexDirection: 'column',
-            }}>
-              <div style={{ padding: '12px 16px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-                <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, margin: '0 auto 12px' }} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Txt size={15} weight={700}>{socialSheet === 'followers' ? t('followersLabel') : t('followingLabel')}</Txt>
-                  <button onClick={() => setSocialSheet(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                    <Icon name="close" size={18} color={T.t3} />
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', padding: '10px 16px', gap: 8, flexShrink: 0, borderBottom: `1px solid ${T.border}` }}>
-                {(['followers', 'following'] as const).map(tab => (
-                  <button key={tab} onClick={() => setSocialSheet(tab)} style={{
-                    padding: '6px 16px', borderRadius: 20,
-                    background: socialSheet === tab ? T.pillActiveBg : T.surface2,
-                    border: socialSheet === tab ? 'none' : `1px solid ${T.border}`,
-                    color: socialSheet === tab ? T.pillActiveText : T.t2,
-                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    fontFamily: "'Area','Inter',sans-serif",
-                  }}>
-                    {tab === 'followers' ? `${t('followersLabel')} · ${followersVal}` : `${t('followingLabel')} · ${followingCount}`}
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
-                {socialPeople.length > 0 ? (
-                  socialPeople.map((f, i) => {
-                    const label = f.name || f.username || '?';
-                    return (
-                      <div key={f.uid}
-                        onClick={() => { if (!f.username) return; setSocialSheet(null); router.push(`/user/${encodeURIComponent(f.username)}`); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < socialPeople.length - 1 ? `1px solid ${T.border}` : 'none', cursor: f.username ? 'pointer' : 'default' }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 22, overflow: 'hidden', background: f.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {f.avatarImage
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            ? <img src={f.avatarImage} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                            : <Txt size={16} weight={800} color="#fff">{(f.avatarLetter || label[0] || '?').toUpperCase()}</Txt>}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <Txt size={14} weight={700} color={T.t1} style={{ display: 'block' }}>{label}</Txt>
-                          {f.username && <Txt size={12} color={T.t3}>@{f.username}</Txt>}
-                        </div>
-                        {f.username && <Icon name="chevronR" size={14} color={T.t4} />}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', textAlign: 'center' }}>
-                    <div style={{ width: 56, height: 56, borderRadius: 28, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                      <Icon name="user" size={24} color={T.t4} />
-                    </div>
-                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', marginBottom: 6 }}>
-                      {socialSheet === 'followers' ? t('emptyFollowers') : (isMe ? t('emptyFollowing') : t('noFollowingYet'))}
-                    </Txt>
-                    <Txt size={13} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>
-                      {socialSheet === 'followers'
-                        ? (isMe ? t('followersEmptyDetail') : t('publicFollowersEmptyDetail'))
-                        : t('followingEmptyDetail')}
-                    </Txt>
-                  </div>
-                )}
-                {socialHasMore && (
-                  <button type="button" onClick={loadMoreSocial} disabled={socialLoading} style={{ display: 'block', margin: '12px auto', padding: '9px 18px', borderRadius: 20, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontWeight: 700, cursor: socialLoading ? 'default' : 'pointer' }}>
-                    {socialLoading ? 'Carregando…' : 'Carregar mais'}
-                  </button>
-                )}
-              </div>
-              <div style={{ height: 28 }} />
-            </div>
-          </>
-        )}
         <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
       </Screen>
     </Frame>

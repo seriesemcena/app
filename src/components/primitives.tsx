@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { useTheme } from '@/context/ThemeContext';
+import { STREAMING_COLORS } from '@/lib/streamingPlatforms';
 
 // size >= 20 → Greed (H1/H2 level); size < 20 → Area (H3/H4/body)
 // size >= 20 → Greed (H1/H2); size < 20 → Area (H3/H4/body)
@@ -183,9 +184,7 @@ export const PROBadge = ({ size = 'sm' }: { size?: 'sm' | 'md' }) => (
 export const VIPBadge = PROBadge;
 
 export const Skeleton = ({ w, h, radius = 8, style = {} }: { w: number | string; h: number | string; radius?: number; style?: CSSProperties }) => {
-  const [pulse, setPulse] = useState(false);
-  useEffect(() => { const iv = setInterval(() => setPulse((p) => !p), 800); return () => clearInterval(iv); }, []);
-  return <div style={{ width: w, height: h, borderRadius: radius, background: pulse ? 'var(--c-glass-bg)' : 'var(--c-input-bg)', transition: 'background 0.8s ease', flexShrink: 0, ...style }} />;
+  return <div className="ui-skeleton" style={{ width: w, height: h, borderRadius: radius, flexShrink: 0, ...style }} />;
 };
 
 export const Stars = ({ value = 0, max = 5, size = 14, onChange }: { value?: number; max?: number; size?: number; onChange?: (v: number) => void }) => (
@@ -240,7 +239,7 @@ export const BottomSheet = ({ visible, onClose, title, children }: { visible: bo
 };
 
 export const StreamBadge = ({ name }: { name: string }) => {
-  const colors: Record<string, string> = { Netflix: '#E50914', Prime: '#00A8E0', 'Disney+': '#113CCF', HBO: '#5800A0', Apple: '#555', Globo: '#D62929', Paramount: '#0064FF' };
+  const colors: Record<string, string> = { Netflix: STREAMING_COLORS.netflix, Prime: STREAMING_COLORS.prime, 'Disney+': STREAMING_COLORS.disney, HBO: STREAMING_COLORS.hbo, Apple: STREAMING_COLORS.apple, Globo: STREAMING_COLORS.globo, Paramount: STREAMING_COLORS.paramount, 'MGM+': STREAMING_COLORS.mgm };
   return (
     <div style={{ padding: '4px 10px', borderRadius: 6, background: colors[name] || T.surface2, display: 'inline-flex', alignItems: 'center' }}>
       <Txt size={10} weight={700} color={T.white}>{name}</Txt>
@@ -249,7 +248,7 @@ export const StreamBadge = ({ name }: { name: string }) => {
 };
 
 export const StreamCircle = ({ name = '', size = 52 }: { name?: string; size?: number }) => {
-  const colors: Record<string, string> = { Netflix: '#E50914', Prime: '#00A8E0', 'Disney+': '#113CCF', HBO: '#5800A0', Apple: '#555', Globo: '#D62929', Paramount: '#0064FF' };
+  const colors: Record<string, string> = { Netflix: STREAMING_COLORS.netflix, Prime: STREAMING_COLORS.prime, 'Disney+': STREAMING_COLORS.disney, HBO: STREAMING_COLORS.hbo, Apple: STREAMING_COLORS.apple, Globo: STREAMING_COLORS.globo, Paramount: STREAMING_COLORS.paramount, 'MGM+': STREAMING_COLORS.mgm };
   const abbrev = (name || '').slice(0, 1).toUpperCase();
   return (
     <div style={{ width: size, height: size, borderRadius: size / 2, background: colors[name] || 'var(--c-t4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `2px solid var(--c-t4)` }}>

@@ -12,6 +12,7 @@ import { navigateBack } from '@/lib/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbExpensesStore } from '@/lib/db';
+import { STREAMING_COLORS, streamingColor } from '@/lib/streamingPlatforms';
 
 type Plan = { label: string; price: number };
 type Stream = { id: string; name: string; color: string; plans: Plan[] };
@@ -34,18 +35,18 @@ const PRESET_STREAMS: Stream[] = [
     { label: 'Padrão', price: 44.90 },
     { label: 'Premium', price: 59.90 },
   ] },
-  { id: 'prime', name: 'Prime Video', color: '#00A8E0', plans: [
+  { id: 'prime', name: 'Prime Video', color: STREAMING_COLORS.prime, plans: [
     { label: 'Mensal', price: 19.90 },
     { label: 'Anual (R$ 166,80/ano)', price: 166.80 / 12 },
   ] },
-  { id: 'disney', name: 'Disney+', color: '#113CCF', plans: [
+  { id: 'disney', name: 'Disney+', color: STREAMING_COLORS.disney, plans: [
     { label: 'Padrão com anúncios', price: 29.90 },
     { label: 'Padrão', price: 49.90 },
     { label: 'Premium', price: 69.90 },
     { label: 'Padrão anual (R$ 407,88/ano)', price: 407.88 / 12 },
     { label: 'Premium anual (R$ 587,88/ano)', price: 587.88 / 12 },
   ] },
-  { id: 'hbo', name: 'HBO Max', color: '#5800A0', plans: [
+  { id: 'hbo', name: 'HBO Max', color: STREAMING_COLORS.hbo, plans: [
     { label: 'Básico com anúncios', price: 29.90 },
     { label: 'Standard', price: 39.90 },
     { label: 'Platinum', price: 55.90 },
@@ -54,7 +55,7 @@ const PRESET_STREAMS: Stream[] = [
     { label: 'Platinum anual (R$ 478,80/ano)', price: 478.80 / 12 },
   ] },
   { id: 'apple', name: 'Apple TV+', color: '#555555', plans: [{ label: 'Mensal', price: 29.90 }] },
-  { id: 'globo', name: 'Globoplay', color: '#D62929', plans: [
+  { id: 'globo', name: 'Globoplay', color: STREAMING_COLORS.globo, plans: [
     { label: 'Padrão com anúncios', price: 22.90 },
     { label: 'Padrão com anúncios anual', price: 14.90 },
     { label: 'Premium', price: 39.90 },
@@ -68,7 +69,7 @@ const PRESET_STREAMS: Stream[] = [
     { label: 'Padrão anual (R$ 309,90/ano)', price: 309.90 / 12 },
     { label: 'Premium anual (R$ 399,90/ano)', price: 399.90 / 12 },
   ] },
-  { id: 'mgm', name: 'MGM+', color: '#B59A62', plans: [{ label: 'Mensal', price: 19.90 }] },
+  { id: 'mgm', name: 'MGM+', color: STREAMING_COLORS.mgm, plans: [{ label: 'Mensal', price: 19.90 }] },
 ];
 
 const KEY = 'sec_expenses_v1';
@@ -138,9 +139,15 @@ export default function ExpensesPage() {
     return () => obs.disconnect();
   }, []);
 
-  const migrateStar = (list: Sub[]) => list.map((sub) => sub.streamId === 'star' || sub.name === 'Star+'
-    ? { ...sub, streamId: 'mgm', name: 'MGM+', color: '#B59A62' }
-    : sub);
+  const migrateStreamingData = (list: Sub[]) => list.map((sub) => {
+    const migrated = sub.streamId === 'star' || sub.name === 'Star+'
+      ? { ...sub, streamId: 'mgm', name: 'MGM+' }
+      : sub;
+    return {
+      ...migrated,
+      color: streamingColor(migrated.streamId, streamingColor(migrated.name, migrated.color)),
+    };
+  });
 
   /* Load: localStorage first (instant paint), then Firestore. The cloud copy
      is authoritative when it exists — the local cache is wiped on every
@@ -151,7 +158,7 @@ export default function ExpensesPage() {
     let local: Sub[] = [];
     try {
       const stored: Sub[] = JSON.parse(localStorage.getItem(KEY) || '[]');
-      local = migrateStar(stored);
+      local = migrateStreamingData(stored);
       setSubs(local);
       if (local.some((sub, index) => sub !== stored[index])) {
         localStorage.setItem(KEY, JSON.stringify(local));
@@ -163,7 +170,7 @@ export default function ExpensesPage() {
     dbExpensesStore.get(getDB(), user.uid).then(cloud => {
       if (!alive) return;
       if (cloud !== null) {
-        const merged = migrateStar(cloud as Sub[]);
+        const merged = migrateStreamingData(cloud as Sub[]);
         setSubs(merged);
         try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch {}
       } else if (local.length > 0) {
@@ -254,12 +261,11 @@ export default function ExpensesPage() {
             {/* Glow blob */}
             <div style={{ position: 'absolute', top: -50, right: -50, width: 180, height: 180, borderRadius: 90, background: 'rgba(192,105,255,0.10)', filter: 'blur(48px)', pointerEvents: 'none' }} />
 
-            {/* Label + dot */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            {/* Label */}
+            <div style={{ marginBottom: 14 }}>
               <Txt size={10} weight={700} color="rgba(255,255,255,0.38)" style={{ textTransform: 'uppercase', letterSpacing: 1.2 }}>
                 {t('expenses.heroLabel')}
               </Txt>
-              <div style={{ width: 8, height: 8, borderRadius: 4, background: activeSubs.length > 0 ? '#22c55e' : 'rgba(255,255,255,0.2)', boxShadow: activeSubs.length > 0 ? '0 0 8px rgba(34,197,94,0.8)' : 'none' }} />
             </div>
 
             {/* Main value */}
@@ -277,12 +283,9 @@ export default function ExpensesPage() {
             </Txt>
 
             {/* Buttons */}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setAddSheet(true)} style={{ flex: 1, padding: '12px 0', borderRadius: 50, background: 'rgba(255,255,255,0.92)', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#0e0c14', fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.1px' }}>
+            <div>
+              <button onClick={() => setAddSheet(true)} style={{ width: '100%', padding: '12px 0', borderRadius: 50, background: 'rgba(255,255,255,0.92)', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#0e0c14', fontFamily: "'Area','Inter',sans-serif", letterSpacing: '-0.1px' }}>
                 {t('expenses.addBtn')}
-              </button>
-              <button onClick={() => {}} style={{ flex: 1, padding: '12px 0', borderRadius: 50, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.72)', fontFamily: "'Area','Inter',sans-serif" }}>
-                {t('expenses.viewDistribution')}
               </button>
             </div>
           </div>

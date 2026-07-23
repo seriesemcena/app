@@ -10,7 +10,7 @@
 /* ── Area font family (paragraphs, H3, H4) ── */
 @font-face {
   font-family: 'Area';
-  src: url('/fonts/Area-SemiBold.woff') format('woff');
+  src: url('/fonts/Area-Bold.woff') format('woff');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -24,7 +24,7 @@
 }
 @font-face {
   font-family: 'Area';
-  src: url('/fonts/Area-extrabold.woff') format('woff');
+  src: url('/fonts/Area-Black.woff') format('woff');
   font-weight: 800;
   font-style: normal;
   font-display: swap;
@@ -38,7 +38,7 @@
 }
 @font-face {
   font-family: 'Area';
-  src: url('/fonts/Area-SemiBoldItalic.woff') format('woff');
+  src: url('/fonts/Area-BoldItalic.woff') format('woff');
   font-weight: 600;
   font-style: italic;
   font-display: swap;
@@ -52,7 +52,7 @@
 }
 @font-face {
   font-family: 'Area';
-  src: url('/fonts/Area-extraboldItalic.woff') format('woff');
+  src: url('/fonts/Area-BoldItalic.woff') format('woff');
   font-weight: 800;
   font-style: italic;
   font-display: swap;
@@ -90,7 +90,7 @@
   --keyboard-offset: 0px;
   --app-height: 100vh;
   --c-bg:        #0D0D0F;
-  --c-card:      #222228;
+  --c-card:      #171719;
   --c-card-deep: #16161A;
   --c-surface:   #2A2A32;
   --c-surface2:  #34343E;
@@ -394,7 +394,7 @@ html[data-has-tabbar="true"] .offline-banner {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .screen-anim, .app-state-pulse, .img-skeleton { animation: none !important; }
+  .screen-anim, .app-state-pulse, .ui-skeleton, .img-skeleton, .masonry-skeleton { animation: none !important; }
 }
 
 /* ── Semantic heading defaults ── */
@@ -422,8 +422,10 @@ h3, h4, h5, h6, p {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
 }
-.img-skeleton {
-  background: linear-gradient(90deg, var(--c-surface) 25%, var(--c-surface2) 50%, var(--c-surface) 75%);
+.ui-skeleton,
+.img-skeleton,
+.masonry-skeleton {
+  background: linear-gradient(90deg, #141417 22%, #25252b 50%, #141417 78%);
   background-size: 200% 100%;
   animation: img-shimmer 1.4s infinite linear;
 }

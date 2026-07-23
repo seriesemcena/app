@@ -174,7 +174,7 @@ export default function MoviesPage() {
                       items={watchedList.map(toTMDBItem)}
                       onItem={(item) => openTitle(item.id)}
                       padding="0"
-                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
+                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' })}
                     />
                   )}
                 </div>

@@ -16,6 +16,8 @@ ui-debug.log
 *.pem
 *.p12
 *.pfx
+*.jks
+*.keystore
 *service-account*.json
 *serviceAccount*.json
 google-application-credentials*.json

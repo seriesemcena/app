@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, Btn, Logo, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
-import { TMDBBackdrop, MasonryGrid2 } from '@/components/posters';
+import { TMDBBackdrop, MasonryGrid2, TMDBGridCard } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, normalizeTMDBImageUrl, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { DEFAULT_PRO_HOME_SECTIONS, epWatchedStore, listStore, profileStore, proSettingsStore, sliderStore, syncProReminderNotifications, type ProHomeSectionKey, type SliderItem, type SliderCategory } from '@/lib/store';
@@ -61,11 +61,15 @@ type HomeSectionGridProps = {
   onLoadMore?: () => void;
 };
 
+type HomeSectionView = 'grid' | 'list';
+
 /* Kept outside HomePage so ordinary home state updates do not remount every
    poster card and repeat all of their metadata/image requests. */
 function HomeSectionGrid({
   title, items, loading, limit = 10, loadMoreLabel, onItem, onLoadMore,
 }: HomeSectionGridProps) {
+  const { t } = useTranslation('home');
+  const [view, setView] = useState<HomeSectionView>('grid');
   const uniqueItems = (items || []).filter((item, idx, all) =>
     all.findIndex((candidate) =>
       candidate.id === item.id
@@ -80,13 +84,90 @@ function HomeSectionGrid({
   const hasMore = !loading && uniqueItems.length > sliced.length;
   return (
     <div style={{ marginBottom: 28 }}>
-      {title && <Txt size={22} weight={800} style={{ display: 'block', paddingLeft: 16, paddingRight: 16, marginBottom: 14, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>}
-      <MasonryGrid2
-        items={sliced}
-        onItem={onItem}
-        loading={loading}
-        skeletonCount={6}
-      />
+      {title && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12, paddingLeft: 16, paddingRight: 16, marginBottom: 14,
+        }}>
+          <Txt size={22} weight={800} style={{ minWidth: 0, fontStretch: 'condensed' } as React.CSSProperties}>{title}</Txt>
+          <div
+            role="group"
+            aria-label={t('view.label')}
+            style={{
+              flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3,
+              padding: 3, borderRadius: 12,
+              background: T.card, border: `1px solid ${T.border}`,
+            }}
+          >
+            {(['grid', 'list'] as const).map((option) => {
+              const active = view === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  aria-label={t(`view.${option}`)}
+                  aria-pressed={active}
+                  onClick={() => setView(option)}
+                  style={{
+                    width: 32, height: 30, borderRadius: 9,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: 'none', cursor: 'pointer',
+                    background: active ? T.pillActiveBg : 'transparent',
+                    color: active ? T.pillActiveText : T.t3,
+                    transition: 'background 0.18s ease, color 0.18s ease',
+                  }}
+                >
+                  <Icon name={option === 'grid' ? 'grid' : 'list'} size={16} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {view === 'grid' || !title ? (
+        <MasonryGrid2
+          items={sliced}
+          onItem={onItem}
+          loading={loading}
+          skeletonCount={6}
+        />
+      ) : (
+        <div
+          aria-label={title}
+          style={{
+            display: 'flex', gap: 12, overflowX: 'auto',
+            padding: '0 16px 12px',
+            scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+            scrollSnapType: 'x mandatory', scrollPaddingInline: 16,
+          } as React.CSSProperties}
+        >
+          {loading
+            ? Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="img-skeleton"
+                  style={{
+                    flex: '0 0 clamp(168px, 42vw, 220px)',
+                    aspectRatio: '5 / 7.6', borderRadius: 16,
+                    scrollSnapAlign: 'start',
+                  }}
+                />
+              ))
+            : limitedItems.map((item) => (
+                <div
+                  key={`${item.media_type ?? (item as any).type ?? ''}-${item.id}`}
+                  style={{
+                    flex: '0 0 clamp(168px, 42vw, 220px)',
+                    minWidth: 0, scrollSnapAlign: 'start',
+                  }}
+                >
+                  <TMDBGridCard item={item} onClick={() => onItem(item)} />
+                </div>
+              ))
+          }
+        </div>
+      )}
       {hasMore && onLoadMore && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 8px' }}>
           <button onClick={onLoadMore} style={{
@@ -640,14 +721,13 @@ export default function HomePage() {
                           </div>
                           {/* Info */}
                           <div style={{ flex: 1, minWidth: 0, padding: '14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                            <Txt size={16} weight={800} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 7 }}>{item.title}</Txt>
+                            <Txt size={15} weight={800} color={T.t1} style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 6 }}>{item.title}</Txt>
                             {seasonNumber && episodeNumber ? (
-                              <>
-                                <Txt size={13} weight={600} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>{t('season', { number: seasonNumber, ns: 'title' })}</Txt>
-                                <Txt size={13} weight={600} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>{t('episode', { number: episodeNumber, ns: 'title' })}</Txt>
-                              </>
+                              <Txt size={12} weight={400} color={T.t2} style={{ display: 'block', lineHeight: 1.35 }}>
+                                {t('season', { number: seasonNumber, ns: 'title' })} · {t('episode', { number: episodeNumber, ns: 'title' })}
+                              </Txt>
                             ) : (
-                              <Txt size={13} weight={600} color={T.t3} style={{ display: 'block' }}>{t('watching')}</Txt>
+                              <Txt size={12} weight={400} color={T.t2} style={{ display: 'block' }}>{t('watching')}</Txt>
                             )}
                           </div>
                           <Icon name="chevronR" size={16} color={T.t4} style={{ alignSelf: 'center', marginRight: 14 }} />

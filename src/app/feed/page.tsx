@@ -237,19 +237,19 @@ export default function FeedPage() {
 
             {/* Loading skeletons */}
             {loadingFeed && (
-              <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} style={{ background: T.card, borderRadius: 20, padding: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+                  <div key={i} style={{ background: '#121215', padding: 16, borderTop: '1px solid #29292f', borderBottom: '1px solid #29292f' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                      <div style={{ width: 42, height: 42, borderRadius: 21, background: T.surface2, flexShrink: 0 }} />
+                      <div className="img-skeleton" style={{ width: 42, height: 42, borderRadius: 21, flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ height: 13, width: '55%', borderRadius: 6, background: T.surface2, marginBottom: 6 }} />
-                        <div style={{ height: 11, width: '30%', borderRadius: 5, background: T.surface2 }} />
+                        <div className="img-skeleton" style={{ height: 13, width: '55%', borderRadius: 6, marginBottom: 6 }} />
+                        <div className="img-skeleton" style={{ height: 11, width: '30%', borderRadius: 5 }} />
                       </div>
                     </div>
-                    <div style={{ height: 200, borderRadius: 14, background: T.surface2, marginBottom: 14 }} />
-                    <div style={{ display: 'flex', gap: 20 }}>
-                      {[40, 60, 80].map(w => <div key={w} style={{ height: 11, width: w, borderRadius: 5, background: T.surface2 }} />)}
+                    <div className="img-skeleton" style={{ height: 15, width: i % 2 === 0 ? '76%' : '58%', borderRadius: 6, margin: '18px 0' }} />
+                    <div style={{ display: 'flex', gap: 9 }}>
+                      {[58, 58].map((w, index) => <div key={index} className="img-skeleton" style={{ height: 38, width: w, borderRadius: 20 }} />)}
                     </div>
                   </div>
                 ))}
@@ -269,11 +269,11 @@ export default function FeedPage() {
 
             {/* Feed items */}
             {!loadingFeed && feedItems.length > 0 && (
-              <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="feed-activity-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {feedItems.map((item) => <FeedCard key={item.id} item={item} onDelete={handleDeleteItem} />)}
                 {feedError && <Txt size={12} color="#FF7378" style={{ display: 'block', textAlign: 'center' }}>{feedError}</Txt>}
                 {feedHasMore ? (
-                  <button type="button" onClick={loadMoreFeed} disabled={loadingMore} style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.65 : 1 }}>
+                  <button type="button" onClick={loadMoreFeed} disabled={loadingMore} style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.85)', background: '#FFFFFF', color: '#0B0B0D', fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.65 : 1 }}>
                     {loadingMore ? 'Carregando…' : 'Carregar mais atividades'}
                   </button>
                 ) : (
@@ -307,6 +307,7 @@ function FeedCard({ item, onDelete }: {
 
   /* ── TMDB label ── */
   const displayLabel = item.displayTitle || item.titleKey;
+  const openComments = () => router.push(`/comments?key=${encodeURIComponent(item.titleKey)}&title=${encodeURIComponent(displayLabel)}`);
   // Title artwork is context, not user content. Only explicit GIF/image
   // attachments are rendered inside a feed post.
   const mediaSrc = item.mediaUrl || '';
@@ -477,7 +478,7 @@ function FeedCard({ item, onDelete }: {
   ];
 
   return (
-    <SocialCard dimmed={deleting}>
+    <SocialCard dimmed={deleting} edgeToEdge onClick={openComments}>
 
       {/* Toast feedback */}
       {toast && (
@@ -486,44 +487,25 @@ function FeedCard({ item, onDelete }: {
         </div>
       )}
 
-      {/* ── Menu discreto — topo direito do card ── */}
-      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}>
-        <button
-          type="button"
-          aria-label={`Mais opções de ${item.user}`}
-          onClick={() => setShowMenu(v => !v)}
-          style={{ width: 28, height: 28, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="menuDots" size={18} color={T.t2} />
-        </button>
-        {showMenu && (
-          <>
-            <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
-            <div style={{ position: 'absolute', top: 32, right: 0, zIndex: 30, background: T.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 230 }}>
-              {menuOptions.map(({ label, icon, color, action }, idx) => (
-                <button key={label} onClick={action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: idx < menuOptions.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', textAlign: 'left' }}>
-                  <Icon name={icon} size={16} color={color} />
-                  <Txt size={13} weight={600} color={color}>{label}</Txt>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 9 }}>
+        <Txt size={11} weight={700} color={T.t2} style={{ whiteSpace: 'nowrap' }}>{item.time}</Txt>
       </div>
 
       {/* ── User row ── */}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 18 }}>
         <SocialAuthor
           name={item.user}
-          time={item.time}
+          time=""
           avatar={item.avatar}
           photoUrl={item.photoUrl}
           color={item.color}
-          endPadding={24}
+          endPadding={72}
+          contextOnSecondLine
           onClick={goToProfile}
           context={(
             <>
-              <Txt size={11} weight={700} color={T.t3} style={{ flexShrink: 0 }}>{actionLabel}</Txt>
-              <Txt size={12} weight={700} color={T.t1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+              <Txt size={12} weight={700} color={T.t3} style={{ flexShrink: 0, lineHeight: '16px' }}>{actionLabel}</Txt>
+              <Txt size={12} weight={700} color={T.t1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, lineHeight: '16px' }}>
                 {displayLabel}
               </Txt>
             </>
@@ -532,7 +514,7 @@ function FeedCard({ item, onDelete }: {
       </div>
 
       {/* ── Review content / spoiler cover ── */}
-      <div style={{ position: 'relative', minHeight: spoilerHidden ? 86 : undefined, marginBottom: 12, overflow: 'hidden', borderRadius: 16 }}>
+      <div style={{ position: 'relative', minHeight: spoilerHidden ? 86 : undefined, marginBottom: 18, overflow: 'hidden', borderRadius: 16 }}>
         <div style={{ filter: spoilerHidden ? 'blur(12px)' : 'none', transform: spoilerHidden ? 'scale(1.03)' : 'none', transition: 'filter 0.2s ease, transform 0.2s ease', pointerEvents: spoilerHidden ? 'none' : 'auto', userSelect: spoilerHidden ? 'none' : 'auto' }}>
           {item.text ? (
             <Txt size={15} color={T.t1} style={{ display: 'block', lineHeight: 1.55, marginBottom: mediaSrc ? 12 : 0 }}>
@@ -556,7 +538,7 @@ function FeedCard({ item, onDelete }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
 
         {/* Reacts: emoji picker trigger + count que abre popup de quem reagiu */}
-        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : T.surface2, border: `1px solid ${myReaction ? 'rgba(192,105,255,0.24)' : T.border}`, borderRadius: 20, overflow: 'visible' }}>
+        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : 'color-mix(in srgb, var(--c-surface2) 80%, #000 20%)', border: `1px solid ${myReaction ? 'rgba(192,105,255,0.24)' : T.border}`, borderRadius: 20, overflow: 'visible' }}>
           {/* Emoji trigger — ícone coração por padrão */}
           <button
             onClick={() => setShowEmojis(v => !v)}
@@ -607,8 +589,9 @@ function FeedCard({ item, onDelete }: {
         <SocialAction
           icon="message"
           width={58}
+          background="color-mix(in srgb, var(--c-surface2) 80%, #000 20%)"
           ariaLabel="Abrir respostas"
-          onClick={() => router.push(`/comments?key=${encodeURIComponent(item.titleKey)}&title=${encodeURIComponent(displayLabel)}`)}
+          onClick={openComments}
         >
           <Txt size={12} weight={700} color="currentColor">{replyCount}</Txt>
         </SocialAction>
@@ -622,6 +605,30 @@ function FeedCard({ item, onDelete }: {
             <Txt size={12} weight={800} color="#1a1400">{item.rating}/10</Txt>
           </div>
         )}
+
+        {/* Menu discreto — canto inferior direito do card */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            type="button"
+            aria-label={`Mais opções de ${item.user}`}
+            onClick={() => setShowMenu(v => !v)}
+            style={{ width: 28, height: 40, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="menuDots" size={18} color={T.t2} />
+          </button>
+          {showMenu && (
+            <>
+              <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
+              <div style={{ position: 'absolute', bottom: 44, right: 0, zIndex: 30, background: T.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 230 }}>
+                {menuOptions.map(({ label, icon, color, action }, idx) => (
+                  <button key={label} onClick={action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: idx < menuOptions.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', textAlign: 'left' }}>
+                    <Icon name={icon} size={16} color={color} />
+                    <Txt size={13} weight={600} color={color}>{label}</Txt>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
       <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
     </SocialCard>

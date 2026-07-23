@@ -38,19 +38,6 @@ const config: CapacitorConfig = {
     FirebaseMessaging: {
       presentationOptions: ['badge', 'sound', 'alert'],
     },
-    /* iOS: request notification permission automatically on launch */
-    LocalNotifications: {
-      smallIcon:    'ic_stat_icon_config_sample',
-      iconColor:    '#E050C8',
-      sound:        'beep.wav',
-    },
-  },
-
-  android: {
-    buildOptions: {
-      keystorePath:   'android/app/sectime.keystore',
-      keystoreAlias:  'sectime',
-    },
   },
 
   ios: {

@@ -27,7 +27,7 @@ Integrações nativas reais já presentes: **push (FCM)**, **login social nativo
 | B1 | Política de Privacidade pública | ✅ `/legal/privacy` |
 | B2 | Termos de Uso públicos | ✅ `/legal/terms` |
 | B3 | Página pública de exclusão de dados (exigida pelo Google Play) | ✅ `/legal/delete-account` |
-| B4 | `PrivacyInfo.xcprivacy` (Apple, obrigatório) | 🟡 arquivo criado — **falta adicionar ao target no Xcode** |
+| B4 | `PrivacyInfo.xcprivacy` (Apple, obrigatório) | ✅ arquivo incluído no target App e na fase Resources |
 | B5 | Deep links (AASA + assetlinks + capabilities) | 🟡 arquivos e config prontos — **faltam Team ID, SHA-256 e publicação em produção** |
 | B6 | Ícone de push Android ausente | ✅ criado `ic_stat_icon_config_sample` + meta-data FCM |
 | B7 | APNs em `development` nas entitlements | ✅ **resolvido** — entitlements por configuração (Debug=development, Release=production) |
@@ -47,7 +47,9 @@ Integrações nativas reais já presentes: **push (FCM)**, **login social nativo
 - **Android App Links + esquema próprio** no `AndroidManifest.xml`:
   intent-filter `autoVerify` para `https://maratonou.com` (+ `www`) e `maratonou://`.
 - **Ícone de push Android** monocromático + `default_notification_icon`/`_color` (FCM).
-- **`PrivacyInfo.xcprivacy`** criado (required-reason APIs + tipos de dados coletados).
+- **`PrivacyInfo.xcprivacy`** criado e incluído no target App (required-reason APIs + tipos de dados coletados).
+- **Fontes locais** — removidos quatro arquivos `.woff` inválidos que continham HTML;
+  pesos ausentes agora reutilizam variantes Area válidas já presentes no app.
 - **Páginas legais** públicas e estáticas (`/legal/*`), linkadas em Configurações.
 - **APNs por configuração** — `App.entitlements` (development) para Debug,
   `AppRelease.entitlements` (production) para Release, via `CODE_SIGN_ENTITLEMENTS`
@@ -59,7 +61,7 @@ Integrações nativas reais já presentes: **push (FCM)**, **login social nativo
 - **Traduções** `privacy`/`terms` (settings) e `blockUser`/`unblockUser`/`reportProfile`
   (profile) em pt-BR, en-US, es-ES.
 
-Validação executada: `tsc` limpo · `npm test` 80/80 · `git diff --check` OK ·
+Validação executada: `tsc` limpo · `npm test` 84/84 · `git diff --check` OK ·
 `npm run build` OK (rotas `/legal/*` estáticas) · `npx cap sync` OK com
 `server.url` preservado nos dois nativos.
 
@@ -67,24 +69,21 @@ Validação executada: `tsc` limpo · `npm test` 80/80 · `git diff --check` OK 
 
 ## 4. Ações manuais do usuário (fora do alcance do código)
 
-1. **Xcode → adicionar `PrivacyInfo.xcprivacy` ao target App** (arrastar o arquivo
-   `ios/App/App/PrivacyInfo.xcprivacy` para o projeto, marcar target "App"). Sem isso
-   ele não entra no bundle. *(pbxproj não foi editado à mão de propósito — risco.)*
-2. **Team ID Apple** → substituir `REPLACE_WITH_APPLE_TEAM_ID` em
+1. **Team ID Apple** → substituir `REPLACE_WITH_APPLE_TEAM_ID` em
    `public/.well-known/apple-app-site-association` (10 caracteres, ex.: `A1B2C3D4E5`).
-3. **SHA-256** → substituir os dois placeholders em
+2. **SHA-256** → substituir os dois placeholders em
    `public/.well-known/assetlinks.json`:
    - `REPLACE_WITH_PLAY_APP_SIGNING_SHA256` (do Play Console → App Integrity → App signing).
    - `REPLACE_WITH_UPLOAD_KEY_SHA256` (da sua upload key).
-4. **Publicar** os dois arquivos em produção (deploy do web) e confirmar:
+3. **Publicar** os dois arquivos em produção (deploy do web) e confirmar:
    - `https://maratonou.com/.well-known/apple-app-site-association` → `Content-Type: application/json`.
    - `https://maratonou.com/.well-known/assetlinks.json` → 200.
-5. **Xcode → Signing & Capabilities:** selecionar Team, manter "Automatically manage
+4. **Xcode → Signing & Capabilities:** selecionar Team, manter "Automatically manage
    signing", confirmar capabilities: Push Notifications, Sign in with Apple,
    Associated Domains (já nas entitlements).
-6. **Firebase Console:** subir a **APNs Auth Key (.p8)** para push iOS funcionar.
-7. **Android keystore de upload** — ver §11 (gerar você mesmo, nunca versionar).
-8. Confirmar **e-mail de suporte** `suporte@maratonou.com` existe (usado nas páginas
+5. **Firebase Console:** subir a **APNs Auth Key (.p8)** para push iOS funcionar.
+6. **Android keystore de upload** — ver §11 (gerar você mesmo, nunca versionar).
+7. Confirmar **e-mail de suporte** `suporte@maratonou.com` existe (usado nas páginas
    legais) ou trocar pelo endereço correto.
 
 ---
@@ -98,7 +97,7 @@ Validação executada: `tsc` limpo · `npm test` 80/80 · `git diff --check` OK 
 - [x] Associated Domains (entitlements)
 - [x] Handlers de push e Universal Links no AppDelegate
 - [x] Versão 1.0.0 / build 1
-- [ ] `PrivacyInfo.xcprivacy` adicionado ao target *(manual)*
+- [x] `PrivacyInfo.xcprivacy` adicionado ao target e à fase Resources
 - [ ] Team selecionado / assinatura *(manual)*
 - [ ] APNs .p8 no Firebase *(manual)*
 - [x] `aps-environment` = `production` no Release (`AppRelease.entitlements`)
@@ -110,7 +109,7 @@ Validação executada: `tsc` limpo · `npm test` 80/80 · `git diff --check` OK 
 - [x] `applicationId` `com.maratonou.app`
 - [x] `google-services.json` presente + plugin aplicado
 - [x] compileSdk/targetSdk 36, minSdk 24
-- [x] `versionCode 1` / `versionName 1.0.0`
+- [x] `versionCode 2` / `versionName 1.0.1`
 - [x] `POST_NOTIFICATIONS` (via manifest do plugin messaging)
 - [x] Ícone de push + cor de acento
 - [x] Intent-filters App Links + `maratonou://`

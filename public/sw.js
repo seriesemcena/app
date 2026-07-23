@@ -1,7 +1,7 @@
 /* Maratonou — service worker for app shell, public assets and push. */
 
 const CACHE_PREFIX = 'maratonou-';
-const STATIC_CACHE = `${CACHE_PREFIX}static-v4`;
+const STATIC_CACHE = `${CACHE_PREFIX}static-v5`;
 const IMAGE_CACHE = `${CACHE_PREFIX}images-v4`;
 const OFFLINE_URL = '/offline';
 const STATIC_ASSETS = [
@@ -12,9 +12,9 @@ const STATIC_ASSETS = [
   '/logo_light.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/fonts/Area-SemiBold.woff',
   '/fonts/Area-Bold.woff',
-  '/fonts/Area-extrabold.woff',
+  '/fonts/Area-BoldItalic.woff',
+  '/fonts/Area-Black.woff',
   '/fonts/Greed-SemiBold.woff',
 ];
 

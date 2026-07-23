@@ -106,10 +106,10 @@ export default function SeriesPage() {
     return Array.from(groups, ([date, groupItems]) => ({ date, items: groupItems }));
   }, [emBreve]);
 
-  const TAG_STYLES: Record<WatchingTag, { bg: string; color: string; label: string }> = {
-    novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo') },
-    nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido') },
-    atrasado:      { bg: '#e0352b', color: '#fff', label: t('tags.atrasado') },
+  const TAG_STYLES: Record<WatchingTag, { bg: string; color: string; label: string; icon: 'sparkles' | 'eye' | 'clock' }> = {
+    novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo'), icon: 'sparkles' },
+    nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido'), icon: 'eye' },
+    atrasado:      { bg: '#e0352b', color: '#fff', label: t('tags.atrasado'), icon: 'clock' },
   };
 
   return (
@@ -220,7 +220,7 @@ export default function SeriesPage() {
                       items={watchedList as unknown as TMDBItem[]}
                       onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
                       padding="0"
-                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)' })}
+                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' })}
                     />
                   )}
                 </div>

@@ -13,7 +13,7 @@
 import {
   doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, increment, writeBatch,
   collection, addDoc, getDocs, deleteDoc, query, orderBy, limit, onSnapshot, where,
-  deleteField, startAfter, runTransaction, serverTimestamp,
+  deleteField, documentId, startAfter, startAt, endAt, runTransaction, serverTimestamp,
   type Firestore, type Unsubscribe, type QueryDocumentSnapshot, type DocumentData,
   type QueryConstraint,
 } from 'firebase/firestore';
@@ -470,6 +470,12 @@ const EMPTY_RATING_SUMMARY = (titleKey: string): RatingSummary => ({
 const ratingRef = (db: Firestore, titleKey: string, uid: string) =>
   doc(db, 'ratings', titleKey, 'userRatings', uid);
 
+function invalidateRatingSummary(titleKey: string) {
+  invalidateCache(`rating-summary:${titleKey}`);
+  const episodeMatch = titleKey.match(/^ep_(.+)_s\d+_e\d+$/);
+  if (episodeMatch) invalidateCache(`rating-summary:tv_${episodeMatch[1]}:episodes`);
+}
+
 export const dbRatingStore = {
   async set(db: Firestore, titleKey: string, uid: string, rawRating: number, sourceReviewId?: string) {
     if (!uid) return;
@@ -486,7 +492,7 @@ export const dbRatingStore = {
         ...(!current.exists() ? { createdAt: serverTimestamp() } : {}),
       }), { merge: true });
     });
-    invalidateCache(`rating-summary:${titleKey}`);
+    invalidateRatingSummary(titleKey);
   },
   async removeIfSource(db: Firestore, titleKey: string, uid: string, sourceReviewId: string) {
     const ref = ratingRef(db, titleKey, uid);
@@ -494,7 +500,7 @@ export const dbRatingStore = {
       const snap = await transaction.get(ref);
       if (snap.exists() && snap.data()?.sourceReviewId === sourceReviewId) transaction.delete(ref);
     });
-    invalidateCache(`rating-summary:${titleKey}`);
+    invalidateRatingSummary(titleKey);
   },
 };
 
@@ -506,6 +512,41 @@ export const dbRatingSummaryStore = {
       return snap.exists()
         ? { ...EMPTY_RATING_SUMMARY(titleKey), ...snap.data() } as RatingSummary
         : EMPTY_RATING_SUMMARY(titleKey);
+    }, { staleIfError: true });
+  },
+
+  /** Combines the compact summaries of every episode in a series.
+      Episode ratings use keys such as `ep_125988_s1_e1`; querying the
+      summaries by document-id prefix avoids reading private per-user ratings. */
+  async getSeries(db: Firestore, tvId: string): Promise<RatingSummary> {
+    const titleKey = `tv_${tvId}`;
+    return cachedRequest(`rating-summary:${titleKey}:episodes`, CACHE_TTL.ratingSummary, async () => {
+      const prefix = `ep_${tvId}_`;
+      const snap = await getDocs(query(
+        collection(db, 'ratingSummaries'),
+        orderBy(documentId()),
+        startAt(prefix),
+        endAt(`${prefix}\uf8ff`),
+      ));
+      dataCostDebug.query('rating-summary:series', snap.size);
+
+      const combined = snap.docs.reduce((summary, ratingDoc) => {
+        const current = ratingDoc.data() as Partial<RatingSummary>;
+        const currentTotal = Math.max(0, Number(current.total) || 0);
+        const currentSum = Math.max(
+          0,
+          Number(current.sum) || ((Number(current.average) || 0) * currentTotal),
+        );
+        summary.total += currentTotal;
+        summary.sum += currentSum;
+        Object.entries(current.distribution || {}).forEach(([rating, count]) => {
+          summary.distribution[rating] = (summary.distribution[rating] || 0) + (Number(count) || 0);
+        });
+        return summary;
+      }, EMPTY_RATING_SUMMARY(titleKey));
+
+      combined.average = combined.total ? combined.sum / combined.total : 0;
+      return combined;
     }, { staleIfError: true });
   },
 };

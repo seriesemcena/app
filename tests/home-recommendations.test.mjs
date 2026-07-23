@@ -42,3 +42,37 @@ test('mobile recommendation grids keep complete pairs after deduplication', asyn
   assert.match(css, /\.masonry-cols\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.doesNotMatch(css, /\.masonry-cols\s*\{\s*columns:\s*2/);
 });
+
+test('recommended sections switch independently between grid and horizontal list', async () => {
+  const [home, pt, en, es] = await Promise.all([
+    read('src/app/home/page.tsx'),
+    read('src/locales/pt-BR/home.json'),
+    read('src/locales/en-US/home.json'),
+    read('src/locales/es-ES/home.json'),
+  ]);
+
+  assert.match(home, /useState<HomeSectionView>\('grid'\)/);
+  assert.match(home, /aria-pressed=\{active\}/);
+  assert.match(home, /view === 'grid' \|\| !title/);
+  assert.match(home, /scrollSnapType:\s*'x mandatory'/);
+  assert.match(home, /scrollPaddingInline:\s*16/);
+  assert.match(home, /<TMDBGridCard item=\{item\}/);
+
+  for (const locale of [pt, en, es]) {
+    const messages = JSON.parse(locale);
+    assert.equal(typeof messages.view.grid, 'string');
+    assert.equal(typeof messages.view.list, 'string');
+    assert.equal(typeof messages.view.label, 'string');
+  }
+});
+
+test('mobile watchlist cards keep compact single-line season metadata', async () => {
+  const home = await read('src/app/home/page.tsx');
+
+  assert.match(home, /<Txt size=\{15\} weight=\{800\} color=\{T\.t1\}/);
+  assert.match(
+    home,
+    /\{t\('season', \{ number: seasonNumber, ns: 'title' \}\)\} · \{t\('episode', \{ number: episodeNumber, ns: 'title' \}\)\}/,
+  );
+  assert.match(home, /<Txt size=\{12\} weight=\{400\} color=\{T\.t2\}/);
+});

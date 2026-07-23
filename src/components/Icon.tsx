@@ -2,47 +2,6 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import {
-  AddCircle,
-  AltArrowDown,
-  AltArrowLeft,
-  AltArrowRight,
-  Bell,
-  Bookmark,
-  Calendar,
-  Chart2,
-  ChatRoundLine,
-  CheckCircle,
-  Clapperboard,
-  ClockCircle,
-  CloseCircle,
-  CrownMinimalistic,
-  Eye,
-  FireMinimalistic,
-  Flag,
-  Heart,
-  Home,
-  InfoCircle,
-  List,
-  LockKeyholeMinimalistic,
-  Logout2,
-  Magnifier,
-  MapPoint,
-  MedalRibbonStar,
-  MenuDots,
-  Moon,
-  Pen2,
-  Play,
-  Reply,
-  SettingsMinimalistic,
-  Share,
-  SmileCircle,
-  Star,
-  Tv,
-  TrashBinTrash,
-  User,
-  WiFiRouterMinimalistic,
-} from '@solar-icons/react/ssr';
 import type { IconName } from '@/lib/tokens';
 
 type Props = { name: IconName; size?: number; color?: string; style?: CSSProperties };
@@ -61,54 +20,56 @@ type SFSymbolsNativePlugin = {
 
 const SFSymbols = registerPlugin<SFSymbolsNativePlugin>('SFSymbols');
 
-const ICONS: Record<IconName, typeof Home> = {
-  home: Home,
-  search: Magnifier,
-  calendar: Calendar,
-  list: List,
-  user: User,
-  star: Star,
-  starO: Star,
-  heart: Heart,
-  heartO: Heart,
-  play: Play,
-  check: CheckCircle,
-  plus: AddCircle,
-  plusPlain: AddCircle,
-  chevronR: AltArrowRight,
-  chevronL: AltArrowLeft,
-  chevronD: AltArrowDown,
-  bell: Bell,
-  settings: SettingsMinimalistic,
-  film: Clapperboard,
-  tv: Tv,
-  crown: CrownMinimalistic,
-  close: CloseCircle,
-  info: InfoCircle,
-  eye: Eye,
-  share: Share,
-  fire: FireMinimalistic,
-  mappin: MapPoint,
-  wifi: WiFiRouterMinimalistic,
-  lock: LockKeyholeMinimalistic,
-  smile: SmileCircle,
-  message: ChatRoundLine,
-  flag: Flag,
-  chart: Chart2,
-  chevronLeft: AltArrowLeft,
-  chevronRight: AltArrowRight,
-  bookmark: Bookmark,
-  award: MedalRibbonStar,
-  clock: ClockCircle,
-  menuDots: MenuDots,
-  moon: Moon,
-  logout: Logout2,
-  reply: Reply,
-  edit: Pen2,
-  trash: TrashBinTrash,
+const ICONS: Record<IconName, string> = {
+  home: 'home-2-solid',
+  search: 'magnifying-glass-solid',
+  calendar: 'blank-calendar-solid',
+  list: 'play-list-6-solid',
+  user: 'user-circle-single-solid',
+  star: 'star-circle-solid',
+  starO: 'star-circle-solid',
+  heart: 'heart-solid',
+  heartO: 'heart-solid',
+  play: 'play-list-4-solid',
+  check: 'check-square-solid',
+  plus: 'control-plus-circle',
+  plusPlain: 'control-plus',
+  chevronR: 'control-chevron-right',
+  chevronL: 'control-chevron-left',
+  chevronD: 'control-chevron-down',
+  bell: 'bell-solid',
+  settings: 'cog-solid',
+  film: 'film-solid',
+  tv: 'screen-curve-solid',
+  crown: 'crown-solid',
+  close: 'control-close-circle',
+  info: 'information-circle-solid',
+  eye: 'control-eye',
+  share: 'share-link-solid',
+  fire: 'campfire-solid',
+  mappin: 'location-pin-3-solid',
+  wifi: 'router-wifi-network-solid',
+  lock: 'padlock-square-1-solid',
+  smile: 'happy-face-solid',
+  message: 'chat-bubble-text-square-solid',
+  flag: 'triangle-flag-solid',
+  chart: 'graph-bar-increase-square-solid',
+  chevronLeft: 'control-chevron-left',
+  chevronRight: 'control-chevron-right',
+  bookmark: 'bookmark-solid',
+  award: 'trophy-solid',
+  clock: 'stopwatch-solid',
+  menuDots: 'control-menu-dots',
+  moon: 'dark-dislay-mode-solid',
+  logout: 'logout-1-solid',
+  reply: 'discussion-converstion-reply-solid',
+  edit: 'pencil-square-solid',
+  trash: 'recycle-bin-solid',
+  sparkles: 'magic-wand-1-solid',
+  grid: 'dashboard-3-solid',
 };
 
-const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlain', 'crown', 'fire', 'menuDots']);
+const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlain', 'crown', 'fire', 'menuDots', 'sparkles']);
 
 /** Native iOS names. The public IconName API stays platform-independent. */
 const SF_SYMBOLS: Record<IconName, string> = {
@@ -156,6 +117,8 @@ const SF_SYMBOLS: Record<IconName, string> = {
   reply: 'arrowshape.turn.up.left',
   edit: 'pencil',
   trash: 'trash',
+  sparkles: 'sparkles',
+  grid: 'square.grid.2x2',
 };
 
 const nativeSymbolCache = new Map<string, Promise<string | null>>();
@@ -175,7 +138,7 @@ function loadNativeSymbol(name: IconName, size: number): Promise<string | null> 
 }
 
 export function Icon({ name, size = 22, color = 'currentColor', style = {} }: Props) {
-  const SolarIcon = ICONS[name];
+  const iconId = ICONS[name];
   const [nativeMask, setNativeMask] = useState<string | null>(null);
 
   useEffect(() => {
@@ -223,20 +186,10 @@ export function Icon({ name, size = 22, color = 'currentColor', style = {} }: Pr
             maskSize: 'contain',
           }}
         />
-      ) : name === 'plusPlain' ? (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            fill="currentColor"
-            fillRule="evenodd"
-            d="M13 13v7a1 1 0 0 1-2 0v-7H4a1 1 0 0 1 0-2h7V4a1 1 0 0 1 2 0v7h7a1 1 0 0 1 0 2z"
-          />
-        </svg>
       ) : (
-        <SolarIcon
-          size={size}
-          color="currentColor"
-          weight={BOLD_ICONS.has(name) ? 'Bold' : 'Outline'}
-        />
+        <svg width={size} height={size} viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+          <use href={`/icons/streamline-flex-solid.svg#${iconId}`} />
+        </svg>
       )}
     </span>
   );

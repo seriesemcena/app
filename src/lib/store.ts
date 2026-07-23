@@ -136,6 +136,15 @@ export const revStore = {
       localStorage.setItem(REV_KEY, JSON.stringify(all));
     } catch {}
   },
+  getByPrefix(prefix: string): Review[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const all: Record<string, Review[]> = JSON.parse(localStorage.getItem(REV_KEY) || '{}');
+      return Object.entries(all).flatMap(([key, reviews]) =>
+        key.startsWith(prefix) && Array.isArray(reviews) ? reviews : [],
+      );
+    } catch { return []; }
+  },
   addReview(itemKey: string, review: Review) {
     const list = revStore.get(itemKey);
     list.unshift(review);

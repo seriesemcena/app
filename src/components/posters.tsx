@@ -1,6 +1,6 @@
 'use client';
 import React, { CSSProperties, ReactNode, useState, useEffect } from 'react';
-import { T } from '@/lib/tokens';
+import { T, type IconName } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { Txt, Skeleton } from './primitives';
 import { tmdbImg, normalizeTMDBImageUrl, normalize, type TMDBItem } from '@/lib/tmdb';
@@ -167,12 +167,14 @@ export const TMDBPosterCard = ({
 export const SkeletonCards = ({ count = 5, size = 'md' }: { count?: number; size?: 'sm' | 'md' | 'lg' }) => {
   const [w, h] = dimsBy[size];
   return (
-    <div style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16 }}>
+    <div style={{ display: 'flex', gap: 12, padding: '0 16px 12px', overflow: 'hidden' }}>
       {[...Array(count)].map((_, i) => (
-        <div key={i} style={{ width: w, flexShrink: 0 }}>
-          <Skeleton w={w} h={h} radius={T.radiusSm} />
-          <Skeleton w={w * 0.8} h={10} style={{ marginTop: 8 }} />
-          <Skeleton w={w * 0.5} h={8} style={{ marginTop: 4 }} />
+        <div key={i} style={{ width: w, flexShrink: 0, overflow: 'hidden', borderRadius: 16, background: '#121215', border: '1px solid #29292f' }}>
+          <Skeleton w={w} h={h} radius={0} />
+          <div style={{ padding: '10px 11px 12px' }}>
+            <Skeleton w={w * 0.72} h={12} radius={5} />
+            <Skeleton w={w * 0.4} h={9} radius={4} style={{ marginTop: 6 }} />
+          </div>
         </div>
       ))}
     </div>
@@ -194,7 +196,7 @@ export const TMDBGridCard = ({
 }: {
   item: TMDBItem;
   onClick?: () => void;
-  tag?: { label: string; color: string; bg: string };
+  tag?: { label: string; color: string; bg: string; icon?: IconName };
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -338,19 +340,15 @@ export const TMDBGridCard = ({
 
         {/* Tag badge */}
         {tag && (
-          <div style={{
+          <div role="img" aria-label={tag.label} title={tag.label} style={{
             position: 'absolute', top: 8, left: 8, zIndex: 3,
-            padding: '3px 7px', borderRadius: 6,
+            width: 28, height: 28, borderRadius: 8,
             background: tag.bg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
           } as React.CSSProperties}>
-            <span style={{
-              fontSize: 9, fontWeight: 800,
-              color: tag.color,
-              fontFamily: "'Area','Inter',sans-serif",
-              letterSpacing: 0.4,
-            }}>{tag.label}</span>
+            <Icon name={tag.icon ?? 'sparkles'} size={15} color={tag.color} />
           </div>
         )}
 
@@ -443,19 +441,15 @@ export const TMDBGridCard = ({
 
         {/* Tag badge — topo esquerdo */}
         {tag && (
-          <div style={{
+          <div role="img" aria-label={tag.label} title={tag.label} style={{
             position: 'absolute', top: 8, left: 8,
-            padding: '3px 7px', borderRadius: 6,
+            width: 28, height: 28, borderRadius: 8,
             background: tag.bg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
           } as React.CSSProperties}>
-            <span style={{
-              fontSize: 9, fontWeight: 800,
-              color: tag.color,
-              fontFamily: "'Area','Inter',sans-serif",
-              letterSpacing: 0.4,
-            }}>{tag.label}</span>
+            <Icon name={tag.icon ?? 'sparkles'} size={15} color={tag.color} />
           </div>
         )}
       </div>
@@ -491,13 +485,13 @@ export const MasonryGrid2 = ({
   onItem: (item: TMDBItem) => void;
   loading?: boolean;
   skeletonCount?: number;
-  getTag?: (item: TMDBItem) => { label: string; color: string; bg: string } | undefined;
+  getTag?: (item: TMDBItem) => { label: string; color: string; bg: string; icon?: IconName } | undefined;
   padding?: string;
 }) => {
   if (loading) return (
     <div className="masonry-cols" style={{ padding }}>
       {Array.from({ length: skeletonCount }).map((_, i) => (
-        <div key={i} className="masonry-item masonry-skeleton" style={{ borderRadius: 16, background: 'var(--c-surface2)', aspectRatio: '5/6.6' }} />
+        <div key={i} className="masonry-item masonry-skeleton" style={{ borderRadius: 16, aspectRatio: '5/6.6' }} />
       ))}
     </div>
   );

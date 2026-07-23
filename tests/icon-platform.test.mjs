@@ -16,16 +16,22 @@ function objectKeys(source, constantName) {
     .sort();
 }
 
-test('every Solar fallback has a native SF Symbols equivalent', async () => {
-  const iconSource = await readProjectFile('src/components/Icon.tsx');
+test('every Streamline Flex fallback has a native SF Symbols equivalent', async () => {
+  const [iconSource, spriteSource, packageJson] = await Promise.all([
+    readProjectFile('src/components/Icon.tsx'),
+    readProjectFile('public/icons/streamline-flex-solid.svg'),
+    readProjectFile('package.json'),
+  ]);
 
   assert.deepEqual(objectKeys(iconSource, 'SF_SYMBOLS'), objectKeys(iconSource, 'ICONS'));
   assert.match(iconSource, /registerPlugin<SFSymbolsNativePlugin>\('SFSymbols'\)/);
   assert.match(iconSource, /Capacitor\.getPlatform\(\) === 'ios'/);
-  assert.match(iconSource, /<SolarIcon/);
-  assert.match(iconSource, /name === 'plusPlain'/);
-  assert.match(iconSource, /M13 13v7a1 1 0 0 1-2 0v-7H4/);
-  assert.match(iconSource, /\? 'Bold' : 'Outline'/);
+  assert.match(iconSource, /streamline-flex-solid\.svg#\$\{iconId\}/);
+  assert.match(spriteSource, /Streamline Flex solid icons by Streamline \(CC BY 4\.0\)/);
+  assert.match(spriteSource, /id="home-2-solid"/);
+  assert.match(spriteSource, /id="control-plus"/);
+  assert.match(packageJson, /"@iconify-json\/streamline-flex"/);
+  assert.doesNotMatch(packageJson, /"@solar-icons\/react"/);
 });
 
 test('the iOS bridge registers the native SF Symbols plugin', async () => {

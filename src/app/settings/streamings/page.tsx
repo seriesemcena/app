@@ -11,14 +11,15 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbProfileStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
+import { STREAMING_COLORS } from '@/lib/streamingPlatforms';
 
 const SERVICES = [
   { id: 'Netflix',    color: '#E50914', icon: 'N',  monthly: 'R$ 39,90' },
-  { id: 'Prime',      color: '#00A8E0', icon: 'P',  monthly: 'R$ 19,90' },
-  { id: 'Disney+',    color: '#113CCF', icon: 'D+', monthly: 'R$ 27,90' },
-  { id: 'HBO',        color: '#5800A0', icon: 'H',  monthly: 'R$ 34,90' },
+  { id: 'Prime',      color: STREAMING_COLORS.prime, icon: 'P',  monthly: 'R$ 19,90' },
+  { id: 'Disney+',    color: STREAMING_COLORS.disney, icon: 'D+', monthly: 'R$ 27,90' },
+  { id: 'HBO',        color: STREAMING_COLORS.hbo, icon: 'H',  monthly: 'R$ 34,90' },
   { id: 'Apple',      color: '#555',    icon: '',  monthly: 'R$ 21,90' },
-  { id: 'Globo',      color: '#D62929', icon: 'G',  monthly: 'R$ 19,90' },
+  { id: 'Globo',      color: STREAMING_COLORS.globo, icon: 'G',  monthly: 'R$ 19,90' },
   { id: 'Paramount',  color: '#0064FF', icon: 'P+', monthly: 'R$ 19,90' },
   { id: 'Crunchyroll',color: '#F47521', icon: 'C',  monthly: 'R$ 11,99' },
   { id: 'Mubi',       color: '#000',    icon: 'M',  monthly: 'R$ 28,90' },

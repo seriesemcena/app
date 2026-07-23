@@ -35,6 +35,9 @@
   "genres": "Géneros favoritos",
   "followingLabel": "Siguiendo",
   "followersLabel": "Seguidores",
+  "connectionsTitle": "Conexiones",
+  "loadMoreSocial": "Cargar más",
+  "loadingSocial": "Cargando…",
   "myLists": "Mis listas",
   "seeAll": "Ver todo",
   "seeMore": "Ver más",
@@ -55,7 +58,7 @@
     "moviesLabel": "películas",
     "titlesCount": "{{h}}h · {{n}} títulos"
   },
-  "streaming": "Streaming",
+  "streaming": "Mis suscripciones",
   "monthlyExpenses": "Gastos mensuales",
   "noExpenses": "Sin gastos agregados",
   "followersEmptyDetail": "Cuando alguien te siga, aparecerá aquí.",

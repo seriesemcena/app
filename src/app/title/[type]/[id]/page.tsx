@@ -62,6 +62,7 @@ export default function TitleDetailPage() {
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [episodeRatings, setEpisodeRatings] = useState<Review[]>([]);
   const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
   const [reviewText, setReviewText] = useState('');
   const [reviewRating, setReviewRating] = useState(0);
@@ -83,8 +84,12 @@ export default function TitleDetailPage() {
   useEffect(() => {
     const local = revStore.get(itemKey);
     setReviews(local);
+    setEpisodeRatings(isTV ? revStore.getByPrefix(`ep_${id}_`).filter((review) => review.rating > 0) : []);
     if (!firebaseConfigured) return;
-    dbRatingSummaryStore.get(getDB(), itemKey).then(setRatingSummary).catch(() => {});
+    const summaryRequest = isTV
+      ? dbRatingSummaryStore.getSeries(getDB(), id)
+      : dbRatingSummaryStore.get(getDB(), itemKey);
+    summaryRequest.then(setRatingSummary).catch(() => {});
     dbRevStore.get(getDB(), itemKey).then(cloud => {
       if (cloud.length > 0) {
         const cloudIds = new Set(cloud.map(r => r.id));
@@ -94,7 +99,7 @@ export default function TitleDetailPage() {
         revStore.set(itemKey, merged);
       }
     }).catch(() => {});
-  }, [itemKey]);
+  }, [id, isTV, itemKey]);
 
   /* ── Giphy (movie reviews only) ── */
   useEffect(() => {
@@ -291,11 +296,13 @@ export default function TitleDetailPage() {
   };
 
   const ratedReviews = reviews.filter((review) => review.rating > 0);
+  const locallyRatedReviews = isTV ? episodeRatings : ratedReviews;
   const avgRating = ratingSummary?.total
     ? ratingSummary.average.toFixed(1)
-    : ratedReviews.length
-      ? (ratedReviews.reduce((sum, review) => sum + review.rating, 0) / ratedReviews.length).toFixed(1)
+    : locallyRatedReviews.length
+      ? (locallyRatedReviews.reduce((sum, review) => sum + review.rating, 0) / locallyRatedReviews.length).toFixed(1)
       : null;
+  const totalRatings = ratingSummary?.total || locallyRatedReviews.length;
 
   return (
     <Frame>
@@ -466,7 +473,7 @@ export default function TitleDetailPage() {
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, background: '#FFEB13' }}>
                   <Icon name="star" size={11} color="#1a1400" />
                   <Txt size={11} weight={700} color="#1a1400">{avgRating}/10</Txt>
-                  <Txt size={10} weight={500} color="#1a1400" style={{ opacity: 0.6 }}>({reviews.length})</Txt>
+                  <Txt size={10} weight={500} color="#1a1400" style={{ opacity: 0.6 }}>({totalRatings})</Txt>
                 </span>
               ) : (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, background: T.surface2 }}>
@@ -507,47 +514,18 @@ export default function TitleDetailPage() {
               </>
             )}
 
-            {/* ── Próximo episódio (séries em exibição) ── */}
-            {isTV && (() => {
-              const nextEp = (detail as any).next_episode_to_air;
-              if (!nextEp) return null;
-              const airDate = nextEp.air_date
-                ? new Date(nextEp.air_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
-                : null;
-              return (
-                <div style={{
-                  marginTop: 16, padding: 0, borderRadius: 16, overflow: 'hidden', minHeight: 104,
-                  background: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.025)',
-                  boxShadow: isDark
-                    ? 'inset 0 1px 0 rgba(255,255,255,0.055)'
-                    : 'inset 0 1px 0 rgba(255,255,255,0.65)',
-                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`,
-                  display: 'grid',
-                  gridTemplateColumns: nextEp.still_path ? 'minmax(0, 1fr) 124px' : '1fr',
-                  alignItems: 'stretch', gap: 0,
-                }}>
-                  <div style={{ minWidth: 0, padding: '14px 10px 14px 16px', alignSelf: 'center' }}>
-                    <Txt size={9} weight={800} color={T.t3} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 1.15, marginBottom: 8 }}>{t('nextEpisode')}</Txt>
-                    <Txt size={18} weight={800} style={{ display: 'block', lineHeight: 1.18, marginBottom: airDate ? 6 : 0, letterSpacing: -0.25 }}>
-                      {nextEp.name || `Episódio ${nextEp.episode_number}`}
-                    </Txt>
-                    {airDate && (
-                      <Txt size={11} color={T.t3} style={{ display: 'block' }}>{airDate}</Txt>
-                    )}
-                  </div>
-                  {nextEp.still_path && (
-                    <ImgWithSkeleton
-                      src={tmdbImg(nextEp.still_path, 'w300')}
-                      alt={nextEp.name || `Episódio ${nextEp.episode_number}`}
-                      width={124}
-                      height="100%"
-                      objectPosition="center"
-                      style={{ minHeight: 104, alignSelf: 'stretch' }}
-                    />
-                  )}
-                </div>
-              );
-            })()}
+            {/* ── Progresso da temporada selecionada ── */}
+            {isTV && (
+              <SeasonProgressPanel
+                tvId={id}
+                seasonNum={activeSeason}
+                fallbackRuntime={Number((detail as any).episode_run_time?.[0]) || 45}
+                refreshKey={epWatchedRefresh}
+                user={user}
+                onChanged={() => setEpWatchedRefresh((value) => value + 1)}
+                onToast={showToast}
+              />
+            )}
 
           </div>
 
@@ -669,16 +647,6 @@ export default function TitleDetailPage() {
               </div>
             )}
 
-          </div>
-
-          {/* ── Relatar problema (dados errados, imagem quebrada etc.) ── */}
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 16px 0' }}>
-            <button
-              onClick={openProblemReport}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', padding: '10px 14px' }}>
-              <Icon name="flag" size={13} color={T.t4} />
-              <Txt size={12} weight={600} color={T.t4}>Relatar problema</Txt>
-            </button>
           </div>
 
           <div style={{ height: 100 }} />
@@ -1222,6 +1190,175 @@ function SeasonDropdown({ seasons, active, onSelect }: { seasons: number[]; acti
   );
 }
 
+function formatSeasonTime(minutes: number) {
+  const safeMinutes = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  if (hours === 0) return `${mins} min`;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}min`;
+}
+
+function SeasonProgressPanel({
+  tvId,
+  seasonNum,
+  fallbackRuntime,
+  refreshKey,
+  user,
+  onChanged,
+  onToast,
+}: {
+  tvId: string;
+  seasonNum: number;
+  fallbackRuntime: number;
+  refreshKey: number;
+  user: { uid: string } | null | undefined;
+  onChanged: () => void;
+  onToast: (message: string) => void;
+}) {
+  const { t } = useTranslation('title');
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const { data, loading } = useTMDB(() => tmdb.season(tvId, seasonNum), [tvId, seasonNum]);
+  const episodes: any[] = data?.episodes || [];
+  const [watchedMap, setWatchedMap] = useState<Record<string, number[]>>({});
+
+  useEffect(() => {
+    setWatchedMap(epWatchedStore.getShow(tvId));
+  }, [tvId, seasonNum, refreshKey]);
+
+  const watchedNumbers = new Set(watchedMap[String(seasonNum)] ?? []);
+  const watchedCount = episodes.filter((episode) => watchedNumbers.has(episode.episode_number)).length;
+  const totalCount = episodes.length;
+  const percentage = totalCount > 0 ? Math.round((watchedCount / totalCount) * 100) : 0;
+  const completed = totalCount > 0 && watchedCount === totalCount;
+  const remainingMinutes = episodes.reduce((total, episode) => {
+    if (watchedNumbers.has(episode.episode_number)) return total;
+    const runtime = Number(episode.runtime) || fallbackRuntime;
+    return total + runtime;
+  }, 0);
+  const circleLength = 138.23;
+
+  const finishSeason = async () => {
+    if (totalCount === 0 || completed) return;
+    const nextShow = {
+      ...epWatchedStore.getShow(tvId),
+      [String(seasonNum)]: episodes.map((episode) => episode.episode_number),
+    };
+    epWatchedStore.setShow(tvId, nextShow);
+    setWatchedMap(nextShow);
+    onChanged();
+    onToast(t('seasonFinishedToast', { number: seasonNum }));
+
+    if (firebaseConfigured && user) {
+      try {
+        await dbEpWatchedStore.set(getDB(), user.uid, epWatchedStore.getAll());
+      } catch {}
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        height: 154, marginTop: 16, borderRadius: 18,
+        background: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.025)',
+        border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`,
+        overflow: 'hidden', position: 'relative',
+      }}>
+        <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />
+      </div>
+    );
+  }
+
+  if (totalCount === 0) return null;
+
+  return (
+    <div style={{
+      marginTop: 16, padding: '16px', borderRadius: 18, overflow: 'hidden',
+      position: 'relative',
+      background: isDark
+        ? 'linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018))'
+        : 'linear-gradient(145deg, rgba(0,0,0,0.025), rgba(0,0,0,0.012))',
+      border: `1px solid ${isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.08)'}`,
+      boxShadow: isDark
+        ? 'inset 0 1px 0 rgba(255,255,255,0.045)'
+        : 'inset 0 1px 0 rgba(255,255,255,0.8)',
+    }}>
+      <div style={{
+        position: 'absolute', width: 150, height: 150, borderRadius: '50%',
+        right: -60, top: -75, pointerEvents: 'none',
+        background: `radial-gradient(circle, ${T.pink}18 0%, transparent 70%)`,
+      }} />
+
+      <Txt size={9} weight={800} color={T.t3} style={{
+        display: 'block', textTransform: 'uppercase', letterSpacing: 1.15, marginBottom: 12,
+      }}>
+        {t('seasonProgress')}
+      </Txt>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+        <div
+          role="progressbar"
+          aria-label={t('seasonProgress')}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percentage}
+          style={{ width: 68, height: 68, flexShrink: 0, position: 'relative' }}
+        >
+          <svg width="68" height="68" viewBox="0 0 58 58" aria-hidden>
+            <circle cx="29" cy="29" r="22" fill="none" stroke={T.surface2} strokeWidth="7" />
+            <circle
+              cx="29" cy="29" r="22" fill="none" stroke={completed ? '#7BE35A' : T.pink}
+              strokeWidth="7" strokeLinecap="round"
+              strokeDasharray={circleLength}
+              strokeDashoffset={circleLength * (1 - percentage / 100)}
+              transform="rotate(-90 29 29)"
+              style={{ transition: 'stroke-dashoffset .35s ease' }}
+            />
+          </svg>
+          <Txt size={13} weight={800} color={T.t1} style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {percentage}%
+          </Txt>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Txt size={16} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 5 }}>
+            {t('season', { number: seasonNum })}
+          </Txt>
+          <Txt size={12} weight={600} color={T.t2} style={{ display: 'block', marginBottom: 3 }}>
+            {t('seasonProgressEpisodes', { watched: watchedCount, total: totalCount })}
+          </Txt>
+          <Txt size={11} color={completed ? '#7BE35A' : T.t3} style={{ display: 'block' }}>
+            {completed
+              ? t('seasonCompleted')
+              : t('seasonTimeRemaining', { time: formatSeasonTime(remainingMinutes) })}
+          </Txt>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        disabled={completed}
+        onClick={() => { void finishSeason(); }}
+        style={{
+          width: '100%', marginTop: 14, minHeight: 42, padding: '10px 14px',
+          borderRadius: 999, border: `1px solid ${completed ? 'rgba(123,227,90,.26)' : T.pillActiveBorder}`,
+          background: completed ? 'rgba(123,227,90,.10)' : T.pillActiveBg,
+          color: completed ? '#7BE35A' : T.pillActiveText,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          fontFamily: "'Area','Inter',sans-serif", fontSize: 13, fontWeight: 800,
+          cursor: completed ? 'default' : 'pointer',
+        }}
+      >
+        <Icon name="check" size={15} color={completed ? '#7BE35A' : T.pillActiveText} />
+        {completed ? t('seasonCompleted') : t('finishSeason')}
+      </button>
+    </div>
+  );
+}
+
 function EpisodeList({ tvId, seasonNum, showName, network, onEpisode, refreshKey }: { tvId: string; seasonNum: number; showName: string; network: string; onEpisode: (ep: any) => void; refreshKey?: number }) {
   const { t } = useTranslation('title');
   const { data, loading } = useTMDB(() => tmdb.season(tvId, seasonNum), [tvId, seasonNum]);
@@ -1233,12 +1370,12 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode, refreshKey
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {[...Array(5)].map((_, i) => (
-        <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}` }}>
-          <div style={{ width: 120, height: 80, borderRadius: 10, background: T.surface2, flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
+        <div key={i} style={{ minHeight: 101, display: 'flex', gap: 14, alignItems: 'stretch', padding: 0, overflow: 'hidden', background: T.card, borderRadius: 16, border: `1px solid ${T.border}` }}>
+          <div style={{ width: 148, minHeight: 101, background: T.surface2, flexShrink: 0 }} />
+          <div style={{ flex: 1, padding: '14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ height: 14, width: '70%', background: T.surface2, borderRadius: 4, marginBottom: 8 }} />
-            <div style={{ height: 12, width: '50%', background: T.surface2, borderRadius: 4, marginBottom: 8 }} />
-            <div style={{ height: 22, width: 64, background: T.surface2, borderRadius: 8 }} />
+            <div style={{ height: 11, width: '50%', background: T.surface2, borderRadius: 4, marginBottom: 5 }} />
+            <div style={{ height: 11, width: '38%', background: T.surface2, borderRadius: 4 }} />
           </div>
         </div>
       ))}
@@ -1252,42 +1389,47 @@ function EpisodeList({ tvId, seasonNum, showName, network, onEpisode, refreshKey
           key={ep.id}
           onClick={() => onEpisode(ep)}
           style={{
-            width: '100%', display: 'flex', gap: 14, alignItems: 'center',
-            padding: '12px',
+            width: '100%', minHeight: 101, display: 'flex', gap: 14, alignItems: 'stretch',
+            padding: 0, overflow: 'hidden',
             background: T.card,
-            borderRadius: 14,
+            borderRadius: 16,
             border: `1px solid ${T.border}`,
             cursor: 'pointer', textAlign: 'left',
             boxSizing: 'border-box',
           } as React.CSSProperties}>
-          {/* Thumbnail — landscape */}
-          <ImgWithSkeleton
-            src={tmdbImg(ep.still_path, 'w300')}
-            alt=""
-            width={120} height={80}
-            radius={10}
-          />
+          {/* Landscape thumbnail — same composition as "Minha lista" on home */}
+          <div style={{ width: 148, minHeight: 101, overflow: 'hidden', flexShrink: 0, background: T.surface2, position: 'relative' }}>
+            <ImgWithSkeleton
+              src={tmdbImg(ep.still_path, 'w300')}
+              alt={ep.name || t('episode', { number: ep.episode_number })}
+              width="100%" height="100%"
+              style={{ position: 'absolute', inset: 0 }}
+            />
+            {isWatched(ep.episode_number) && (
+              <span style={{
+                position: 'absolute', left: 10, bottom: 9,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 8px', borderRadius: 999,
+                background: '#7BE35A', boxShadow: '0 2px 8px rgba(0,0,0,.2)',
+              }}>
+                <Icon name="check" size={10} color="#11210c" />
+                <Txt size={9} weight={800} color="#11210c" style={{ letterSpacing: '0.35px', lineHeight: 1 }}>
+                  {t('watchedMark')}
+                </Txt>
+              </span>
+            )}
+          </div>
           {/* Info */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <Txt size={14} weight={700} color={T.t1}
-              style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
-              {ep.name}
+          <div style={{ flex: 1, minWidth: 0, padding: '14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Txt size={15} weight={800} color={T.t1}
+              style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 7 }}>
+              {ep.name || t('episode', { number: ep.episode_number })}
             </Txt>
-            <Txt size={12} color={T.t3} style={{ display: 'block' }}>
-              {t('season', { number: seasonNum })} - Ep {ep.episode_number}
+            <Txt size={13} weight={600} color={T.t3} style={{ display: 'block', lineHeight: 1.4 }}>
+              {t('episode', { number: ep.episode_number })}
             </Txt>
           </div>
-          {/* Check indicator — read-only, toggled from inside the episode page */}
-          {isWatched(ep.episode_number) && (
-            <div style={{
-              width: 28, height: 28, borderRadius: 14, flexShrink: 0,
-              background: T.pink,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Icon name="check" size={13} color="#fff" />
-            </div>
-          )}
-          <Icon name="chevronR" size={14} color={T.t4} />
+          <Icon name="chevronR" size={16} color={T.t4} style={{ alignSelf: 'center', marginRight: 14 }} />
         </button>
       ))}
     </div>
