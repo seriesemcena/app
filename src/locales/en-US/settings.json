@@ -166,9 +166,20 @@
   },
   "deleteAccount": {
     "title": "Delete account",
-    "body": "This action is irreversible. All your data will be permanently deleted.",
+    "body": "This action is irreversible. Your profile, lists, ratings, comments and other data will be permanently deleted.",
+    "passwordLabel": "Confirm your password",
+    "passwordPlaceholder": "Enter your current password",
+    "confirmationLabel": "Type DELETE to confirm",
+    "confirmationPlaceholder": "DELETE",
+    "warning": "You will lose access to this account and its data cannot be recovered.",
     "confirm": "Delete permanently",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "deleting": "Deleting account…",
+    "errorPassword": "The password you entered is incorrect.",
+    "errorMissingPassword": "Enter your current password to continue.",
+    "errorRecentLogin": "For your security, sign in again and repeat the deletion.",
+    "errorUnsupported": "This sign-in method cannot confirm deletion yet.",
+    "errorGeneric": "We couldn't delete your account. Please try again."
   },
   "editProfile": {
     "title": "Edit profile",

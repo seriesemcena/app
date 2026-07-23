@@ -39,6 +39,7 @@ import {
   SmileCircle,
   Star,
   Tv,
+  TrashBinTrash,
   User,
   WiFiRouterMinimalistic,
 } from '@solar-icons/react/ssr';
@@ -104,6 +105,7 @@ const ICONS: Record<IconName, typeof Home> = {
   logout: Logout2,
   reply: Reply,
   edit: Pen2,
+  trash: TrashBinTrash,
 };
 
 const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlain', 'crown', 'fire', 'menuDots']);
@@ -153,6 +155,7 @@ const SF_SYMBOLS: Record<IconName, string> = {
   logout: 'rectangle.portrait.and.arrow.right',
   reply: 'arrowshape.turn.up.left',
   edit: 'pencil',
+  trash: 'trash',
 };
 
 const nativeSymbolCache = new Map<string, Promise<string | null>>();

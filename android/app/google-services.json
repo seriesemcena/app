@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "191621346277",
+    "project_id": "maratonou-f5d93",
+    "storage_bucket": "maratonou-f5d93.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:191621346277:android:af76417efeee75d1e3b50c",
+        "android_client_info": {
+          "package_name": "com.maratonou.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "191621346277-dnl6ftd7rkkkden567niskd68sue57u6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.maratonou.app",
+            "certificate_hash": "5da66d9e899a6eeffe9d14be1124a0cb946d8259"
+          }
+        },
+        {
+          "client_id": "191621346277-a7mpqji61qn4ceavtl3n115hve0go74d.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9wNMVgVfMUPKVJbL9y9yfxZINd05OYXc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "191621346277-a7mpqji61qn4ceavtl3n115hve0go74d.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

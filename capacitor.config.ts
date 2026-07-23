@@ -1,25 +1,41 @@
+/// <reference types="@capacitor-firebase/authentication" />
+/// <reference types="@capacitor-firebase/messaging" />
+
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const config: CapacitorConfig = {
-  appId: 'com.sectime.app',
-  appName: 'Maratonou',
-  webDir: 'out',            // Next.js static export output folder
+const serverUrl = process.env.CAPACITOR_SERVER_URL?.trim();
 
-  /* ── Development: point to local/Vercel dev server ──────────────
-     Comment this block out for PRODUCTION builds so the app
-     bundles the static export instead of loading a remote URL.
+const config: CapacitorConfig = {
+  appId: 'com.maratonou.app',
+  appName: 'Maratonou',
+  /*
+   * The Next.js application has dynamic routes and server APIs, so the native
+   * shell loads the deployed application instead of an incomplete static
+   * export. `native-shell` is still bundled as a valid fallback asset set.
+   */
+  webDir: 'native-shell',
+
+  /* ── Hosted Next.js runtime ─────────────────────────────────────
+     The npm scripts provide the production URL by default. Override
+     CAPACITOR_SERVER_URL with a LAN/local URL only while developing.
      ─────────────────────────────────────────────────────────────── */
-  ...(process.env.CAPACITOR_SERVER_URL ? {
+  ...(serverUrl ? {
     server: {
-      // For local dev use a LAN URL; production omits this block and bundles `out`.
-      url: process.env.CAPACITOR_SERVER_URL,
-      cleartext: process.env.CAPACITOR_SERVER_URL.startsWith('http://'),
+      // Production uses https://maratonou.com; local device testing may use a LAN URL.
+      url: serverUrl,
+      cleartext: serverUrl.startsWith('http://'),
       androidScheme: 'https',
     },
   } : {}),
 
   plugins: {
-    PushNotifications: {
+    FirebaseAuthentication: {
+      // Social sign-in runs through the native provider UI, then the returned
+      // credential signs the Firebase JavaScript SDK into the same account.
+      skipNativeAuth: true,
+      providers: ['google.com', 'apple.com'],
+    },
+    FirebaseMessaging: {
       presentationOptions: ['badge', 'sound', 'alert'],
     },
     /* iOS: request notification permission automatically on launch */

@@ -3,10 +3,13 @@
 
 const crypto = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
+const { getFirestore, FieldPath, FieldValue } = require('firebase-admin/firestore');
+const { getStorage } = require('firebase-admin/storage');
 const { getMessaging } = require('firebase-admin/messaging');
 const { logger } = require('firebase-functions');
 const { defineSecret } = require('firebase-functions/params');
+const { HttpsError, onCall } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const {
   onDocumentCreated,
@@ -22,10 +25,175 @@ initializeApp();
 exports.centralApi = require('./admin-api').centralApi;
 
 const db = getFirestore();
+const auth = getAuth();
 const TMDB_API_KEY = defineSecret('TMDB_API_KEY');
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const DAYS_THRESHOLD = 3;
 const USER_SCAN_PAGE_SIZE = 100;
+
+async function deleteQueryDocuments(baseQuery, pageSize = 250) {
+  let deleted = 0;
+  while (true) {
+    const page = await baseQuery.limit(pageSize).get();
+    if (page.empty) break;
+    const batch = db.batch();
+    page.docs.forEach((item) => batch.delete(item.ref));
+    await batch.commit();
+    deleted += page.size;
+    if (page.size < pageSize) break;
+  }
+  return deleted;
+}
+
+async function removeUidFromReactionMaps(uid) {
+  let cursor = null;
+  let updated = 0;
+  while (true) {
+    let query = db.collection('reactions').orderBy(FieldPath.documentId()).limit(250);
+    if (cursor) query = query.startAfter(cursor);
+    const page = await query.get();
+    if (page.empty) break;
+    const batch = db.batch();
+    let batchUpdates = 0;
+    for (const item of page.docs) {
+      if (Object.prototype.hasOwnProperty.call(item.data()?.users || {}, uid)) {
+        batch.update(item.ref, new FieldPath('users', uid), FieldValue.delete());
+        batchUpdates += 1;
+      }
+    }
+    if (batchUpdates) await batch.commit();
+    updated += batchUpdates;
+    cursor = page.docs[page.docs.length - 1];
+    if (page.size < 250) break;
+  }
+  return updated;
+}
+
+async function removeUidFromReviewInteractions(uid) {
+  const liked = await db.collectionGroup('items').where('likedBy', 'array-contains', uid).get();
+  for (let offset = 0; offset < liked.size; offset += 250) {
+    const batch = db.batch();
+    liked.docs.slice(offset, offset + 250).forEach((item) => {
+      const likes = Array.isArray(item.data()?.likedBy) ? item.data().likedBy.length : 0;
+      batch.update(item.ref, {
+        likedBy: FieldValue.arrayRemove(uid),
+        likes: Math.max(0, likes - 1),
+      });
+    });
+    await batch.commit();
+  }
+
+  let cursor = null;
+  let repliesRemoved = 0;
+  while (true) {
+    let query = db.collectionGroup('items').orderBy(FieldPath.documentId()).limit(250);
+    if (cursor) query = query.startAfter(cursor);
+    const page = await query.get();
+    if (page.empty) break;
+    const batch = db.batch();
+    let batchUpdates = 0;
+    for (const item of page.docs) {
+      const replies = Array.isArray(item.data()?.replies) ? item.data().replies : [];
+      const filtered = replies.filter((reply) => reply?.uid !== uid);
+      if (filtered.length !== replies.length) {
+        batch.update(item.ref, { replies: filtered });
+        repliesRemoved += replies.length - filtered.length;
+        batchUpdates += 1;
+      }
+    }
+    if (batchUpdates) await batch.commit();
+    cursor = page.docs[page.docs.length - 1];
+    if (page.size < 250) break;
+  }
+  return { likesRemoved: liked.size, repliesRemoved };
+}
+
+async function deleteOwnedCommunityTopics(uid) {
+  const topics = await db.collection('community_topics').where('authorUid', '==', uid).get();
+  for (const topic of topics.docs) await db.recursiveDelete(topic.ref);
+  return topics.size;
+}
+
+async function deleteRankingEntries(uid) {
+  const months = await db.collection('rankingMonthly').listDocuments();
+  const refs = months.map((month) => month.collection('entries').doc(uid));
+  for (let offset = 0; offset < refs.length; offset += 400) {
+    const batch = db.batch();
+    refs.slice(offset, offset + 400).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+  return refs.length;
+}
+
+/** Permanently removes an authenticated member and their user-generated data.
+ * A recent login is required because this operation cannot be undone. */
+exports.deleteMyAccount = onCall({
+  timeoutSeconds: 540,
+  memory: '512MiB',
+}, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Entre novamente para excluir sua conta.');
+  if (request.data?.confirmation !== 'EXCLUIR') {
+    throw new HttpsError('invalid-argument', 'Confirmação de exclusão inválida.');
+  }
+
+  const uid = request.auth.uid;
+  const authTime = Number(request.auth.token.auth_time || 0) * 1000;
+  if (!authTime || Date.now() - authTime > 15 * 60 * 1000) {
+    throw new HttpsError('failed-precondition', 'Faça login novamente antes de excluir sua conta.');
+  }
+
+  const userSnapshot = await db.doc(`users/${uid}`).get();
+  const profile = userSnapshot.data()?.profile || {};
+  const identities = [...new Set([
+    uid,
+    profile.username,
+    ...(Array.isArray(profile.aliases) ? profile.aliases : []),
+  ].filter(Boolean))];
+
+  const deleted = {};
+  deleted.activities = await deleteQueryDocuments(db.collection('activity').where('uid', '==', uid));
+  deleted.receivedNotifications = await deleteQueryDocuments(db.collection('notifications').where('recipientId', '==', uid));
+  deleted.sentNotifications = await deleteQueryDocuments(db.collection('notifications').where('actorId', '==', uid));
+  deleted.appNotifications = await deleteQueryDocuments(db.collection('app_notifications').where('recipientId', '==', uid));
+  deleted.reports = await deleteQueryDocuments(db.collection('reports').where('reportedBy', '==', uid));
+  deleted.reviews = await deleteQueryDocuments(db.collectionGroup('items').where('authorUid', '==', uid));
+  deleted.ratings = await deleteQueryDocuments(db.collectionGroup('userRatings').where('authorUid', '==', uid));
+  deleted.communityReplies = await deleteQueryDocuments(db.collectionGroup('replies').where('authorUid', '==', uid));
+  deleted.communityArticles = await deleteQueryDocuments(db.collection('community_articles').where('authorUid', '==', uid));
+  deleted.communityTopics = await deleteOwnedCommunityTopics(uid);
+  deleted.followEdges = await deleteQueryDocuments(db.collectionGroup('following').where('userId', '==', uid));
+
+  for (const identity of identities) {
+    const followers = await db.collection('users').where('following_list', 'array-contains', identity).get();
+    for (let offset = 0; offset < followers.size; offset += 250) {
+      const batch = db.batch();
+      followers.docs.slice(offset, offset + 250).forEach((item) => {
+        batch.update(item.ref, { following_list: FieldValue.arrayRemove(identity) });
+      });
+      await batch.commit();
+    }
+  }
+
+  deleted.reviewInteractions = await removeUidFromReviewInteractions(uid);
+  deleted.reactions = await removeUidFromReactionMaps(uid);
+  deleted.rankingEntries = await deleteRankingEntries(uid);
+
+  await Promise.all([
+    db.doc(`userStats/${uid}`).delete().catch(() => {}),
+    db.doc(`adminUsers/${uid}`).delete().catch(() => {}),
+  ]);
+  if (userSnapshot.exists) await db.recursiveDelete(userSnapshot.ref);
+
+  try {
+    await getStorage().bucket().deleteFiles({ prefix: `users/${uid}/` });
+  } catch (error) {
+    logger.warn('Account storage cleanup skipped', { uid, error: String(error) });
+  }
+
+  await auth.deleteUser(uid);
+  logger.info('Member account permanently deleted', { uid, deleted });
+  return { deleted: true };
+});
 
 const asNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const nonNegative = (value) => Math.max(0, asNumber(value));

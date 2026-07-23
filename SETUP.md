@@ -87,8 +87,9 @@ npm run cap:init
 
 ### 3.2 Build de desenvolvimento (live reload)
 
-O app no celular carrega o site do Vercel diretamente.  
-Edite `capacitor.config.ts` e coloque a URL do Vercel em `server.url`.
+O app possui rotas dinâmicas e APIs do Next.js. Por isso, o contêiner nativo
+carrega a aplicação hospedada, enquanto os plugins (push, câmera etc.) são
+executados pelo Capacitor.
 
 ```bash
 npm run cap:sync      # sincroniza plugins e assets
@@ -96,25 +97,65 @@ npm run cap:android   # abre no Android Studio → Run
 npm run cap:ios       # abre no Xcode → Run (só Mac)
 ```
 
-### 3.3 Build de produção (bundle estático)
+Para testar o servidor local no simulador:
 
 ```bash
-npm run build:mobile  # gera /out + copia para Capacitor
+npm run cap:sync:local
+```
+
+### 3.3 Preparar os projetos nativos para produção
+
+```bash
+npm run build:mobile  # sincroniza o contêiner com https://maratonou.com
 npm run cap:android   # Android Studio → Build → Generate Signed Bundle
 # iOS: Xcode → Product → Archive → Distribute App
 ```
 
+Antes de arquivar para as lojas, confirme que `maratonou.com` está com o deploy
+correto e que os recursos nativos exigidos pela versão estão configurados.
+
 ### 3.4 Push Notifications no mobile
 
-**Android (FCM):**
-1. Firebase Console → **Project Settings** → **Cloud Messaging**
-2. Em "Android apps" → baixe o `google-services.json`
-3. Mova para `android/app/google-services.json`
+O identificador definitivo nas duas lojas é `com.maratonou.app`. O código usa
+Firebase Messaging nativo, que grava um token FCM tanto no Android quanto no
+iPhone e mantém o mesmo envio server-side já usado pela PWA.
 
-**iOS (APNs via FCM):**
-1. Apple Developer Portal → **Certificates** → **Keys** → gerar chave APNs
-2. Firebase Console → **Project Settings** → **Cloud Messaging** → iOS app → upload da chave APNs
-3. No Xcode → **Signing & Capabilities** → adicionar **Push Notifications** + **Background Modes** (Remote notifications)
+**Android — registrar o app Firebase:**
+1. Firebase Console → **Configurações do projeto** → **Geral** → **Adicionar app** → Android.
+2. Informe exatamente `com.maratonou.app` como nome do pacote.
+3. Obtenha o SHA-1 de desenvolvimento com `cd android && ./gradlew signingReport`
+   e cadastre-o no app Android do Firebase. O SHA da chave de produção deve ser
+   adicionado depois que a Play Console criar/confirmar o App Signing.
+4. Baixe `google-services.json` e salve em `android/app/google-services.json`.
+5. Firebase → **Authentication** → **Método de login** → ative Google.
+
+**iOS — registrar o app Firebase:**
+1. Firebase Console → **Configurações do projeto** → **Geral** → **Adicionar app** → iOS.
+2. Informe exatamente `com.maratonou.app` como Bundle ID.
+3. Baixe `GoogleService-Info.plist`, salve em `ios/App/App/` e, no Xcode,
+   arraste-o para o grupo **App** marcando **Copy items if needed** e o target **App**.
+4. Copie o valor `REVERSED_CLIENT_ID` do plist e adicione-o no Xcode em
+   **Target App → Info → URL Types → URL Schemes**. Isso conclui o retorno do
+   login Google ao aplicativo.
+5. Firebase → **Authentication** → **Método de login** → ative Google e Apple.
+
+**Apple Developer, assinatura e APNs:**
+1. Apple Developer → **Identifiers** → App IDs → crie/abra `com.maratonou.app`
+   e ative **Push Notifications** e **Sign in with Apple**.
+2. Apple Developer → **Keys** → crie uma chave com APNs, baixe o `.p8` uma única
+   vez e guarde também o Key ID e Team ID.
+3. Firebase → **Configurações do projeto** → **Cloud Messaging** → app iOS →
+   envie a chave APNs (`.p8`, Key ID e Team ID).
+4. No Xcode, abra **Target App → Signing & Capabilities**, selecione sua Team e
+   confirme as capabilities **Push Notifications** e **Sign in with Apple**.
+   O projeto já contém os entitlements correspondentes.
+5. **Background Modes → Remote notifications** só é necessário se o app passar
+   a processar notificações silenciosas em segundo plano; os alertas comuns não
+   dependem disso.
+
+Depois de adicionar os dois arquivos Firebase, execute `npm run cap:sync` e
+teste login/push em aparelhos reais. APNs não deve ser validado apenas no
+simulador.
 
 ---
 

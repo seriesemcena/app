@@ -152,6 +152,7 @@ function CommentsPageInner() {
     const avatarLetter = displayName[0]?.toUpperCase() || 'V';
     const newReply: Reply = {
       id: `rep_${Date.now()}`,
+      uid: user?.uid,
       user: displayName,
       avatar: avatarLetter,
       text: replyText.trim(),

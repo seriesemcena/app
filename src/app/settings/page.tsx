@@ -249,8 +249,9 @@ export default function SettingsPage() {
               { icon: 'share', label: t('items.rate'),  onClick: () => {} },
             ]} />
 
-            {/* ══ Sair ══ */}
+            {/* ══ Conta e sessão ══ */}
             <Group rows={[
+              { icon: 'trash', label: t('items.deleteAccount'), onClick: () => router.push(withProfileOrigin('/settings/delete-account')), danger: true },
               { icon: 'logout', label: t('items.logout'), onClick: signOut, danger: true, right: null },
             ]} />
 

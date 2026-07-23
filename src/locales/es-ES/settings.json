@@ -166,9 +166,20 @@
   },
   "deleteAccount": {
     "title": "Eliminar cuenta",
-    "body": "Esta acción es irreversible. Todos tus datos serán eliminados permanentemente.",
+    "body": "Esta acción es irreversible. Tu perfil, listas, valoraciones, comentarios y demás datos se eliminarán permanentemente.",
+    "passwordLabel": "Confirma tu contraseña",
+    "passwordPlaceholder": "Escribe tu contraseña actual",
+    "confirmationLabel": "Escribe ELIMINAR para confirmar",
+    "confirmationPlaceholder": "ELIMINAR",
+    "warning": "Perderás el acceso a esta cuenta y no será posible recuperar sus datos.",
     "confirm": "Eliminar permanentemente",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "deleting": "Eliminando cuenta…",
+    "errorPassword": "La contraseña introducida es incorrecta.",
+    "errorMissingPassword": "Introduce tu contraseña actual para continuar.",
+    "errorRecentLogin": "Por seguridad, vuelve a iniciar sesión y repite la eliminación.",
+    "errorUnsupported": "Este método de inicio de sesión aún no permite confirmar la eliminación.",
+    "errorGeneric": "No se pudo eliminar tu cuenta. Inténtalo de nuevo."
   },
   "editProfile": {
     "title": "Editar perfil",

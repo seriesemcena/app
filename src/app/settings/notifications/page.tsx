@@ -13,6 +13,7 @@ import { prefsStore, isNotifEnabled, type NotifPrefKey, type Prefs } from '@/lib
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbPrefsStore } from '@/lib/db';
+import type { PushPermissionState } from '@/lib/fcm';
 
 /* ── iOS-style switch, visual only (the row is the interactive element) ── */
 const Switch = ({ on }: { on: boolean }) => (
@@ -56,18 +57,20 @@ export default function NotificationPrefsPage() {
   const { user } = useAuth();
 
   const [prefs, setPrefs] = useState<Prefs>({});
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [permission, setPermission] = useState<PushPermissionState>('default');
   useEffect(() => {
     setPrefs(prefsStore.get());
-    if (typeof Notification !== 'undefined') setPermission(Notification.permission);
+    import('@/lib/fcm')
+      .then(({ getPushPermissionState }) => getPushPermissionState())
+      .then(setPermission)
+      .catch(() => {});
   }, []);
 
   const enablePush = async () => {
-    if (typeof Notification === 'undefined') return;
-    const next = await Notification.requestPermission();
+    const { initFCM, requestPushPermission } = await import('@/lib/fcm');
+    const next = await requestPushPermission();
     setPermission(next);
     if (next === 'granted' && user && firebaseConfigured) {
-      const { initFCM } = await import('@/lib/fcm');
       await initFCM(getDB(), user.uid);
     }
   };

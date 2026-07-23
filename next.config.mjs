@@ -1,13 +1,5 @@
 /** @type {import('next').NextConfig} */
 
-/**
- * MOBILE BUILD: set NEXT_MOBILE=1 to produce a static export
- * for Capacitor. API routes are excluded — the mobile app calls
- * the deployed Vercel backend at NEXT_PUBLIC_API_URL.
- *
- * WEB BUILD (default): standard Next.js with API routes.
- */
-const isMobile = process.env.NEXT_MOBILE === '1';
 const isDev    = process.env.NODE_ENV !== 'production';
 
 /* Content-Security-Policy tuned to what the app actually loads:
@@ -46,45 +38,37 @@ const nextConfig = {
   /* Codex/Claude previews access the local dev server through 127.0.0.1. */
   ...(isDev ? { allowedDevOrigins: ['127.0.0.1'] } : {}),
 
-  /* Static export for Capacitor (no API routes in bundle) */
-  ...(isMobile ? { output: 'export', trailingSlash: true } : {}),
-
-  /* headers() is unsupported in static export mode — web build only */
-  ...(isMobile ? {} : {
-    async headers() {
-      return [
-        {
-          source: '/sw.js',
-          headers: [
-            { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-            { key: 'Service-Worker-Allowed', value: '/' },
-          ],
-        },
-        {
-          source: '/firebase-messaging-sw.js',
-          headers: [
-            { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
-            { key: 'Service-Worker-Allowed', value: '/' },
-          ],
-        },
-        {
-          source: '/manifest.webmanifest',
-          headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0' }],
-        },
-        { source: '/api/ai', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
-        { source: '/api/curadoria', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
-        { source: '/(.*)', headers: securityHeaders },
-      ];
-    },
-  }),
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+      {
+        source: '/firebase-messaging-sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+      {
+        source: '/manifest.webmanifest',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0' }],
+      },
+      { source: '/api/ai', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
+      { source: '/api/curadoria', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
+      { source: '/(.*)', headers: securityHeaders },
+    ];
+  },
 
   turbopack: {
     root: process.cwd(),
   },
 
   images: {
-    /* Required for next/image in static export mode */
-    unoptimized: isMobile,
     remotePatterns: [
       { protocol: 'https', hostname: 'image.tmdb.org' },
     ],

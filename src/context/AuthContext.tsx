@@ -105,15 +105,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // 2. Initial pull: Firestore → localStorage (catches up any offline changes)
           try { await syncFromFirestore(db, u.uid, u.email, u.displayName); } catch {}
 
-          // 2b. Register this already-authorized browser for real background
-          // push. Permission is never requested automatically here; the user
-          // remains in control through the notification settings/browser UI.
-          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            try {
-              const { initFCM, listenForegroundMessages } = await import('@/lib/fcm');
+          // 2b. Register an already-authorized browser or native installation
+          // for push. Permission is never requested automatically here; the
+          // user remains in control through notification settings.
+          try {
+            const {
+              getPushPermissionState,
+              initFCM,
+              isNativePushRuntime,
+              listenForegroundMessages,
+            } = await import('@/lib/fcm');
+            if (await getPushPermissionState() === 'granted') {
               await initFCM(db, u.uid);
               unsubMessages = await listenForegroundMessages(async (title, body) => {
                 try {
+                  // iOS/Android display foreground notifications natively via
+                  // FirebaseMessaging.presentationOptions. Notify the web UI
+                  // without creating a second system notification.
+                  if (isNativePushRuntime()) {
+                    window.dispatchEvent(new CustomEvent('maratonou:push', { detail: { title, body } }));
+                    return;
+                  }
                   if ('serviceWorker' in navigator) {
                     const registration = await navigator.serviceWorker.ready;
                     await registration.showNotification(title, {
@@ -127,9 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   }
                 } catch {}
               });
-            } catch (error) {
-              console.warn('[FCM] Push registration deferred', error);
             }
+          } catch (error) {
+            console.warn('[FCM] Push registration deferred', error);
           }
 
           // 3. Real-time subscription: whenever Firestore changes (other device or

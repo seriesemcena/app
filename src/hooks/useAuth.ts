@@ -9,6 +9,41 @@ import { firebaseConfigured, getFirebaseAuth } from '@/lib/firebase';
 import { notifInboxStore, clearUserScopedCache, switchActiveUser } from '@/lib/store';
 import { detectAppEnvironment } from '@/lib/appEnvironment';
 import { useAppSettings } from '@/context/AppSettingsContext';
+import type { AuthCredential } from 'firebase/auth';
+
+async function getNativeSocialCredential(provider: 'google.com' | 'apple.com'): Promise<AuthCredential> {
+  const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+  const result = provider === 'google.com'
+    ? await FirebaseAuthentication.signInWithGoogle({
+        skipNativeAuth: true,
+        scopes: ['email', 'profile'],
+      })
+    : await FirebaseAuthentication.signInWithApple({
+        skipNativeAuth: true,
+        scopes: ['email', 'name'],
+      });
+
+  const nativeCredential = result.credential;
+  if (!nativeCredential?.idToken) {
+    throw Object.assign(new Error('O provedor não devolveu uma credencial válida.'), {
+      code: 'auth/missing-native-credential',
+    });
+  }
+
+  const { GoogleAuthProvider, OAuthProvider } = await import('firebase/auth');
+  if (provider === 'google.com') {
+    return GoogleAuthProvider.credential(
+      nativeCredential.idToken,
+      nativeCredential.accessToken,
+    );
+  }
+
+  return new OAuthProvider('apple.com').credential({
+    idToken: nativeCredential.idToken,
+    accessToken: nativeCredential.accessToken,
+    rawNonce: nativeCredential.nonce,
+  });
+}
 
 export function useAuth() {
   const { user, loading, offline } = useAuthContext();
@@ -43,11 +78,18 @@ export function useAuth() {
 
   const signInWithGoogle = async () => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
-    const { signInWithPopup, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
+    const { signInWithCredential, signInWithPopup, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
     const provider = new GoogleAuthProvider();
     provider.addScope('email');
     provider.addScope('profile');
     const environment = detectAppEnvironment();
+    if (environment.isCapacitor) {
+      const credential = await getNativeSocialCredential('google.com');
+      const { user: u } = await signInWithCredential(getFirebaseAuth(), credential);
+      await ensureProfile(u);
+      postLoginRoute();
+      return;
+    }
     if (environment.isStandalone && !environment.isCapacitor) {
       await signInWithRedirect(getFirebaseAuth(), provider);
       return;
@@ -59,11 +101,18 @@ export function useAuth() {
 
   const signInWithApple = async () => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
-    const { signInWithPopup, signInWithRedirect, OAuthProvider } = await import('firebase/auth');
+    const { signInWithCredential, signInWithPopup, signInWithRedirect, OAuthProvider } = await import('firebase/auth');
     const provider = new OAuthProvider('apple.com');
     provider.addScope('email');
     provider.addScope('name');
     const environment = detectAppEnvironment();
+    if (environment.isCapacitor) {
+      const credential = await getNativeSocialCredential('apple.com');
+      const { user: u } = await signInWithCredential(getFirebaseAuth(), credential);
+      await ensureProfile(u);
+      postLoginRoute();
+      return;
+    }
     if (environment.isStandalone && !environment.isCapacitor) {
       await signInWithRedirect(getFirebaseAuth(), provider);
       return;
@@ -106,6 +155,74 @@ export function useAuth() {
     await sendPasswordResetEmail(getFirebaseAuth(), email);
   };
 
+  const deleteAccount = async (password?: string) => {
+    if (!firebaseConfigured) throw new Error('Firebase not configured');
+    const auth = getFirebaseAuth();
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('auth/requires-recent-login');
+
+    const {
+      EmailAuthProvider,
+      GoogleAuthProvider,
+      OAuthProvider,
+      reauthenticateWithCredential,
+      reauthenticateWithPopup,
+      signOut: fbSignOut,
+    } = await import('firebase/auth');
+    const providerIds = currentUser.providerData.map((provider) => provider.providerId);
+
+    if (providerIds.includes('password')) {
+      if (!currentUser.email || !password) throw new Error('auth/missing-password');
+      await reauthenticateWithCredential(
+        currentUser,
+        EmailAuthProvider.credential(currentUser.email, password),
+      );
+    } else if (providerIds.includes('google.com')) {
+      if (detectAppEnvironment().isCapacitor) {
+        await reauthenticateWithCredential(currentUser, await getNativeSocialCredential('google.com'));
+      } else {
+        await reauthenticateWithPopup(currentUser, new GoogleAuthProvider());
+      }
+    } else if (providerIds.includes('apple.com')) {
+      if (detectAppEnvironment().isCapacitor) {
+        await reauthenticateWithCredential(currentUser, await getNativeSocialCredential('apple.com'));
+      } else {
+        const provider = new OAuthProvider('apple.com');
+        provider.addScope('email');
+        provider.addScope('name');
+        await reauthenticateWithPopup(currentUser, provider);
+      }
+    } else {
+      throw new Error('auth/unsupported-provider');
+    }
+
+    // Reauthentication updates auth_time. Force a fresh token so the callable
+    // receives that new timestamp instead of a cached pre-reauthentication ID token.
+    await currentUser.getIdToken(true);
+
+    const { httpsCallable } = await import('firebase/functions');
+    const { getFirebaseFunctions } = await import('@/lib/firebase');
+    const removeAccount = httpsCallable<{ confirmation: string }, { deleted: boolean }>(
+      getFirebaseFunctions(),
+      'deleteMyAccount',
+    );
+    const result = await removeAccount({ confirmation: 'EXCLUIR' });
+    if (result.data?.deleted !== true) throw new Error('account/deletion-incomplete');
+
+    clearUserScopedCache();
+    switchActiveUser(null);
+    notifInboxStore.clearLegacy();
+    try { localStorage.clear(); } catch {}
+    try { await fbSignOut(auth); } catch {}
+    if (detectAppEnvironment().isCapacitor) {
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        await FirebaseAuthentication.signOut();
+      } catch {}
+    }
+    router.replace('/auth');
+  };
+
   const signOut = async () => {
     if (!firebaseConfigured) return;
     const { signOut: fbSignOut } = await import('firebase/auth');
@@ -126,8 +243,14 @@ export function useAuth() {
     // Remove the old global notification key that caused cross-account bleed
     notifInboxStore.clearLegacy();
     await fbSignOut(getFirebaseAuth());
+    if (detectAppEnvironment().isCapacitor) {
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        await FirebaseAuthentication.signOut();
+      } catch {}
+    }
     router.replace('/auth');
   };
 
-  return { user, loading, offline, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, signOut };
+  return { user, loading, offline, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, deleteAccount, signOut };
 }

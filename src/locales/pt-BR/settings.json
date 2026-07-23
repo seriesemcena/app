@@ -166,9 +166,20 @@
   },
   "deleteAccount": {
     "title": "Excluir conta",
-    "body": "Esta ação é irreversível. Todos os seus dados serão excluídos permanentemente.",
+    "body": "Esta ação é irreversível. Seu perfil, listas, avaliações, comentários e demais dados serão excluídos permanentemente.",
+    "passwordLabel": "Confirme sua senha",
+    "passwordPlaceholder": "Digite sua senha atual",
+    "confirmationLabel": "Digite EXCLUIR para confirmar",
+    "confirmationPlaceholder": "EXCLUIR",
+    "warning": "Você perderá o acesso a esta conta e não será possível recuperar os dados.",
     "confirm": "Excluir permanentemente",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "deleting": "Excluindo conta…",
+    "errorPassword": "A senha informada está incorreta.",
+    "errorMissingPassword": "Informe sua senha atual para continuar.",
+    "errorRecentLogin": "Por segurança, entre novamente na sua conta e repita a exclusão.",
+    "errorUnsupported": "Este método de login ainda não permite confirmar a exclusão.",
+    "errorGeneric": "Não foi possível excluir sua conta. Tente novamente."
   },
   "editProfile": {
     "title": "Editar perfil",

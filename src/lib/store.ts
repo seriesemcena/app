@@ -88,7 +88,7 @@ export const prefsStore = {
 export type Review = {
   id: string; user: string; uid?: string; avatar: string; photoUrl?: string; rating: number; text: string;
   gifUrl?: string; imageUrl?: string; reaction?: string; spoiler?: boolean; date: string; likes?: number; likedBy?: string[];
-  replies?: Array<{ id: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
+  replies?: Array<{ id: string; uid?: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
 };
 
 const REV_KEY = 'sec_reviews_v1';

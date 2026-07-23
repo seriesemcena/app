@@ -22,6 +22,7 @@ import {
 } from 'firebase/firestore';
 import { initializeAuth, browserLocalPersistence, getAuth, type Auth } from 'firebase/auth';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
+import { getFunctions, type Functions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -50,6 +51,7 @@ let _app:  FirebaseApp | null = null;
 let _db:   Firestore   | null = null;
 let _auth: Auth        | null = null;
 let _storage: FirebaseStorage | null = null;
+let _functions: Functions | null = null;
 let _appCheckStarted = false;
 
 function ensureApp(): FirebaseApp {
@@ -123,6 +125,11 @@ export function getFirebaseAuth(): Auth {
     }
   }
   return _auth;
+}
+
+export function getFirebaseFunctions(): Functions {
+  if (!_functions) _functions = getFunctions(ensureApp());
+  return _functions;
 }
 
 /** Authorization header with the signed-in user's ID token — {} when signed
