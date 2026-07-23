@@ -12,6 +12,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAppSettings } from '@/context/AppSettingsContext';
 import { initializeFirebaseAppCheck } from '@/lib/firebase';
 import { AI_CURATION_ENABLED } from '@/lib/features';
+import { PushAlert } from '@/components/PushAlert';
 
 export function AppBootstrap({ children }: { children: ReactNode }) {
   useEffect(() => { void initializeFirebaseAppCheck(); }, []);
@@ -58,6 +59,7 @@ export function AppBootstrap({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
+      <PushAlert />
       {!isOnline && !isKeyboardOpen && (
         <div className="offline-banner" role="status" aria-live="polite">
           <Icon name="wifi" size={16} color={T.t2} />

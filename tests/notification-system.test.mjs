@@ -53,6 +53,51 @@ test('FCM registration and scheduled server workers are wired', () => {
   assert.match(functions, /app_notifications/);
 });
 
+test('push diagnostics cover foreground presentation and authenticated delivery', () => {
+  const bootstrap = read('src/components/AppBootstrap.tsx');
+  const alert = read('src/components/PushAlert.tsx');
+  const auth = read('src/context/AuthContext.tsx');
+  const settings = read('src/app/settings/notifications/page.tsx');
+  const fcm = read('src/lib/fcm.ts');
+  const functions = read('functions/index.js');
+
+  assert.match(bootstrap, /<PushAlert \/>/);
+  assert.match(alert, /addEventListener\('maratonou:push'/);
+  assert.match(auth, /new CustomEvent\('maratonou:push'/);
+  assert.match(settings, /sendPushTest/);
+  assert.match(settings, /testAccepted/);
+  assert.match(fcm, /'sendTestPush'/);
+  assert.match(functions, /exports\.sendTestPush = onCall/);
+  assert.match(functions, /request\.auth\?\.uid/);
+  assert.match(functions, /users\/\$\{uid\}\/private\/push/);
+  assert.match(functions, /notification_test_limits/);
+});
+
+test('admin pushes open and refresh the app notification inbox', () => {
+  const page = read('src/app/notifications/page.tsx');
+  const db = read('src/lib/db.ts');
+  const functions = read('functions/index.js');
+  const auth = read('src/context/AuthContext.tsx');
+
+  assert.match(functions, /link: job\.link \|\| '\/notifications\?tab=app'/);
+  assert.match(page, /useSearchParams/);
+  assert.match(page, /searchParams\.get\('tab'\) === 'app'/);
+  assert.match(page, /addEventListener\('maratonou:push', refresh\)/);
+  assert.match(page, /addEventListener\('visibilitychange', onVisibilityChange\)/);
+  assert.match(page, /addEventListener\('pageshow', refresh\)/);
+  assert.match(page, /loadError\.title/);
+  assert.match(auth, /notifInboxStore\.add/);
+  assert.match(auth, /detail: \{ title, body, url, eventKey, type \}/);
+  assert.match(functions, /data: \{ url: pushUrl, eventKey, type:/);
+  assert.match(read('public/sw.js'), /candidate\.searchParams\.set\('tab', 'app'\)/);
+
+  const appStore = db.slice(
+    db.indexOf('export const dbAppNotifStore'),
+    db.indexOf('// ── FCM Tokens'),
+  );
+  assert.doesNotMatch(appStore, /catch\s*\{\s*return \{ items: \[\]/);
+});
+
 test('admin exposes validated configurable notification templates', () => {
   const admin = `${read('apps/admin/src/App.tsx')}\n${read('apps/admin/src/views.tsx')}`;
   const api = read('functions/admin-api.js');

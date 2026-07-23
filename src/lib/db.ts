@@ -1266,35 +1266,31 @@ export const dbAppNotifStore = {
     requestedSize = FIRESTORE_PAGE_SIZE,
   ): Promise<FirestorePage<InboxNotif, NotificationPageCursor>> {
     const pageSize = boundedPageSize(requestedSize);
-    try {
-      const constraints: QueryConstraint[] = [where('recipientId', '==', uid), orderBy('time', 'desc')];
-      if (cursor) constraints.push(startAfter(cursor));
-      constraints.push(limit(pageSize));
-      const q = query(collection(db, 'app_notifications'), ...constraints);
-      const snap = await getDocs(q);
-      dataCostDebug.query('notifications:app-page', snap.size);
-      const items = snap.docs.map((entry) => {
-        const data = entry.data() as AppNotifDoc;
-        return {
-          id: data.eventKey || entry.id,
-          cloudId: entry.id,
-          type: data.type,
-          title: data.title,
-          body: data.body,
-          time: data.time,
-          read: data.read,
-          link: data.link,
-          poster: data.poster,
-        };
-      });
+    const constraints: QueryConstraint[] = [where('recipientId', '==', uid), orderBy('time', 'desc')];
+    if (cursor) constraints.push(startAfter(cursor));
+    constraints.push(limit(pageSize));
+    const q = query(collection(db, 'app_notifications'), ...constraints);
+    const snap = await getDocs(q);
+    dataCostDebug.query('notifications:app-page', snap.size);
+    const items = snap.docs.map((entry) => {
+      const data = entry.data() as AppNotifDoc;
       return {
-        items,
-        cursor: snap.empty ? null : snap.docs[snap.docs.length - 1],
-        hasMore: snap.size === pageSize,
+        id: data.eventKey || entry.id,
+        cloudId: entry.id,
+        type: data.type,
+        title: data.title,
+        body: data.body,
+        time: data.time,
+        read: data.read,
+        link: data.link,
+        poster: data.poster,
       };
-    } catch {
-      return { items: [], cursor: null, hasMore: false };
-    }
+    });
+    return {
+      items,
+      cursor: snap.empty ? null : snap.docs[snap.docs.length - 1],
+      hasMore: snap.size === pageSize,
+    };
   },
   async listForUser(db: Firestore, uid: string): Promise<InboxNotif[]> {
     return (await dbAppNotifStore.listPage(db, uid)).items;
@@ -1346,11 +1342,9 @@ const privatePushDoc = (db: Firestore, uid: string) => doc(db, 'users', uid, 'pr
 
 export const dbTokenStore = {
   async save(db: Firestore, uid: string, token: string) {
-    try {
-      await setDoc(privatePushDoc(db, uid), { tokens: arrayUnion(token) }, { merge: true });
-      // Clear tokens parked on the public profile doc by older builds.
-      try { await updateDoc(doc(db, 'users', uid), { fcm_tokens: deleteField() }); } catch {}
-    } catch {}
+    await setDoc(privatePushDoc(db, uid), { tokens: arrayUnion(token) }, { merge: true });
+    // Clear tokens parked on the public profile doc by older builds.
+    try { await updateDoc(doc(db, 'users', uid), { fcm_tokens: deleteField() }); } catch {}
   },
   async remove(db: Firestore, uid: string, token: string) {
     try {

@@ -7,7 +7,7 @@
    ───────────────────────────────────────────────────────────── */
 import { Capacitor } from '@capacitor/core';
 import type { Firestore } from 'firebase/firestore';
-import { getFirebaseMessaging, VAPID_KEY } from './firebase';
+import { getFirebaseFunctions, getFirebaseMessaging, VAPID_KEY } from './firebase';
 import { dbTokenStore } from './db';
 
 const FCM_TOKEN_KEY = 'sec_fcm_token_v1';
@@ -58,8 +58,9 @@ export async function requestPushPermission(): Promise<PushPermissionState> {
 
 async function saveToken(db: Firestore, uid: string, token: string) {
   const cached = localStorage.getItem(FCM_TOKEN_KEY);
-  if (cached === token) return;
-  if (cached) await dbTokenStore.remove(db, uid, cached);
+  // Reconfirm even a cached token in Firestore. The server document may have
+  // been cleaned after an FCM error or never written during an offline launch.
+  if (cached && cached !== token) await dbTokenStore.remove(db, uid, cached);
   await dbTokenStore.save(db, uid, token);
   localStorage.setItem(FCM_TOKEN_KEY, token);
 }
@@ -130,6 +131,29 @@ export async function initFCM(db: Firestore, uid: string): Promise<string | null
   return isNativePushRuntime() ? initNativeFCM(db, uid) : initWebFCM(db, uid);
 }
 
+export type PushTestResult = {
+  accepted: boolean;
+  devices: number;
+  pushSuccess: number;
+  pushFailure: number;
+};
+
+/** Sends a real authenticated FCM message to the current member's devices. */
+export async function sendPushTest(locale: string): Promise<PushTestResult> {
+  const { httpsCallable } = await import('firebase/functions');
+  const callable = httpsCallable<{ locale: string }, PushTestResult>(
+    getFirebaseFunctions(),
+    'sendTestPush',
+  );
+  const result = await callable({ locale });
+  return result.data;
+}
+
+function normalizePushUrl(value: unknown): string {
+  if (typeof value !== 'string' || !value.startsWith('/')) return '/notifications?tab=app';
+  return value === '/notifications' ? '/notifications?tab=app' : value;
+}
+
 export async function removeFCMToken(db: Firestore, uid: string) {
   if (typeof window === 'undefined') return;
   const token = localStorage.getItem(FCM_TOKEN_KEY);
@@ -152,7 +176,13 @@ export async function removeFCMToken(db: Firestore, uid: string) {
 }
 
 export async function listenForegroundMessages(
-  callback: (title: string, body: string) => void,
+  callback: (
+    title: string,
+    body: string,
+    url: string,
+    eventKey?: string,
+    notificationType?: string,
+  ) => void,
 ): Promise<(() => void) | null> {
   if (typeof window === 'undefined') return null;
 
@@ -160,12 +190,18 @@ export async function listenForegroundMessages(
     try {
       const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
       const received = await FirebaseMessaging.addListener('notificationReceived', ({ notification }) => {
-        callback(notification.title ?? 'Maratonou', notification.body ?? '');
+        const data = notification.data as Record<string, unknown> | undefined;
+        callback(
+          notification.title ?? 'Maratonou',
+          notification.body ?? '',
+          normalizePushUrl(data?.url),
+          typeof data?.eventKey === 'string' ? data.eventKey : undefined,
+          typeof data?.type === 'string' ? data.type : undefined,
+        );
       });
       const action = await FirebaseMessaging.addListener('notificationActionPerformed', ({ notification }) => {
         const data = notification.data as Record<string, unknown> | undefined;
-        const url = typeof data?.url === 'string' ? data.url : '/notifications';
-        if (url.startsWith('/')) window.location.assign(url);
+        window.location.assign(normalizePushUrl(data?.url));
       });
       return () => {
         void received.remove();
@@ -181,7 +217,13 @@ export async function listenForegroundMessages(
     if (!messaging) return null;
     const { onMessage } = await import('firebase/messaging');
     return onMessage(messaging, (payload) => {
-      callback(payload.notification?.title ?? 'Maratonou', payload.notification?.body ?? '');
+      callback(
+        payload.notification?.title ?? 'Maratonou',
+        payload.notification?.body ?? '',
+        normalizePushUrl(payload.data?.url),
+        typeof payload.data?.eventKey === 'string' ? payload.data.eventKey : undefined,
+        typeof payload.data?.type === 'string' ? payload.data.type : undefined,
+      );
     });
   } catch {
     return null;

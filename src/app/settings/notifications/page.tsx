@@ -15,6 +15,9 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbPrefsStore } from '@/lib/db';
 import type { PushPermissionState } from '@/lib/fcm';
 
+type RegistrationState = 'idle' | 'checking' | 'registered' | 'error';
+type TestState = 'idle' | 'sending' | 'success' | 'error';
+
 /* ── iOS-style switch, visual only (the row is the interactive element) ── */
 const Switch = ({ on }: { on: boolean }) => (
   <span
@@ -58,20 +61,88 @@ export default function NotificationPrefsPage() {
 
   const [prefs, setPrefs] = useState<Prefs>({});
   const [permission, setPermission] = useState<PushPermissionState>('default');
+  const [registration, setRegistration] = useState<RegistrationState>('idle');
+  const [testState, setTestState] = useState<TestState>('idle');
+  const [testMessage, setTestMessage] = useState('');
+
   useEffect(() => {
+    let cancelled = false;
     setPrefs(prefsStore.get());
-    import('@/lib/fcm')
-      .then(({ getPushPermissionState }) => getPushPermissionState())
-      .then(setPermission)
-      .catch(() => {});
-  }, []);
+    const inspectRegistration = async () => {
+      try {
+        const { getPushPermissionState, initFCM } = await import('@/lib/fcm');
+        const next = await getPushPermissionState();
+        if (cancelled) return;
+        setPermission(next);
+        if (next !== 'granted') {
+          setRegistration('idle');
+          return;
+        }
+        if (!user || !firebaseConfigured) {
+          setRegistration('error');
+          return;
+        }
+        setRegistration('checking');
+        const token = await initFCM(getDB(), user.uid);
+        if (!cancelled) setRegistration(token ? 'registered' : 'error');
+      } catch {
+        if (!cancelled) setRegistration('error');
+      }
+    };
+    void inspectRegistration();
+    return () => { cancelled = true; };
+  }, [user]);
 
   const enablePush = async () => {
-    const { initFCM, requestPushPermission } = await import('@/lib/fcm');
-    const next = await requestPushPermission();
-    setPermission(next);
-    if (next === 'granted' && user && firebaseConfigured) {
-      await initFCM(getDB(), user.uid);
+    setTestMessage('');
+    setRegistration('checking');
+    try {
+      const { initFCM, requestPushPermission } = await import('@/lib/fcm');
+      const next = await requestPushPermission();
+      setPermission(next);
+      if (next === 'granted' && user && firebaseConfigured) {
+        const token = await initFCM(getDB(), user.uid);
+        setRegistration(token ? 'registered' : 'error');
+      } else {
+        setRegistration(next === 'granted' ? 'error' : 'idle');
+      }
+    } catch {
+      setRegistration('error');
+    }
+  };
+
+  const testPush = async () => {
+    if (!user || !firebaseConfigured) {
+      setTestState('error');
+      setTestMessage(t('notifPrefs.testLoginRequired'));
+      return;
+    }
+
+    setTestState('sending');
+    setTestMessage('');
+    try {
+      const { initFCM, sendPushTest } = await import('@/lib/fcm');
+      const token = await initFCM(getDB(), user.uid);
+      if (!token) {
+        setRegistration('error');
+        throw new Error('device-token-unavailable');
+      }
+      setRegistration('registered');
+      const result = await sendPushTest(document.documentElement.lang || 'pt-BR');
+      setTestState('success');
+      setTestMessage(t('notifPrefs.testAccepted', { count: result.pushSuccess }));
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+      setTestState('error');
+      setTestMessage(
+        code.includes('resource-exhausted')
+          ? t('notifPrefs.testWait')
+          : code.includes('failed-precondition') || (error instanceof Error && error.message === 'device-token-unavailable')
+            ? t('notifPrefs.testNoDevice')
+            : t('notifPrefs.testError'),
+      );
     }
   };
 
@@ -131,7 +202,11 @@ export default function NotificationPrefsPage() {
                 <Txt size={14} weight={600} color={T.t1} style={{ display: 'block' }}>{t('notifPrefs.pushTitle')}</Txt>
                 <Txt size={11} color={T.t3} style={{ display: 'block', marginTop: 1 }}>
                   {permission === 'granted'
-                    ? t('notifPrefs.pushEnabled')
+                    ? registration === 'registered'
+                      ? t('notifPrefs.deviceRegistered')
+                      : registration === 'checking'
+                        ? t('notifPrefs.deviceChecking')
+                        : t('notifPrefs.deviceNotRegistered')
                     : permission === 'denied'
                       ? t('notifPrefs.pushBlocked')
                       : t('notifPrefs.pushDisabled')}
@@ -147,6 +222,54 @@ export default function NotificationPrefsPage() {
                 </button>
               )}
             </div>
+            {permission === 'granted' && (
+              <div style={{ borderTop: `1px solid ${T.border}`, padding: '12px 16px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    flexShrink: 0,
+                    background: registration === 'registered' ? '#34C759' : T.t4,
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Txt size={12} weight={600} color={T.t1} style={{ display: 'block' }}>
+                      {t('notifPrefs.testTitle')}
+                    </Txt>
+                    <Txt size={10} color={T.t3} style={{ display: 'block', marginTop: 1 }}>
+                      {t('notifPrefs.testDescription')}
+                    </Txt>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { void testPush(); }}
+                    disabled={testState === 'sending' || registration === 'checking'}
+                    style={{
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 16,
+                      padding: '8px 12px',
+                      background: T.surface2,
+                      color: T.t1,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: testState === 'sending' || registration === 'checking' ? 'default' : 'pointer',
+                      opacity: testState === 'sending' || registration === 'checking' ? 0.55 : 1,
+                    }}
+                  >
+                    {testState === 'sending' ? t('notifPrefs.testing') : t('notifPrefs.testButton')}
+                  </button>
+                </div>
+                {testMessage && (
+                  <Txt
+                    size={11}
+                    color={testState === 'success' ? '#34C759' : T.red}
+                    style={{ display: 'block', margin: '9px 20px 0', lineHeight: 1.4 }}
+                  >
+                    {testMessage}
+                  </Txt>
+                )}
+              </div>
+            )}
           </SettingsCard>
 
           {/* ── Atividade da conta ── */}

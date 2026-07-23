@@ -13,6 +13,11 @@
   "clearConfirm": "¿Limpiar todas las notificaciones de esta pestaña? Esta acción no se puede deshacer.",
   "cleared": "Notificaciones eliminadas",
   "clearError": "No se pudieron limpiar las notificaciones",
+  "loadError": {
+    "title": "No se pudieron cargar los avisos",
+    "body": "Comprueba tu conexión e inténtalo de nuevo. Un error de carga ya no aparecerá como una bandeja vacía.",
+    "retry": "Intentar de nuevo"
+  },
   "empty": {
     "account": {
       "title": "Sin notificaciones",

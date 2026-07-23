@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
@@ -76,11 +76,14 @@ function timeAgo(iso: string): string {
 
 export default function NotificationsPage() {
   const router             = useRouter();
+  const searchParams       = useSearchParams();
   const { t }              = useTranslation('notifications');
   const { user, loading }  = useAuth();
   const uid                = user?.uid ?? null;
 
-  const [tab, setTab]             = useState<ActiveTab>('account');
+  const [tab, setTab]             = useState<ActiveTab>(
+    searchParams.get('tab') === 'app' ? 'app' : 'account',
+  );
   const [toast, setToast]         = useState<string | false>(false);
   const [clearing, setClearing]   = useState(false);
 
@@ -96,8 +99,33 @@ export default function NotificationsPage() {
   const [appCursor, setAppCursor] = useState<NotificationPageCursor | null>(null);
   const [appHasMore, setAppHasMore] = useState(false);
   const [appLoading, setAppLoading] = useState(false);
+  const [appError, setAppError] = useState(false);
+  const [appRefreshVersion, setAppRefreshVersion] = useState(0);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2200); };
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'app') setTab('app');
+  }, [searchParams]);
+
+  /* Refresh the app inbox when a foreground push arrives or when a PWA/native
+     installation returns from the background after receiving a system push. */
+  useEffect(() => {
+    const refresh = () => setAppRefreshVersion((version) => version + 1);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('maratonou:push', refresh);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('pageshow', refresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('maratonou:push', refresh);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('pageshow', refresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
 
   /* ── Load verified app notifications (cloud + local reminders) ── */
   useEffect(() => {
@@ -122,9 +150,11 @@ export default function NotificationsPage() {
     }
     const localAfterReminders = notifInboxStore.get(uid);
     if (!firebaseConfigured) {
+      setAppError(false);
       setAppNotifs(localAfterReminders);
       return;
     }
+    setAppError(false);
     setAppLoading(true);
     dbAppNotifStore.listPage(getDB(), uid).then((page) => {
       if (cancelled) return;
@@ -137,11 +167,15 @@ export default function NotificationsPage() {
       setAppNotifs(Array.from(merged.values()).sort(
         (a, b) => new Date(b.time).getTime() - new Date(a.time).getTime(),
       ));
-    }).catch(() => {
-      if (!cancelled) setAppNotifs(localAfterReminders);
+    }).catch((error) => {
+      console.error('[Notifications] Failed to load app inbox', error);
+      if (!cancelled) {
+        setAppError(true);
+        setAppNotifs(localAfterReminders);
+      }
     }).finally(() => { if (!cancelled) setAppLoading(false); });
     return () => { cancelled = true; };
-  }, [uid, loading]);
+  }, [uid, loading, appRefreshVersion]);
 
   // Account notifications are Firestore-backed React state, so they must be
   // dropped immediately when the authenticated account changes.
@@ -199,6 +233,10 @@ export default function NotificationsPage() {
       });
       setAppCursor(page.cursor);
       setAppHasMore(page.hasMore);
+      setAppError(false);
+    } catch (error) {
+      console.error('[Notifications] Failed to load more app notifications', error);
+      setAppError(true);
     } finally { setAppLoading(false); }
   };
 
@@ -402,7 +440,50 @@ export default function NotificationsPage() {
             {/* ══ DO APP tab ══ */}
             {tab === 'app' && (
               <>
-                {visibleApp.length === 0 && (
+                {appLoading && visibleApp.length === 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {[1, 2, 3].map(i => (
+                      <div key={i} style={{ height: 82, borderRadius: 16, background: T.card, border: `1px solid ${T.border}`, opacity: 0.6 + i * 0.1 }} />
+                    ))}
+                  </div>
+                )}
+
+                {appError && (
+                  <div style={{
+                    padding: '18px 16px',
+                    borderRadius: 18,
+                    border: `1px solid ${T.border}`,
+                    background: T.card,
+                    textAlign: 'center',
+                  }}>
+                    <Icon name="wifi" size={24} color={T.t3} />
+                    <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', marginTop: 8 }}>
+                      {t('loadError.title')}
+                    </Txt>
+                    <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4, lineHeight: 1.5 }}>
+                      {t('loadError.body')}
+                    </Txt>
+                    <button
+                      type="button"
+                      onClick={() => setAppRefreshVersion((version) => version + 1)}
+                      style={{
+                        marginTop: 12,
+                        padding: '8px 14px',
+                        borderRadius: 18,
+                        border: `1px solid ${T.border}`,
+                        background: T.surface2,
+                        color: T.t1,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {t('loadError.retry')}
+                    </button>
+                  </div>
+                )}
+
+                {!appLoading && !appError && visibleApp.length === 0 && (
                   <EmptyState
                     icon="bell"
                     title={t('empty.app.title')}

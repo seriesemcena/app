@@ -13,6 +13,11 @@
   "clearConfirm": "Limpar todas as notificações desta aba? Essa ação não pode ser desfeita.",
   "cleared": "Notificações removidas",
   "clearError": "Não foi possível limpar as notificações",
+  "loadError": {
+    "title": "Não foi possível carregar os avisos",
+    "body": "Verifique sua conexão e tente novamente. Nenhuma falha será ocultada como uma lista vazia.",
+    "retry": "Tentar novamente"
+  },
   "empty": {
     "account": {
       "title": "Nenhuma notificação",

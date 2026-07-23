@@ -13,6 +13,11 @@
   "clearConfirm": "Clear all notifications in this tab? This action cannot be undone.",
   "cleared": "Notifications cleared",
   "clearError": "Notifications could not be cleared",
+  "loadError": {
+    "title": "Could not load app notifications",
+    "body": "Check your connection and try again. A loading failure will no longer appear as an empty inbox.",
+    "retry": "Try again"
+  },
   "empty": {
     "account": {
       "title": "No notifications",

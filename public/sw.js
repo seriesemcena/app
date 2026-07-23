@@ -122,6 +122,8 @@ function notificationData(payload) {
     body: notification.body || data.body || payload?.body || '',
     icon: notification.icon || data.icon || '/icons/icon-192.png',
     url: payload?.fcmOptions?.link || data.url || payload?.url || '/home',
+    eventKey: data.eventKey || '',
+    type: data.type || 'general',
   };
 }
 
@@ -134,7 +136,13 @@ self.addEventListener('push', (event) => {
     icon: notice.icon,
     badge: '/icons/icon-192.png',
     vibrate: [200, 100, 200],
-    data: { url: notice.url },
+    data: {
+      url: notice.url,
+      eventKey: notice.eventKey,
+      type: notice.type,
+      title: notice.title,
+      body: notice.body,
+    },
   }));
 });
 
@@ -143,7 +151,12 @@ self.addEventListener('notificationclick', (event) => {
   let target = '/home';
   try {
     const candidate = new URL(event.notification.data?.url || '/home', self.location.origin);
-    if (candidate.origin === self.location.origin) target = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+    if (candidate.origin === self.location.origin) {
+      if (candidate.pathname === '/notifications' && !candidate.searchParams.has('tab')) {
+        candidate.searchParams.set('tab', 'app');
+      }
+      target = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+    }
   } catch {}
 
   event.waitUntil((async () => {
@@ -151,6 +164,10 @@ self.addEventListener('notificationclick', (event) => {
     const current = windows.find((client) => new URL(client.url).origin === self.location.origin);
     if (current) {
       if ('navigate' in current) await current.navigate(target);
+      current.postMessage({
+        type: 'MARATONOU_PUSH_OPENED',
+        notification: event.notification.data,
+      });
       return current.focus();
     }
     return self.clients.openWindow(target);
@@ -165,7 +182,13 @@ self.addEventListener('message', (event) => {
       body: notice.body,
       icon: notice.icon,
       badge: '/icons/icon-192.png',
-      data: { url: notice.url },
+      data: {
+        url: notice.url,
+        eventKey: notice.eventKey,
+        type: notice.type,
+        title: notice.title,
+        body: notice.body,
+      },
     }));
   }
 });

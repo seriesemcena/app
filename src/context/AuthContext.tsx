@@ -11,7 +11,12 @@ import {
 import type { User } from 'firebase/auth';
 import { firebaseConfigured, getFirebaseAuth, getDB } from '@/lib/firebase';
 import { dbPresenceStore, migrateLocalToFirestore, syncFromFirestore, subscribeUserDoc } from '@/lib/db';
-import { switchActiveUser, getActiveUser } from '@/lib/store';
+import {
+  switchActiveUser,
+  getActiveUser,
+  notifInboxStore,
+  type InboxNotif,
+} from '@/lib/store';
 
 interface AuthState {
   user:    User | null;
@@ -117,13 +122,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } = await import('@/lib/fcm');
             if (await getPushPermissionState() === 'granted') {
               await initFCM(db, u.uid);
-              unsubMessages = await listenForegroundMessages(async (title, body) => {
+              unsubMessages = await listenForegroundMessages(
+                async (title, body, url, eventKey, notificationType) => {
                 try {
-                  // iOS/Android display foreground notifications natively via
-                  // FirebaseMessaging.presentationOptions. Notify the web UI
-                  // without creating a second system notification.
+                  const allowedTypes: InboxNotif['type'][] = [
+                    'new_episode',
+                    'like',
+                    'reply',
+                    'follow',
+                    'release',
+                    'pro_reminder',
+                    'general',
+                  ];
+                  const type = allowedTypes.includes(notificationType as InboxNotif['type'])
+                    ? notificationType as InboxNotif['type']
+                    : 'general';
+
+                  // Cloud Functions are the canonical inbox writer. This
+                  // immediate local mirror keeps foreground delivery visible
+                  // even before the Firestore refresh finishes.
+                  if (eventKey && !eventKey.startsWith('push-test:')) {
+                    notifInboxStore.add({
+                      id: eventKey,
+                      type,
+                      title,
+                      body,
+                      time: new Date().toISOString(),
+                      read: false,
+                      link: url,
+                    }, u.uid);
+                  }
+
+                  // The notification inbox and the global foreground banner
+                  // both refresh from this single application event.
+                  window.dispatchEvent(new CustomEvent('maratonou:push', {
+                    detail: { title, body, url, eventKey, type },
+                  }));
+                  // Android does not display an operating-system notification
+                  // while the app is open. Present it inside the app; iOS uses
+                  // the same UI to avoid a platform-dependent experience.
                   if (isNativePushRuntime()) {
-                    window.dispatchEvent(new CustomEvent('maratonou:push', { detail: { title, body } }));
                     return;
                   }
                   if ('serviceWorker' in navigator) {
@@ -133,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                       icon: '/icons/icon-192.png',
                       badge: '/icons/icon-192.png',
                       tag: `maratonou:fcm:${title}`,
+                      data: { url, eventKey, type },
                     } as NotificationOptions);
                   } else {
                     new Notification(title, { body });

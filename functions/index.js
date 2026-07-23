@@ -362,14 +362,15 @@ async function deliver(uid, eventKey, notification) {
 
   const tokenSnap = await db.doc(`users/${uid}/private/push`).get();
   const tokens = tokenSnap.data()?.tokens || [];
+  const pushUrl = notification.link || '/notifications?tab=app';
   let pushSuccess = 0;
   let pushFailure = 0;
   if (tokens.length) {
     const response = await getMessaging().sendEachForMulticast({
       tokens,
       notification: { title: notification.title, body: notification.body },
-      data: { url: notification.link || '/notifications', eventKey },
-      webpush: { fcmOptions: { link: notification.link || '/notifications' } },
+      data: { url: pushUrl, eventKey, type: notification.type || 'general' },
+      webpush: { fcmOptions: { link: pushUrl } },
     });
     const invalid = [];
     pushSuccess = response.successCount;
@@ -385,6 +386,119 @@ async function deliver(uid, eventKey, notification) {
   }
   return { created: true, pushSuccess, pushFailure };
 }
+
+/** Authenticated diagnostics endpoint used by notification settings.
+ * It only sends fixed Maratonou copy to the caller's own registered devices. */
+exports.sendTestPush = onCall({
+  timeoutSeconds: 60,
+  memory: '256MiB',
+}, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Entre na sua conta para testar as notificações.');
+  }
+
+  const uid = request.auth.uid;
+  const tokenRef = db.doc(`users/${uid}/private/push`);
+  const tokenSnap = await tokenRef.get();
+  const tokens = [...new Set(
+    (Array.isArray(tokenSnap.data()?.tokens) ? tokenSnap.data().tokens : [])
+      .filter((token) => typeof token === 'string' && token.length > 20),
+  )].slice(0, 20);
+
+  if (!tokens.length) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Este dispositivo ainda não possui um token de notificação registrado.',
+    );
+  }
+
+  const now = Date.now();
+  const limitRef = db.doc(`notification_test_limits/${uid}`);
+  await db.runTransaction(async (transaction) => {
+    const limitSnap = await transaction.get(limitRef);
+    const lastSentAtMs = Number(limitSnap.data()?.lastSentAtMs || 0);
+    if (lastSentAtMs && now - lastSentAtMs < 30_000) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Aguarde alguns segundos antes de enviar outro teste.',
+      );
+    }
+    transaction.set(limitRef, {
+      uid,
+      lastSentAtMs: now,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  const locale = String(request.data?.locale || 'pt-BR').toLowerCase();
+  const copy = locale.startsWith('es')
+    ? {
+        title: 'Prueba de Maratonou',
+        body: 'Las notificaciones funcionan correctamente en este dispositivo.',
+      }
+    : locale.startsWith('en')
+      ? {
+          title: 'Maratonou test',
+          body: 'Notifications are working correctly on this device.',
+        }
+      : {
+          title: 'Teste do Maratonou',
+          body: 'As notificações estão funcionando corretamente neste dispositivo.',
+        };
+
+  const eventKey = `push-test:${now}`;
+  const response = await getMessaging().sendEachForMulticast({
+    tokens,
+    notification: copy,
+    data: { url: '/settings/notifications?from=profile', eventKey },
+    android: {
+      priority: 'high',
+      notification: { sound: 'default' },
+    },
+    apns: {
+      headers: { 'apns-priority': '10' },
+      payload: { aps: { sound: 'default' } },
+    },
+    webpush: {
+      fcmOptions: { link: '/settings/notifications?from=profile' },
+    },
+  });
+
+  const invalid = [];
+  response.responses.forEach((result, index) => {
+    if (!result.success && [
+      'messaging/registration-token-not-registered',
+      'messaging/invalid-registration-token',
+    ].includes(result.error?.code)) {
+      invalid.push(tokens[index]);
+    }
+  });
+  if (invalid.length) {
+    await tokenRef.set({
+      tokens: (tokenSnap.data()?.tokens || []).filter((token) => !invalid.includes(token)),
+    }, { merge: true });
+  }
+
+  if (response.successCount === 0) {
+    throw new HttpsError(
+      'unavailable',
+      'O FCM não aceitou o teste. Registre o dispositivo novamente e tente de novo.',
+    );
+  }
+
+  logger.info('Authenticated push test accepted', {
+    uid,
+    devices: tokens.length,
+    pushSuccess: response.successCount,
+    pushFailure: response.failureCount,
+  });
+  return {
+    accepted: true,
+    devices: tokens.length,
+    pushSuccess: response.successCount,
+    pushFailure: response.failureCount,
+  };
+});
 
 async function forEachUserPage(handler) {
   let cursor = null;
@@ -766,7 +880,10 @@ exports.processNotificationJobs = onSchedule({
           if ((job.target === 'vip' || job.target === 'pro') && profile.proMember !== true) continue;
           if (job.target === 'free' && profile.proMember === true) continue;
           const delivered = await deliver(userDoc.id, `manual-${jobDoc.id}`, {
-            type: 'general', title: job.title, body: job.body || '', link: job.link || '/notifications',
+            type: 'general',
+            title: job.title,
+            body: job.body || '',
+            link: job.link || '/notifications?tab=app',
           });
           if (delivered.created) deliveries += 1;
           pushDeliveries += delivered.pushSuccess;
