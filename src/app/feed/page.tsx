@@ -7,7 +7,7 @@ import { Icon } from '@/components/Icon';
 import { SocialAction, SocialAuthor, SocialCard, SocialMedia } from '@/components/SocialCard';
 import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
-import { profileStore, notifInboxStore, reactionStore, revStore, type Review } from '@/lib/store';
+import { profileStore, notifInboxStore, reactionStore, revStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbReactionStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
@@ -165,7 +165,18 @@ export default function FeedPage() {
       return !(reviewId && item.titleKey === titleKey && item.reviewId === reviewId);
     }));
 
-  const feedItems: ActivityItem[] = globalFeed;
+  /* Hide content authored by blocked users (App Store 1.2 requirement). */
+  const [blockedUids, setBlockedUids] = useState<string[]>([]);
+  useEffect(() => {
+    const load = () => setBlockedUids(blockStore.get());
+    load();
+    window.addEventListener('maratonou:sync', load);
+    return () => window.removeEventListener('maratonou:sync', load);
+  }, [user?.uid]);
+
+  const feedItems: ActivityItem[] = blockedUids.length
+    ? globalFeed.filter(item => !item.uid || !blockedUids.includes(item.uid))
+    : globalFeed;
 
   const isEmpty = !loadingFeed && feedItems.length === 0;
 

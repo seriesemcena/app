@@ -8,7 +8,7 @@ import { SocialAction, SocialAuthor, SocialCard, SocialMedia } from '@/component
 import { GlassHeader } from '@/components/primitives';
 import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
-import { revStore, profileStore, type Review } from '@/lib/store';
+import { revStore, profileStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
@@ -390,8 +390,14 @@ function CommentsPageInner() {
     } catch { return dateStr; }
   }
 
-  /* Only show reviews that have text or attached media */
-  const withText = reviews.filter(r => r.text || r.gifUrl || r.imageUrl);
+  /* Only show reviews that have text or attached media, and hide content
+     from blocked users — including their replies inside other people's
+     threads (App Store 1.2 requirement). */
+  const withText = reviews
+    .filter(r => (r.text || r.gifUrl || r.imageUrl) && !blockStore.isBlocked(r.uid))
+    .map(r => r.replies?.some(rep => blockStore.isBlocked(rep.uid))
+      ? { ...r, replies: r.replies.filter(rep => !blockStore.isBlocked(rep.uid)) }
+      : r);
 
   const sorted = [...withText].sort((a, b) => {
     if (sort === 'populares') return (b.likes || 0) - (a.likes || 0);

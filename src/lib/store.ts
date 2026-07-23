@@ -29,6 +29,7 @@ const USER_SCOPED_KEYS = [
   'sec_ep_watched_v1',   // watched episodes
   'sec_prefs',           // genres / streamings / notifications
   'sec_following',       // following usernames
+  'sec_blocked',         // blocked user uids
   'sec_expenses_v1',     // streaming subscriptions
   'sec_notified_releases_v1',
 ];
@@ -82,6 +83,35 @@ export const prefsStore = {
   set(p: Prefs) {
     if (typeof window === 'undefined') return;
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {}
+  },
+};
+
+/* ── Blocked users ──
+   Stores the uids this account has blocked. Content authored by a blocked
+   user is hidden in the feed and comments. Cloud copy lives on the owner's
+   own doc (users/{uid}.blocked_list); this cache is uid-scoped-wiped on
+   account switch. Blocking is unilateral and private. */
+const BLOCKED_KEY = 'sec_blocked';
+
+export const blockStore = {
+  get(): string[] {
+    if (typeof window === 'undefined') return [];
+    try { const v = JSON.parse(localStorage.getItem(BLOCKED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+  },
+  set(list: string[]) {
+    if (typeof window === 'undefined') return;
+    try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(new Set(list)))); } catch {}
+  },
+  isBlocked(uid?: string | null): boolean {
+    if (!uid) return false;
+    return blockStore.get().includes(uid);
+  },
+  add(uid: string) {
+    if (!uid) return;
+    blockStore.set([...blockStore.get(), uid]);
+  },
+  remove(uid: string) {
+    blockStore.set(blockStore.get().filter(u => u !== uid));
   },
 };
 

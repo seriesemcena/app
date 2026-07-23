@@ -58,6 +58,12 @@ const nextConfig = {
         source: '/manifest.webmanifest',
         headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0' }],
       },
+      {
+        // Apple requires the AASA to be served as JSON (never text/html) so
+        // Universal Links can validate the domain association.
+        source: '/.well-known/apple-app-site-association',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
       { source: '/api/ai', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
       { source: '/api/curadoria', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
       { source: '/(.*)', headers: securityHeaders },

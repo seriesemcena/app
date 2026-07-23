@@ -65,5 +65,8 @@
   "publicFollowersEmptyDetail": "Cuando alguien siga este perfil, aparecerá aquí.",
   "userNotFound": "Perfil no encontrado",
   "userNotFoundDetail": "No encontramos a nadie con ese nombre de usuario.",
-  "goBack": "Volver"
+  "goBack": "Volver",
+  "reportProfile": "Denunciar perfil",
+  "blockUser": "Bloquear usuario",
+  "unblockUser": "Desbloquear usuario"
 }

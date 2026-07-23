@@ -65,5 +65,8 @@
   "publicFollowersEmptyDetail": "When someone follows this profile, they'll appear here.",
   "userNotFound": "Profile not found",
   "userNotFoundDetail": "We couldn't find anyone with that username.",
-  "goBack": "Go back"
+  "goBack": "Go back",
+  "reportProfile": "Report profile",
+  "blockUser": "Block user",
+  "unblockUser": "Unblock user"
 }

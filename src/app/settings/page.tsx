@@ -245,6 +245,8 @@ export default function SettingsPage() {
             {/* ══ Geral ══ */}
             <Group rows={[
               { icon: 'message', label: t('items.support'), onClick: () => window.location.assign(COMMUNITY_URL) },
+              { icon: 'lock',  label: t('items.privacy'), onClick: () => router.push('/legal/privacy') },
+              { icon: 'info',  label: t('items.terms'),   onClick: () => router.push('/legal/terms') },
               { icon: 'info',  label: t('items.about'), sub: t('items.iconsCredit'), right: null },
               { icon: 'share', label: t('items.rate'),  onClick: () => {} },
             ]} />

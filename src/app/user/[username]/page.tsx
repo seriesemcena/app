@@ -6,10 +6,10 @@ import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { ImgWithSkeleton } from '@/components/posters';
-import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, type ProReminder, type Profile } from '@/lib/store';
+import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, blockStore, type ProReminder, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore, dbUserStatsStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, getFollowRelationsPage, type FollowerInfo, type FollowPageCursor } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, dbBlockStore, dbUserStatsStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, getFollowRelationsPage, type FollowerInfo, type FollowPageCursor } from '@/lib/db';
 import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { usernameFromNameOrEmail } from '@/lib/username';
 import { useTheme } from '@/context/ThemeContext';
@@ -124,6 +124,8 @@ function UserProfileInner() {
   const [myProfile,     setMyProfile]     = useState<Profile | null>(null);
   const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
   const [reportTarget, setReportTarget]   = useState<ReportTarget | null>(null);
+  const [blockedUids, setBlockedUids]     = useState<string[]>([]);
+  const [menuOpen, setMenuOpen]           = useState(false);
   const [targetUid,     setTargetUid]     = useState<string | null>(null);
   const [targetLists,   setTargetLists]   = useState<Lists>(EMPTY_LISTS);
   const [notFound,      setNotFound]      = useState(false);
@@ -362,6 +364,41 @@ function UserProfileInner() {
   }, [isMe, loading, user, myProfile?.name]);
 
   /* ── Follow / unfollow ── */
+  /* Blocking is unilateral and private: hide the blocked user's content in
+     the feed/comments, and stop following them. Blocked state keys on the
+     target uid, which feed/comment items reliably carry. */
+  useEffect(() => {
+    const load = () => setBlockedUids(blockStore.get());
+    load();
+    window.addEventListener('maratonou:sync', load);
+    return () => window.removeEventListener('maratonou:sync', load);
+  }, [user?.uid, slug]);
+
+  const isBlocked = !!targetUid && blockedUids.includes(targetUid);
+
+  const toggleBlock = async () => {
+    setMenuOpen(false);
+    if (!user) { router.push('/auth'); return; }
+    let uid = targetUid;
+    if (!uid && firebaseConfigured) {
+      try { uid = (await getUserByUsername(getDB(), slug))?.uid ?? null; } catch {}
+    }
+    if (!uid) return;
+    setTargetUid(uid);
+    const wasBlocked = blockStore.isBlocked(uid);
+    if (wasBlocked) {
+      blockStore.remove(uid);
+      setBlockedUids(blockStore.get());
+      if (firebaseConfigured) { try { await dbBlockStore.unblock(getDB(), user.uid, uid); } catch {} }
+    } else {
+      // Blocking implies unfollowing.
+      if (isFollowing) { try { await toggleFollow(); } catch {} }
+      blockStore.add(uid);
+      setBlockedUids(blockStore.get());
+      if (firebaseConfigured) { try { await dbBlockStore.block(getDB(), user.uid, uid); } catch {} }
+    }
+  };
+
   const toggleFollow = async () => {
     if (!user) { router.push('/auth'); return; }
     const wasFollowing = isFollowing;
@@ -539,19 +576,46 @@ function UserProfileInner() {
                   </button>
                 )}
                 <div style={{ flex: 1 }} />
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
                   {!isMe && (
                     <button
-                      title="Denunciar perfil"
-                      onClick={() => setReportTarget({
-                        kind: 'profile',
-                        targetId: targetProfile?.username || slug,
-                        targetLabel: `@${targetProfile?.username || slug}`,
-                        reportedUser: targetProfile?.name || targetProfile?.username || slug,
-                      })}
+                      title="Mais opções"
+                      aria-label="Mais opções"
+                      onClick={() => setMenuOpen(o => !o)}
                       style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                      <Icon name="flag" size={16} color="#fff" />
+                      <Icon name="menuDots" size={18} color="#fff" />
                     </button>
+                  )}
+                  {!isMe && menuOpen && (
+                    <>
+                      <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                      <div style={{
+                        position: 'absolute', top: 42, right: 0, zIndex: 31,
+                        minWidth: 190, background: T.card, borderRadius: 14,
+                        border: `1px solid ${T.border}`, boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                        overflow: 'hidden',
+                      }}>
+                        <button
+                          onClick={() => { setMenuOpen(false); setReportTarget({
+                            kind: 'profile',
+                            targetId: targetProfile?.username || slug,
+                            targetLabel: `@${targetProfile?.username || slug}`,
+                            reportedUser: targetProfile?.name || targetProfile?.username || slug,
+                          }); }}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', textAlign: 'left' }}>
+                          <Icon name="flag" size={16} color={T.t2} />
+                          <Txt size={14} weight={600} color={T.t1}>{t('reportProfile')}</Txt>
+                        </button>
+                        <button
+                          onClick={toggleBlock}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                          <Icon name="close" size={16} color={isBlocked ? T.t2 : (T.red ?? '#FF5A5F')} />
+                          <Txt size={14} weight={600} color={isBlocked ? T.t1 : (T.red ?? '#FF5A5F')}>
+                            {isBlocked ? t('unblockUser') : t('blockUser')}
+                          </Txt>
+                        </button>
+                      </div>
+                    </>
                   )}
                   {isMe && (
                     <button onClick={() => router.push(withProfileOrigin('/settings'))}

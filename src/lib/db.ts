@@ -886,6 +886,11 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
       try { localStorage.setItem('sec_following', JSON.stringify(data.following_list)); } catch {}
     }
 
+    // ── Blocked users ──────────────────────────────────────
+    if (Array.isArray(data.blocked_list)) {
+      try { localStorage.setItem('sec_blocked', JSON.stringify(data.blocked_list)); } catch {}
+    }
+
     // ── Streaming expenses ─────────────────────────────────
     if (Array.isArray(data.expenses)) {
       try { localStorage.setItem('sec_expenses_v1', JSON.stringify(data.expenses)); } catch {}
@@ -978,6 +983,25 @@ export const dbFollowStore = {
     }
     if (!changed) return;
     await batch.commit();
+  },
+};
+
+/* ── Blocked users ──
+   Unilateral, private list on the blocker's own doc (owner-only write via
+   the existing users rule). Hides the blocked user's content client-side. */
+export const dbBlockStore = {
+  async get(db: Firestore, uid: string): Promise<string[]> {
+    return getField<string[]>(db, ['users', uid], 'blocked_list', []);
+  },
+  async block(db: Firestore, uid: string, targetUid: string): Promise<void> {
+    const current = await dbBlockStore.get(db, uid);
+    if (current.includes(targetUid)) return;
+    await setField(db, ['users', uid], 'blocked_list', [...current, targetUid]);
+  },
+  async unblock(db: Firestore, uid: string, targetUid: string): Promise<void> {
+    const current = await dbBlockStore.get(db, uid);
+    if (!current.includes(targetUid)) return;
+    await setField(db, ['users', uid], 'blocked_list', current.filter(u => u !== targetUid));
   },
 };
 
@@ -1381,6 +1405,9 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
       }
       if (Array.isArray(data?.following_list)) {
         localStorage.setItem('sec_following', JSON.stringify(data.following_list));
+      }
+      if (Array.isArray(data?.blocked_list)) {
+        localStorage.setItem('sec_blocked', JSON.stringify(data.blocked_list));
       }
       if (data?.profile) {
         // One-time: username becomes the slug of the Name (João Miguel → joao-miguel),

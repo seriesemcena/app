@@ -28,7 +28,9 @@
     "vip": "Maratonou PRO",
     "vipSub": "Unlock exclusive features",
     "notifPrefs": "Notification preferences",
-    "notifPrefsSub": "Choose what you want to receive"
+    "notifPrefsSub": "Choose what you want to receive",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Use"
   },
   "vip": {
     "bannerTitle": "Go PRO",

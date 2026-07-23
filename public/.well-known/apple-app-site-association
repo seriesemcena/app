@@ -1,0 +1,23 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "REPLACE_WITH_APPLE_TEAM_ID.com.maratonou.app",
+        "paths": [
+          "/title/*",
+          "/comments*",
+          "/notifications*",
+          "/user/*",
+          "/home",
+          "/series",
+          "/movies",
+          "/feed"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["REPLACE_WITH_APPLE_TEAM_ID.com.maratonou.app"]
+  }
+}

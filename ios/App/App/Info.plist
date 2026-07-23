@@ -32,6 +32,14 @@
 				<string>com.googleusercontent.apps.191621346277-7feunod7m34t9e99eu34ulus9q4h4itr</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>maratonou</string>
+			</array>
+		</dict>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

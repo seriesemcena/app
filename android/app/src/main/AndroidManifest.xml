@@ -22,7 +22,34 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Android App Links: https://maratonou.com opens in-app once the
+                 assetlinks.json at /.well-known/ is verified by the system. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="maratonou.com" />
+                <data android:scheme="https" android:host="www.maratonou.com" />
+            </intent-filter>
+
+            <!-- Custom scheme deep links (maratonou://…). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="maratonou" />
+            </intent-filter>
+
         </activity>
+
+        <!-- FCM default notification icon + accent colour (used when a push
+             payload doesn't specify its own). Matches the Capacitor config. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_icon_config_sample" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/push_accent" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -28,7 +28,9 @@
     "vip": "Maratonou PRO",
     "vipSub": "Desbloqueie recursos exclusivos",
     "notifPrefs": "Preferências de notificações",
-    "notifPrefsSub": "Escolha o que você quer receber"
+    "notifPrefsSub": "Escolha o que você quer receber",
+    "privacy": "Política de Privacidade",
+    "terms": "Termos de Uso"
   },
   "vip": {
     "bannerTitle": "Seja PRO",

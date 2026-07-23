@@ -28,7 +28,9 @@
     "vip": "Maratonou PRO",
     "vipSub": "Desbloquea funciones exclusivas",
     "notifPrefs": "Preferencias de notificaciones",
-    "notifPrefsSub": "Elige lo que quieres recibir"
+    "notifPrefsSub": "Elige lo que quieres recibir",
+    "privacy": "Política de Privacidad",
+    "terms": "Términos de Uso"
   },
   "vip": {
     "bannerTitle": "Hazte PRO",
