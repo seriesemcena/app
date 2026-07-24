@@ -66,7 +66,21 @@ const nextConfig = {
       },
       { source: '/api/ai', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
       { source: '/api/curadoria', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
-      { source: '/(.*)', headers: securityHeaders },
+      // Everything EXCEPT the proxied Firebase auth handler (/__/…), which must
+      // serve Firebase's own page without our strict CSP interfering.
+      { source: '/((?!__).*)', headers: securityHeaders },
+    ];
+  },
+
+  async rewrites() {
+    // Reverse-proxy Firebase Auth's sign-in helper under our own domain, so the
+    // OAuth flow and Google's "Continue to …" screen show maratonou.com instead
+    // of maratonou-f5d93.firebaseapp.com. Serving the handler same-site also
+    // restores popup sign-in (no third-party storage). Harmless until authDomain
+    // is switched to maratonou.com — until then nothing routes through here.
+    return [
+      { source: '/__/auth/:path*',     destination: 'https://maratonou-f5d93.firebaseapp.com/__/auth/:path*' },
+      { source: '/__/firebase/:path*', destination: 'https://maratonou-f5d93.firebaseapp.com/__/firebase/:path*' },
     ];
   },
 
