@@ -240,21 +240,6 @@ export default function NotificationsPage() {
     } finally { setAppLoading(false); }
   };
 
-  /* ── Mark all read ── */
-  const markAllRead = async () => {
-    if (tab === 'app') {
-      notifInboxStore.markAllRead(uid);
-      if (firebaseConfigured && uid) await dbAppNotifStore.markAllRead(getDB(), uid).catch(() => {});
-      setAppNotifs(prev => prev.map(n => ({ ...n, read: true })));
-    } else {
-      if (firebaseConfigured && uid) {
-        await dbNotifStore.markAllRead(getDB(), uid);
-        setAccountNotifs(prev => prev.map(n => ({ ...n, read: true })));
-      }
-    }
-    showToast(t('allRead'));
-  };
-
   /* ── Permanently clear the active inbox ── */
   const clearNotifications = async () => {
     if (clearing || !window.confirm(t('clearConfirm'))) return;
@@ -316,7 +301,6 @@ export default function NotificationsPage() {
 
   const accountUnread = visibleAccount.filter(n => !n.read).length;
   const appUnread     = visibleApp.filter(n => !n.read).length;
-  const currentUnread = tab === 'account' ? accountUnread : appUnread;
   const currentCount = tab === 'account' ? accountNotifs.length : appNotifs.length;
 
   /* ── Grouped lists ── */
@@ -333,14 +317,6 @@ export default function NotificationsPage() {
               <Icon name="chevronL" size={16} color="#fff" />
             </button>
           }
-          right={
-            currentUnread > 0 ? (
-              <button onClick={markAllRead}
-                style={{ padding: '6px 12px', borderRadius: 20, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.20)', cursor: 'pointer' }}>
-                <Txt size={11} weight={700} color="rgba(255,255,255,0.85)">{t('markAll')}</Txt>
-              </button>
-            ) : undefined
-          }
         >
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', fontFamily: "'Area',sans-serif" }}>{t('title')}</div>
@@ -348,7 +324,7 @@ export default function NotificationsPage() {
         </GlassHeader>
 
         {/* ── Tab selector ── */}
-        <div style={{ flexShrink: 0, padding: '0 16px', background: T.bg, borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ flexShrink: 0, padding: '0 16px', background: T.bg }}>
           <div style={{ display: 'flex', gap: 4 }}>
             {([
               { key: 'account', label: t('tabs.account'), count: accountUnread },
@@ -509,7 +485,7 @@ export default function NotificationsPage() {
 
                 {visibleApp.length > 0 && (
                   <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
-                    <Txt size={11} color={T.t4} style={{ display: 'block', lineHeight: 1.5 }}>
+                    <Txt size={11} weight={600} color={T.t3} style={{ display: 'block', lineHeight: 1.5 }}>
                       {t('footer')}
                     </Txt>
                   </div>
@@ -630,7 +606,7 @@ function AccountCard({ notif, onTap }: { notif: NotifDoc & { docId: string }; on
             {sub}
           </Txt>
         )}
-        <Txt size={10} color={T.t4} style={{ display: 'block', marginTop: 4 }}>
+        <Txt size={10} weight={600} color={T.t2} style={{ display: 'block', marginTop: 4 }}>
           {timeAgo(notif.createdAt)}
         </Txt>
       </div>
@@ -683,7 +659,7 @@ function AppCard({ notif, onTap }: { notif: InboxNotif; onTap: () => void }) {
           <Txt size={13} weight={isUnread ? 700 : 600} color={T.t1} style={{ display: 'block', lineHeight: 1.4 }}>
             {notif.title}
           </Txt>
-          <Txt size={10} color={T.t4} style={{ flexShrink: 0, marginTop: 2 }}>{timeAgo(notif.time)}</Txt>
+          <Txt size={10} weight={600} color={T.t2} style={{ flexShrink: 0, marginTop: 2 }}>{timeAgo(notif.time)}</Txt>
         </div>
         <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4, lineHeight: 1.5 }}>
           {notif.body}

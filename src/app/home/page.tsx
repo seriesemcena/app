@@ -117,7 +117,7 @@ function HomeSectionGrid({
                     transition: 'background 0.18s ease, color 0.18s ease',
                   }}
                 >
-                  <Icon name={option === 'grid' ? 'grid' : 'list'} size={16} />
+                  <Icon name={option === 'grid' ? 'grid' : 'playlist'} size={16} />
                 </button>
               );
             })}

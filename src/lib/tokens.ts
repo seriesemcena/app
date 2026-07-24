@@ -46,7 +46,7 @@ export const T = {
 } as const;
 
 export type IconName =
-  | 'home' | 'search' | 'calendar' | 'list' | 'user'
+  | 'home' | 'search' | 'calendar' | 'list' | 'playlist' | 'user'
   | 'star' | 'starO' | 'heart' | 'heartO' | 'play' | 'check' | 'plus' | 'plusPlain'
   | 'chevronR' | 'chevronL' | 'chevronD' | 'bell' | 'settings'
   | 'film' | 'tv' | 'crown' | 'close' | 'info' | 'eye' | 'share'

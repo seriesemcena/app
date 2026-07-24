@@ -26,6 +26,16 @@ test('users can permanently clear each notification inbox', () => {
   assert.match(rules, /match \/app_notifications\/\{id\}[\s\S]*allow delete: if activeUser\(\)[\s\S]*resource\.data\.recipientId == request\.auth\.uid/);
 });
 
+test('notification page keeps the inbox controls and metadata visually clear', () => {
+  const page = read('src/app/notifications/page.tsx');
+
+  assert.doesNotMatch(page, /const markAllRead/);
+  assert.doesNotMatch(page, /t\('markAll'\)/);
+  assert.doesNotMatch(page, /borderBottom: `1px solid \$\{T\.border\}`/);
+  assert.match(page, /size=\{11\} weight=\{600\} color=\{T\.t3\}[\s\S]*t\('footer'\)/);
+  assert.equal((page.match(/size=\{10\} weight=\{600\} color=\{T\.t2\}/g) ?? []).length, 2);
+});
+
 test('movie streaming alerts require a verified flatrate provider transition', () => {
   const notifier = read('src/lib/releaseNotifier.ts');
   assert.doesNotMatch(notifier, /data\.release_date/);

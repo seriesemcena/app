@@ -25,22 +25,23 @@ const ICONS: Record<IconName, string> = {
   search: 'magnifying-glass-solid',
   calendar: 'blank-calendar-solid',
   list: 'play-list-6-solid',
+  playlist: 'playlist-solid',
   user: 'user-circle-single-solid',
   star: 'star-circle-solid',
   starO: 'star-circle-solid',
   heart: 'heart-solid',
   heartO: 'heart-solid',
   play: 'play-list-4-solid',
-  check: 'check-square-solid',
+  check: 'fa7-solid-check-circle',
   plus: 'control-plus-circle',
   plusPlain: 'control-plus',
   chevronR: 'control-chevron-right',
   chevronL: 'control-chevron-left',
   chevronD: 'control-chevron-down',
-  bell: 'bell-solid',
+  bell: 'fa7-solid-bell',
   settings: 'cog-solid',
-  film: 'film-solid',
-  tv: 'screen-curve-solid',
+  film: 'film-slate-solid',
+  tv: 'icon-park-solid-play',
   crown: 'crown-solid',
   close: 'control-close-circle',
   info: 'information-circle-solid',
@@ -51,7 +52,7 @@ const ICONS: Record<IconName, string> = {
   wifi: 'router-wifi-network-solid',
   lock: 'padlock-square-1-solid',
   smile: 'happy-face-solid',
-  message: 'chat-bubble-text-square-solid',
+  message: 'uis-comment-dots',
   flag: 'triangle-flag-solid',
   chart: 'graph-bar-increase-square-solid',
   chevronLeft: 'control-chevron-left',
@@ -71,28 +72,33 @@ const ICONS: Record<IconName, string> = {
 
 const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlain', 'crown', 'fire', 'menuDots', 'sparkles']);
 
+// These were explicitly selected from IconBuddy and must remain visually
+// identical on every platform instead of being substituted by SF Symbols.
+const SVG_ICON_OVERRIDES = new Set<IconName>(['check', 'bell', 'film', 'tv', 'message', 'playlist']);
+
 /** Native iOS names. The public IconName API stays platform-independent. */
 const SF_SYMBOLS: Record<IconName, string> = {
   home: 'house',
   search: 'magnifyingglass',
   calendar: 'calendar',
   list: 'list.bullet',
+  playlist: 'list.bullet.rectangle.fill',
   user: 'person',
   star: 'star.fill',
   starO: 'star',
   heart: 'heart.fill',
   heartO: 'heart',
   play: 'play.fill',
-  check: 'checkmark.circle',
+  check: 'checkmark.circle.fill',
   plus: 'plus.circle',
   plusPlain: 'plus',
   chevronR: 'chevron.right',
   chevronL: 'chevron.left',
   chevronD: 'chevron.down',
-  bell: 'bell',
+  bell: 'bell.fill',
   settings: 'gearshape',
-  film: 'film',
-  tv: 'tv',
+  film: 'movieclapper.fill',
+  tv: 'play.circle.fill',
   crown: 'crown.fill',
   close: 'xmark.circle',
   info: 'info.circle',
@@ -103,7 +109,7 @@ const SF_SYMBOLS: Record<IconName, string> = {
   wifi: 'wifi',
   lock: 'lock',
   smile: 'face.smiling',
-  message: 'bubble.left',
+  message: 'ellipsis.bubble.fill',
   flag: 'flag',
   chart: 'chart.bar',
   chevronLeft: 'chevron.left',
@@ -144,7 +150,7 @@ export function Icon({ name, size = 22, color = 'currentColor', style = {} }: Pr
   useEffect(() => {
     let active = true;
     const nativeIOS = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
-    if (!nativeIOS) {
+    if (!nativeIOS || SVG_ICON_OVERRIDES.has(name)) {
       setNativeMask(null);
       return () => { active = false; };
     }

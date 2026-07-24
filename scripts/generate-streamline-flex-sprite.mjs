@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sourcePath = resolve(root, 'node_modules/@iconify-json/streamline-flex/icons.json');
 const outputPath = resolve(root, 'public/icons/streamline-flex-solid.svg');
+const playlistPath = resolve(root, 'public/playlist-solid.svg');
 
 const iconSet = JSON.parse(await readFile(sourcePath, 'utf8'));
+const playlistSource = await readFile(playlistPath, 'utf8');
 const iconNames = [
   'home-2-solid',
   'magnifying-glass-solid',
@@ -22,6 +24,7 @@ const iconNames = [
   'bell-solid',
   'cog-solid',
   'film-solid',
+  'film-slate-solid',
   'screen-curve-solid',
   'crown-solid',
   'information-circle-solid',
@@ -52,6 +55,20 @@ const symbols = iconNames.map((name) => {
   return `<symbol id="${name}" viewBox="0 0 ${icon.width ?? iconSet.width ?? 14} ${icon.height ?? iconSet.height ?? 14}">${icon.body}</symbol>`;
 });
 
+// Isolated icons selected from other IconBuddy collections. Keeping them in
+// this generated sprite preserves the single-request icon pipeline used by the
+// PWA and Android app without adding runtime dependencies.
+symbols.push(
+  '<symbol id="fa7-solid-check-circle" viewBox="0 0 512 512"><path fill="currentColor" d="M256 512a256 256 0 1 1 0-512a256 256 0 1 1 0 512m118-366.3c-10.7-7.8-25.7-5.4-33.5 5.3L221.1 315.2L169 263.1c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9l72 72c5 5 11.8 7.5 18.8 7s13.4-4.1 17.5-9.8l135.9-187c7.8-10.7 5.4-25.7-5.3-33.5"/></symbol>',
+  '<symbol id="fa7-solid-bell" viewBox="0 0 448 512"><path fill="currentColor" d="M224 0c-17.7 0-32 14.3-32 32v3.2C119 50 64 114.6 64 192v21.7c0 48.1-16.4 94.8-46.4 132.4l-9.8 12.2C2.7 364.6 0 372.4 0 380.5C0 400.1 15.9 416 35.5 416h376.9c19.6 0 35.5-15.9 35.5-35.5c0-8.1-2.7-15.9-7.8-22.2l-9.8-12.2c-29.9-37.6-46.3-84.3-46.3-132.4V192c0-77.4-55-142-128-156.8V32c0-17.7-14.3-32-32-32m-62 464c7.1 27.6 32.2 48 62 48s54.9-20.4 62-48z"/></symbol>',
+  '<symbol id="icon-park-solid-play" viewBox="0 0 48 48"><path fill="currentColor" fill-rule="evenodd" d="M24 46C11.85 46 2 36.15 2 24S11.85 2 24 2s22 9.85 22 22s-9.85 22-22 22m-6-28.928v13.856c0 1.54 1.667 2.503 3 1.733l12-6.928a2 2 0 0 0 0-3.466l-12-6.928c-1.333-.77-3 .192-3 1.733" clip-rule="evenodd"/></symbol>',
+  '<symbol id="uis-comment-dots" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.5 2 2 6.5 2 12c0 2.3.8 4.5 2.3 6.3l-2 2c-.4.4-.4 1 0 1.4c.2.2.4.3.7.3h9c5.5 0 10-4.5 10-10S17.5 2 12 2M8 13c-.6 0-1-.4-1-1s.4-1 1-1s1 .4 1 1s-.4 1-1 1m4 0c-.6 0-1-.4-1-1s.4-1 1-1s1 .4 1 1s-.4 1-1 1m4 0c-.6 0-1-.4-1-1s.4-1 1-1s1 .4 1 1s-.4 1-1 1"/></symbol>',
+  playlistSource
+    .replace(/^[\s\S]*?<svg[^>]*viewBox="([^"]+)"[^>]*>/, '<symbol id="playlist-solid" viewBox="$1">')
+    .replace(/<\/svg>\s*$/, '</symbol>')
+    .replace(/fill="black"/g, 'fill="currentColor"'),
+);
+
 // Streamline Flex does not include these primitive controls. They are kept as
 // compact filled glyphs in the same 14×14 coordinate system.
 symbols.push(
@@ -68,6 +85,8 @@ symbols.push(
 const output = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<!-- Streamline Flex solid icons by Streamline (CC BY 4.0): https://streamlinehq.com -->',
+  '<!-- Font Awesome Solid icons (Font Awesome Free License): https://fontawesome.com -->',
+  '<!-- IconPark Solid and Unicons Solid icons selected through IconBuddy -->',
   '<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true">',
   '<defs>',
   ...symbols,

@@ -21,6 +21,7 @@
     "admin:dev": "npm run dev --workspace @maratonou/admin",
     "admin:build": "npm run build --workspace @maratonou/admin",
     "admin:bootstrap": "node scripts/admin/bootstrap-admin.mjs",
+    "icons:app": "node scripts/generate-app-icons.mjs",
     "icons:generate": "node scripts/generate-streamline-flex-sprite.mjs",
     "firebase:emulators": "firebase emulators:start --project demo-maratonou",
     "migrate:firebase:dry": "node scripts/migrations/optimize-firestore.mjs",
@@ -61,6 +62,7 @@
     "eslint-config-next": "^16.2.10",
     "firebase-tools": "^15.24.0",
     "postcss": "^8.4.47",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2"
   }
