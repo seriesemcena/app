@@ -15,8 +15,11 @@ async function getNativeSocialCredential(provider: 'google.com' | 'apple.com'): 
   const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
   const result = provider === 'google.com'
     ? await FirebaseAuthentication.signInWithGoogle({
-        skipNativeAuth: true,
-        scopes: ['email', 'profile'],
+        // The Google ID token already contains the identity data required by
+        // Firebase Auth. Requesting email/profile here triggers a second
+        // Android AuthorizationClient flow after the account picker, which
+        // can fail even though the Google credential was obtained correctly.
+        useCredentialManager: true,
       })
     : await FirebaseAuthentication.signInWithApple({
         skipNativeAuth: true,
