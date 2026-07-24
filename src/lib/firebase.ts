@@ -26,7 +26,14 @@ import { getFunctions, type Functions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain:        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  // Custom auth domain: Firebase's /__/auth handler is reverse-proxied under
+  // maratonou.com (see next.config.mjs rewrites). This makes the OAuth flow and
+  // Google's "Continue to …" screen use maratonou.com instead of the default
+  // *.firebaseapp.com, and serves the handler same-site so popup sign-in works
+  // without third-party storage. Requires https://maratonou.com/__/auth/handler
+  // in the OAuth client's authorized redirect URIs (Google Cloud Console).
+  // To roll back, revert this line to process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN.
+  authDomain:        'maratonou.com',
   projectId:         process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket:     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
