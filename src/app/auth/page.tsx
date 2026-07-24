@@ -143,8 +143,16 @@ export default function AuthPage() {
       'auth/popup-closed-by-user':    t('errors.popupClosed'),
       'auth/cancelled-popup-request': t('errors.popupClosed'),
       'auth/registrations-disabled':  t('errors.registrationsDisabled'),
+      // Config / environment failures — previously hidden behind the generic
+      // message, which made a Firebase console misconfig look like an app bug.
+      'auth/unauthorized-domain':     t('errors.unauthorizedDomain'),
+      'auth/operation-not-allowed':   t('errors.operationNotAllowed'),
+      'auth/popup-blocked':           t('errors.popupBlocked'),
+      'auth/network-request-failed':  t('errors.networkFailed'),
     };
-    return map[code] ?? t('errors.generic');
+    // For anything unmapped, surface the raw Firebase code so the real cause
+    // is visible instead of a blanket "try again".
+    return map[code] ?? (code ? `${t('errors.generic')} (${code})` : t('errors.generic'));
   };
 
   const handleEmail = async () => {
