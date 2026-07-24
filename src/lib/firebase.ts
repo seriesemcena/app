@@ -20,7 +20,7 @@ import {
   persistentMultipleTabManager,
   type Firestore,
 } from 'firebase/firestore';
-import { initializeAuth, browserLocalPersistence, getAuth, type Auth } from 'firebase/auth';
+import { initializeAuth, browserLocalPersistence, browserPopupRedirectResolver, getAuth, type Auth } from 'firebase/auth';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { getFunctions, type Functions } from 'firebase/functions';
 
@@ -115,7 +115,13 @@ export function getFirebaseAuth(): Auth {
     const app = ensureApp();
     if (typeof window !== 'undefined') {
       try {
-        _auth = initializeAuth(app, { persistence: [browserLocalPersistence] });
+        // popupRedirectResolver is REQUIRED for signInWithPopup/Redirect.
+        // getAuth() bundles it automatically, but initializeAuth() does not —
+        // omitting it makes social sign-in throw auth/argument-error.
+        _auth = initializeAuth(app, {
+          persistence: [browserLocalPersistence],
+          popupRedirectResolver: browserPopupRedirectResolver,
+        });
       } catch {
         // Auth already initialized (hot-reload), get existing instance
         _auth = getAuth(app);
