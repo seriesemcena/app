@@ -9,7 +9,7 @@ import { firebaseConfigured, getFirebaseAuth } from '@/lib/firebase';
 import { notifInboxStore, clearUserScopedCache, switchActiveUser } from '@/lib/store';
 import { detectAppEnvironment } from '@/lib/appEnvironment';
 import { useAppSettings } from '@/context/AppSettingsContext';
-import type { AuthCredential } from 'firebase/auth';
+import type { AuthCredential, AuthProvider } from 'firebase/auth';
 
 async function getNativeSocialCredential(provider: 'google.com' | 'apple.com'): Promise<AuthCredential> {
   const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
@@ -79,50 +79,69 @@ export function useAuth() {
     } catch {}
   };
 
+  /* Web sign-in. signInWithPopup breaks in browsers that block third-party
+     storage: the popup runs on the *.firebaseapp.com auth domain — a different
+     site than maratonou.com — and the blocked cross-site storage surfaces as
+     auth/internal-error. Standalone PWAs can't manage popups at all. In both
+     cases fall back to signInWithRedirect, a first-party full-page flow that
+     works everywhere. On the redirect return, the username is created by
+     syncFromFirestore (auth-state change) and routing by the /auth page's
+     logged-in effect, so no popup-path follow-up is needed here. */
+  const webSocialSignIn = async (provider: AuthProvider) => {
+    const { signInWithPopup, signInWithRedirect } = await import('firebase/auth');
+    const auth = getFirebaseAuth();
+    if (detectAppEnvironment().isStandalone) {
+      await signInWithRedirect(auth, provider);
+      return;
+    }
+    try {
+      const { user: u } = await signInWithPopup(auth, provider);
+      await ensureProfile(u);
+      postLoginRoute();
+    } catch (e) {
+      const code = (e as { code?: string })?.code ?? '';
+      const popupUnsupported =
+        code === 'auth/internal-error' ||
+        code === 'auth/popup-blocked' ||
+        code === 'auth/operation-not-supported-in-this-environment' ||
+        code === 'auth/web-storage-unsupported';
+      if (!popupUnsupported) throw e; // popup-closed-by-user etc. → surface it
+      await signInWithRedirect(auth, provider);
+    }
+  };
+
   const signInWithGoogle = async () => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
-    const { signInWithCredential, signInWithPopup, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
+    const { GoogleAuthProvider } = await import('firebase/auth');
     const provider = new GoogleAuthProvider();
     provider.addScope('email');
     provider.addScope('profile');
-    const environment = detectAppEnvironment();
-    if (environment.isCapacitor) {
+    if (detectAppEnvironment().isCapacitor) {
+      const { signInWithCredential } = await import('firebase/auth');
       const credential = await getNativeSocialCredential('google.com');
       const { user: u } = await signInWithCredential(getFirebaseAuth(), credential);
       await ensureProfile(u);
       postLoginRoute();
       return;
     }
-    if (environment.isStandalone && !environment.isCapacitor) {
-      await signInWithRedirect(getFirebaseAuth(), provider);
-      return;
-    }
-    const { user: u } = await signInWithPopup(getFirebaseAuth(), provider);
-    await ensureProfile(u);
-    postLoginRoute();
+    await webSocialSignIn(provider);
   };
 
   const signInWithApple = async () => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
-    const { signInWithCredential, signInWithPopup, signInWithRedirect, OAuthProvider } = await import('firebase/auth');
+    const { OAuthProvider } = await import('firebase/auth');
     const provider = new OAuthProvider('apple.com');
     provider.addScope('email');
     provider.addScope('name');
-    const environment = detectAppEnvironment();
-    if (environment.isCapacitor) {
+    if (detectAppEnvironment().isCapacitor) {
+      const { signInWithCredential } = await import('firebase/auth');
       const credential = await getNativeSocialCredential('apple.com');
       const { user: u } = await signInWithCredential(getFirebaseAuth(), credential);
       await ensureProfile(u);
       postLoginRoute();
       return;
     }
-    if (environment.isStandalone && !environment.isCapacitor) {
-      await signInWithRedirect(getFirebaseAuth(), provider);
-      return;
-    }
-    const { user: u } = await signInWithPopup(getFirebaseAuth(), provider);
-    await ensureProfile(u);
-    postLoginRoute();
+    await webSocialSignIn(provider);
   };
 
   const signInWithEmail = async (email: string, password: string) => {
