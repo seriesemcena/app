@@ -353,9 +353,22 @@ export const dbRevStore = {
         };
       }
     } catch (error) {
+      // The ordered subcollection query needs a COLLECTION-scope index on
+      // items.date; when that index is missing the read throws failed-
+      // precondition. Recover by reading the subcollection UNORDERED and
+      // sorting in memory so comments still show. The old fallback read only
+      // the legacy array — empty for comments stored in the per-review
+      // subcollection, which is exactly why the comments page came up blank.
       if (!cursor) {
-        const legacy = (await getField<Review[]>(db, ['reviews', titleKey], 'items', [])).filter(reviewIsVisible);
-        const sorted = legacy.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        let pool: Review[] = [];
+        try {
+          const unordered = await getDocs(revCol(db, titleKey));
+          pool = unordered.docs.map((entry) => entry.data() as Review).filter(reviewIsVisible);
+        } catch { /* subcollection unreadable → try the legacy array below */ }
+        if (pool.length === 0) {
+          pool = (await getField<Review[]>(db, ['reviews', titleKey], 'items', [])).filter(reviewIsVisible);
+        }
+        const sorted = pool.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         const items = sorted.slice(0, pageSize);
         return {
           items,
