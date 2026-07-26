@@ -589,42 +589,28 @@ export default function TitleDetailPage() {
 
           </div>
 
-          {/* ── Tab bar wrapper — position:relative para o dropdown se ancorar aqui ── */}
-          <div style={{ position: 'relative', padding: '12px 0 16px' }}>
-            {/* Linha scrollável */}
-            <div style={{ display: 'flex', gap: 8, paddingLeft: 16, paddingRight: 16, overflowX: 'auto', scrollbarWidth: 'none' } as React.CSSProperties}>
+          <div className="title-detail-tabs-shell">
+            <div
+              className="title-detail-tabs"
+              role="tablist"
+              aria-label={title}
+            >
               {tabs.map((tabKey) => {
                 const isActive = tab === tabKey;
                 const label = t(`tabs.${tabKey}`);
-                const tabBg     = isActive
-                  ? T.pillActiveBg
-                  : (isDark ? 'rgba(255,255,255,0.06)' : '#fff');
-                const tabBorder = isActive
-                  ? `1px solid ${T.pillActiveBorder}`
-                  : (isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.11)');
-                const tabColor  = isActive
-                  ? T.pillActiveText
-                  : (isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)');
                 return (
                   <button
                     key={tabKey}
+                    className={`title-detail-tab${isActive ? ' is-active' : ''}`}
+                    role="tab"
+                    aria-selected={isActive}
                     onClick={() => setTab(tabKey)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '10px 22px', borderRadius: 999, flexShrink: 0,
-                      background: tabBg,
-                      border: tabBorder,
-                      color: tabColor,
-                      fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                      fontFamily: "'Area','Inter',sans-serif", transition: 'all 0.2s',
-                      whiteSpace: 'nowrap',
-                    }}>
+                  >
                     {label}
                   </button>
                 );
               })}
             </div>
-
           </div>
 
           {/* ── Tab content ── */}

@@ -20,8 +20,10 @@ export function SocialCard({ children, dimmed = false, edgeToEdge = false, onCli
 
   return (
     <article onClick={handleCardClick} style={{
-      background: T.card, borderRadius: edgeToEdge ? 0 : 22, padding: edgeToEdge ? 16 : 14,
-      borderTop: `1px solid ${T.border}`,
+      background: edgeToEdge ? 'transparent' : T.card,
+      borderRadius: edgeToEdge ? 0 : 22,
+      padding: edgeToEdge ? 16 : 14,
+      borderTop: edgeToEdge ? 'none' : `1px solid ${T.border}`,
       borderBottom: `1px solid ${T.border}`,
       borderLeft: edgeToEdge ? 'none' : `1px solid ${T.border}`,
       borderRight: edgeToEdge ? 'none' : `1px solid ${T.border}`,

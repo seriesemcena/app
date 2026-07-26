@@ -26,6 +26,11 @@ test('feed background stays edge-to-edge while its content shares the tabs gutte
   assert.match(feed, /className="feed-activity-list"[\s\S]*?gap:\s*12\s*\}/);
   assert.doesNotMatch(feed, /className="feed-activity-list"[\s\S]*?padding:\s*'0 16px'/);
   assert.match(component, /padding:\s*edgeToEdge\s*\?\s*16\s*:\s*14/);
+  assert.match(component, /background:\s*edgeToEdge\s*\?\s*'transparent'\s*:\s*T\.card/);
+  assert.match(component, /borderTop:\s*edgeToEdge\s*\?\s*'none'\s*:\s*`1px solid \$\{T\.border\}`/);
+  assert.match(component, /borderBottom:\s*`1px solid \$\{T\.border\}`/);
+  assert.match(component, /borderLeft:\s*edgeToEdge\s*\?\s*'none'/);
+  assert.match(component, /borderRight:\s*edgeToEdge\s*\?\s*'none'/);
 });
 
 test('feed separates the comment and places its timestamp beside the options menu', async () => {

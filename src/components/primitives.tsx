@@ -55,13 +55,14 @@ export const AppBar = ({
    blur glass por trás, ação à esquerda e/ou direita
    ───────────────────────────────────────────────────────── */
 export function GlassHeader({
-  left, right, children, navTitle, showNavTitle,
+  left, right, children, navTitle, showNavTitle, showLogo = true,
 }: {
   left?: ReactNode;
   right?: ReactNode;
   children?: ReactNode;
   navTitle?: string;
   showNavTitle?: boolean;
+  showLogo?: boolean;
 }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -114,7 +115,7 @@ export function GlassHeader({
             transform: navTitle && showNavTitle ? 'translateY(-4px) scale(0.92)' : 'translateY(0) scale(1)',
             transition: 'opacity 0.22s ease, transform 0.22s ease',
           } as CSSProperties}>
-            {children ?? <Logo height={22} />}
+            {showLogo ? (children ?? <Logo height={22} />) : null}
           </div>
 
           {/* Nav title — aparece ao rolar */}

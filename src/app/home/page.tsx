@@ -911,24 +911,24 @@ export default function HomePage() {
              ══════════════════════════════════════════════ */}
           {homeTab === 'em_alta' && (
             <div style={{ paddingTop: 8, background: 'var(--c-bg)' }}>
-              <div style={{ display: 'flex', gap: 8, padding: '0 16px 20px' }}>
-                {(['series', 'movies'] as const).map((f) => (
-                  <button key={f} className="home-filter-btn" onClick={() => { setTrendFilter(f); setTrendLimit(10); }} style={{
-                    padding: '8px 20px', borderRadius: 24, flexShrink: 0,
-                    background: trendFilter === f
-                      ? T.pillActiveBg
-                      : (isDark ? T.surface2 : '#fff'),
-                    border: trendFilter === f
-                      ? 'none'
-                      : (isDark ? `1px solid ${T.border}` : '1px solid rgba(0,0,0,0.11)'),
-                    color: trendFilter === f ? T.pillActiveText : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
-                    fontSize: 13, fontWeight: 700,
-                    fontFamily: "'Area','Inter',sans-serif",
-                    cursor: 'pointer', transition: 'all 0.2s',
-                  }}>
-                    {t(`filter.${f}`)}
-                  </button>
-                ))}
+              <div className="title-detail-tabs-shell home-media-tabs-shell">
+                <div className="title-detail-tabs" role="tablist" aria-label="Tipo de conteúdo">
+                  {(['series', 'movies'] as const).map((f) => {
+                    const isActive = trendFilter === f;
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        className={`title-detail-tab${isActive ? ' is-active' : ''}`}
+                        onClick={() => { setTrendFilter(f); setTrendLimit(10); }}
+                      >
+                        {t(`filter.${f}`)}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               {trendFilter === 'series'
                 ? <HomeSectionGrid items={trendTV?.results}     loading={lTTV} limit={trendLimit} loadMoreLabel={t('loadMore')} onItem={openTitle} onLoadMore={() => setTrendLimit(l => l + 10)} />
@@ -942,24 +942,24 @@ export default function HomePage() {
              ══════════════════════════════════════════════ */}
           {homeTab === 'novidades' && (
             <div style={{ paddingTop: 8, background: 'var(--c-bg)' }}>
-              <div style={{ display: 'flex', gap: 8, padding: '0 16px 20px' }}>
-                {(['series', 'movies'] as const).map((f) => (
-                  <button key={f} className="home-filter-btn" onClick={() => { setNovFilter(f); setNovLimit(10); }} style={{
-                    padding: '8px 20px', borderRadius: 24, flexShrink: 0,
-                    background: novFilter === f
-                      ? T.pillActiveBg
-                      : (isDark ? T.surface2 : '#fff'),
-                    border: novFilter === f
-                      ? 'none'
-                      : (isDark ? `1px solid ${T.border}` : '1px solid rgba(0,0,0,0.11)'),
-                    color: novFilter === f ? T.pillActiveText : (isDark ? T.t2 : 'rgba(0,0,0,0.55)'),
-                    fontSize: 13, fontWeight: 700,
-                    fontFamily: "'Area','Inter',sans-serif",
-                    cursor: 'pointer', transition: 'all 0.2s',
-                  }}>
-                    {t(`filter.${f}`)}
-                  </button>
-                ))}
+              <div className="title-detail-tabs-shell home-media-tabs-shell">
+                <div className="title-detail-tabs" role="tablist" aria-label="Tipo de conteúdo">
+                  {(['series', 'movies'] as const).map((f) => {
+                    const isActive = novFilter === f;
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        className={`title-detail-tab${isActive ? ' is-active' : ''}`}
+                        onClick={() => { setNovFilter(f); setNovLimit(10); }}
+                      >
+                        {t(`filter.${f}`)}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               {novFilter === 'series'
                 ? <HomeSectionGrid items={onAir?.results}      loading={lOA} limit={novLimit} loadMoreLabel={t('loadMore')} onItem={openTitle} onLoadMore={() => setNovLimit(l => l + 10)} />
