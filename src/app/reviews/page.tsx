@@ -266,7 +266,7 @@ function ReviewsPageInner() {
           <>
             <div onClick={() => setModalOpen(false)}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
-            <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.popup, borderRadius: '20px 20px 0 0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
                 <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
                 <Txt size={15} weight={700}>{t('rateEpisode')}</Txt>

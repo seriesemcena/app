@@ -75,6 +75,21 @@ service cloud.firestore {
         allow write: if activeUser() && request.auth.uid == uid;
       }
 
+      // Explicit reminders created from a future-season card. Cloud Functions
+      // reads due documents through the Admin SDK and is the only sender.
+      match /seasonReminders/{reminderId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if activeUser()
+                              && request.auth.uid == uid
+                              && request.resource.data.uid == uid
+                              && request.resource.data.keys().hasOnly([
+                                'uid', 'tvId', 'seasonNumber', 'title',
+                                'premiereDate', 'notifyAt', 'posterPath',
+                                'enabled', 'createdAt', 'notifiedAt'
+                              ]);
+        allow delete: if activeUser() && request.auth.uid == uid;
+      }
+
       // Canonical social graph. The owner controls only who they follow.
       // Cloud Functions mirror this edge under the target's followers path.
       match /following/{targetUid} {

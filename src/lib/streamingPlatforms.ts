@@ -47,3 +47,23 @@ export function streamingColor(idOrName?: string | null, fallback = 'rgba(255,25
   if (!idOrName) return fallback;
   return STREAMING_COLOR_ALIASES[idOrName.trim().toLowerCase()] ?? fallback;
 }
+
+const STREAMING_LOGO_ALIASES: Array<{ aliases: string[]; asset: string }> = [
+  { aliases: ['netflix'], asset: 'netflix' },
+  { aliases: ['prime video', 'amazon prime', 'prime'], asset: 'primevideo' },
+  { aliases: ['disney+', 'disney plus', 'disney'], asset: 'dineyplus' },
+  { aliases: ['hbo max', 'hbo', 'max'], asset: 'hbomax' },
+  { aliases: ['tv globo', 'rede globo', 'globoplay', 'globo'], asset: 'globoplay' },
+  { aliases: ['apple tv+', 'apple tv plus', 'apple tv', 'apple'], asset: 'appletv' },
+  { aliases: ['paramount+', 'paramount plus', 'paramount'], asset: 'paramountplus' },
+  { aliases: ['mgm+', 'mgm plus', 'mgm'], asset: 'mgm' },
+];
+
+export function streamingLogoAsset(name?: string | null, dark = true) {
+  if (!name) return null;
+  const normalized = name.trim().toLowerCase();
+  const logo = STREAMING_LOGO_ALIASES.find(({ aliases }) =>
+    aliases.some(alias => normalized === alias || normalized.includes(alias))
+  );
+  return logo ? `/${logo.asset}_logo${dark ? '' : '_black'}.png` : null;
+}

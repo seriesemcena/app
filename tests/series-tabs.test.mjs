@@ -18,6 +18,11 @@ test('watching reuses the upcoming-series content and finished uses watched titl
   assert.match(source, /tab === 'maratonando'[\s\S]*?emBreveGroups\.map/);
   assert.match(source, /tab === 'atrasadas'[\s\S]*?atrasadas\.map/);
   assert.match(source, /tab === 'finalizadas'[\s\S]*?items=\{watchedList as unknown as TMDBItem\[\]\}/);
+  assert.match(
+    source,
+    /t\('season', \{ number: item\.nextSeason, ns: 'title' \}\)\} · \{t\('episode', \{ number: item\.nextEpisode, ns: 'title' \}\)/,
+  );
+  assert.doesNotMatch(source, /`T\$\{item\.nextSeason\} · Ep \$\{item\.nextEpisode\}`/);
 });
 
 test('today episode cards use the animated gradient border with reduced-motion support', async () => {

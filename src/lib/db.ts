@@ -891,6 +891,64 @@ export const dbProSettingsStore = {
   },
 };
 
+// ── Season premiere reminders ───────────────────────────────
+// One document per user/title/season keeps the operation idempotent across
+// devices and gives the scheduled notification worker a queryable due date.
+export type SeasonPremiereReminder = {
+  uid: string;
+  tvId: number;
+  seasonNumber: number;
+  title: string;
+  premiereDate: string;
+  notifyAt: string;
+  posterPath?: string | null;
+  enabled: boolean;
+  createdAt: string;
+  notifiedAt?: string | null;
+};
+
+const seasonReminderId = (tvId: number | string, seasonNumber: number) => (
+  `tv_${tvId}_s${seasonNumber}`
+);
+
+export const dbSeasonPremiereReminderStore = {
+  async get(
+    db: Firestore,
+    uid: string,
+    tvId: number | string,
+    seasonNumber: number,
+  ): Promise<SeasonPremiereReminder | null> {
+    try {
+      const snap = await getDoc(doc(
+        db,
+        'users',
+        uid,
+        'seasonReminders',
+        seasonReminderId(tvId, seasonNumber),
+      ));
+      return snap.exists() ? snap.data() as SeasonPremiereReminder : null;
+    } catch {
+      return null;
+    }
+  },
+  async set(db: Firestore, uid: string, reminder: SeasonPremiereReminder) {
+    await setDoc(
+      doc(db, 'users', uid, 'seasonReminders', seasonReminderId(reminder.tvId, reminder.seasonNumber)),
+      reminder,
+      { merge: true },
+    );
+  },
+  async remove(db: Firestore, uid: string, tvId: number | string, seasonNumber: number) {
+    await deleteDoc(doc(
+      db,
+      'users',
+      uid,
+      'seasonReminders',
+      seasonReminderId(tvId, seasonNumber),
+    ));
+  },
+};
+
 // ── Real-time subscription: users/{uid} → localStorage ───────
 // Call on login; returns an Unsubscribe function.
 // Whenever the user's doc changes in Firestore (other device wrote),

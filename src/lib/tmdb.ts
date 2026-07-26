@@ -92,6 +92,9 @@ export const tmdb = {
     append_to_response: 'credits,similar,videos,images',
     include_image_language: 'null',
   }),
+  titleVideos: (type: 'movie' | 'tv', id: number | string, language = 'en-US') => (
+    get(`/${type}/${id}/videos`, { language })
+  ),
   season: (tvId: number | string, n: number) => get(`/tv/${tvId}/season/${n}`),
   personDetail: (id: number | string) => get(`/person/${id}`, { append_to_response: 'movie_credits,tv_credits,images' }),
   discover: (type: 'movie' | 'tv', params: Record<string, string>) => get(`/discover/${type}`, params),

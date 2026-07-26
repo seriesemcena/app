@@ -62,7 +62,7 @@ function EpisodePageInner() {
   const [toast, setToast]             = useState<string | false>(false);
   const [reviews, setReviews]         = useState<Review[]>([]);
   const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
-  const [socialTab, setSocialTab]     = useState<'ratings' | 'reactions'>('ratings');
+  const [overviewExpanded, setOverviewExpanded] = useState(false);
 
   /* ── Computed: ratings are private per user, only avg is public ── */
   const currentUserName = user?.displayName || user?.email?.split('@')[0] || 'Você';
@@ -72,7 +72,8 @@ function EpisodePageInner() {
     : ratedReviews.length > 0
       ? (ratedReviews.reduce((s, r) => s + r.rating, 0) / ratedReviews.length).toFixed(1)
       : null;
-  const myRating        = reviews.find(r => r.user === currentUserName)?.rating || 0;
+  const ratingCount     = ratingSummary?.total || ratedReviews.length;
+  const myRating        = reviews.find(r => user?.uid ? r.uid === user.uid : r.user === currentUserName)?.rating || 0;
   const commentCount    = reviews.filter(r => r.text).length;
   const reactionReviews = reviews.filter(review => !!review.reaction);
   const reactionBuckets = EPISODE_REACTIONS.map(reaction => ({
@@ -242,7 +243,16 @@ function EpisodePageInner() {
             showNavTitle={showNavTitle}
           />
           {/* ── Backdrop / still ── */}
-          <div style={{ height: 270, margin: '8px 16px 0', borderRadius: 20, position: 'relative', overflow: 'hidden', background: still ? 'transparent' : 'var(--c-surface2)' }}>
+          <div
+            data-episode-hero
+            style={{
+              height: 'calc(334px + var(--safe-area-top))',
+              marginTop: 'calc(-56px - var(--safe-area-top))',
+              borderRadius: 0,
+              position: 'relative',
+              overflow: 'hidden',
+              background: still ? 'transparent' : 'var(--c-surface2)',
+            }}>
             {still && (
               <img
                 src={tmdbImg(still, 'w780') ?? ''}
@@ -287,9 +297,49 @@ function EpisodePageInner() {
 
             {/* Overview */}
             {overview ? (
-              <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block', marginBottom: 20 }}>
-                {overview}
-              </Txt>
+              <div data-episode-overview style={{ marginBottom: 20 }}>
+                {!overviewExpanded && overview.length > 140 ? (
+                  <>
+                    <div style={{ position: 'relative', overflow: 'hidden', maxHeight: '4.8em' }}>
+                      <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block' }}>
+                        {overview}
+                      </Txt>
+                      <div
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: '2.4em',
+                          background: `linear-gradient(to bottom, transparent, ${T.bg})`,
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOverviewExpanded(true)}
+                      style={{ marginTop: 4, padding: 0, border: 0, background: 'none', cursor: 'pointer' }}>
+                      <Txt size={13} weight={700} color={T.t2}>{t('readMore')}</Txt>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block' }}>
+                      {overview}
+                    </Txt>
+                    {overview.length > 140 ? (
+                      <button
+                        type="button"
+                        onClick={() => setOverviewExpanded(false)}
+                        style={{ marginTop: 4, padding: 0, border: 0, background: 'none', cursor: 'pointer' }}>
+                        <Txt size={13} weight={700} color={T.t2}>{t('readLess')}</Txt>
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
             ) : null}
 
             {/* ── Mark as watched ── */}
@@ -317,58 +367,47 @@ function EpisodePageInner() {
               </Txt>
             </button>
 
-            {/* ── Ver comentários button ── */}
-            <button onClick={() => appSettings.commentsEnabled ? router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`${episodeCode}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`) : showToast('Os comentários estão temporariamente desativados.')}
-              style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 20 }}>
-              <Icon name="message" size={18} color={T.t2} />
-              <Txt size={15} weight={700} color={T.t1}>
-                {t('viewComments')}{commentCount > 0 ? ` (${commentCount})` : ''}
-              </Txt>
-            </button>
-
             {/* ── Avaliações e estatísticas de reações ── */}
-            <section style={{ marginBottom: 24 }}>
-              <div role="tablist" aria-label={t('episodeCommunity')} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                {([
-                  { key: 'ratings' as const, label: t('ratingsTab') },
-                  { key: 'reactions' as const, label: t('reactionsTab') },
-                ]).map(item => {
-                  const active = socialTab === item.key;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => setSocialTab(item.key)}
-                      style={{
-                        padding: '9px 18px', borderRadius: 999, cursor: 'pointer',
-                        background: active ? T.pillActiveBg : 'transparent',
-                        border: `1px solid ${active ? T.pillActiveBorder : T.border}`,
-                        color: active ? T.pillActiveText : T.t3,
-                        fontSize: 13, fontWeight: 700,
-                        fontFamily: "'Area','Inter',sans-serif",
-                      }}>
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
+            <section style={{ display: 'flex', flexDirection: 'column', gap: 24, marginTop: 18, marginBottom: 24 }}>
+              <div data-episode-ratings>
+                <Txt size={16} weight={800} style={{ display: 'block', marginBottom: 12 }}>
+                  {t('ratingsTab')}
+                </Txt>
+                {avgRating ? (
+                  <div data-episode-rating-cards style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                    <div style={{ minWidth: 0, padding: '14px 15px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}` }}>
+                      <Txt size={11} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 10 }}>
+                        {t('overallRating')}
+                      </Txt>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Icon name="star" size={16} color={T.gold} />
+                        <span style={{ fontSize: 22, fontWeight: 900, color: T.gold, lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{avgRating}</span>
+                        <Txt size={11} weight={700} color={T.t3}>/10</Txt>
+                      </div>
+                      <Txt size={11} weight={600} color={T.t3} style={{ display: 'block', marginTop: 8 }}>
+                        {t('reviewCount', { count: ratingCount })}
+                      </Txt>
+                    </div>
 
-              {socialTab === 'ratings' ? (
-                avgRating ? (
-                  <div style={{ padding: '14px 16px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ background: '#FFEB13', borderRadius: 10, padding: '8px 14px', textAlign: 'center', flexShrink: 0 }}>
-                        <div style={{ fontSize: 24, fontWeight: 900, color: '#1a1400', lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{avgRating}</div>
-                        <div style={{ fontSize: 10, color: 'rgba(26,20,0,0.6)', marginTop: 1 }}>/10</div>
-                      </div>
-                      <div>
-                        <Txt size={13} weight={700} style={{ display: 'block' }}>{t('reviewCount', { count: ratedReviews.length })}</Txt>
-                        {myRating > 0 && (
-                          <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 3 }}>{t('yourRatingValue', { value: myRating })}</Txt>
-                        )}
-                      </div>
+                    <div style={{ minWidth: 0, padding: '14px 15px', background: T.card, borderRadius: 14, border: `1px solid ${T.border}` }}>
+                      <Txt size={11} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 10 }}>
+                        {t('yourRating')}
+                      </Txt>
+                      {myRating > 0 ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Icon name="star" size={16} color={T.gold} />
+                          <span style={{ fontSize: 22, fontWeight: 900, color: T.gold, lineHeight: 1, fontFamily: "'Greed','Area',sans-serif" }}>{myRating.toFixed(1)}</span>
+                          <Txt size={11} weight={700} color={T.t3}>/10</Txt>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 22 }}>
+                          <Icon name="star" size={16} color={T.t4} />
+                          <Txt size={12} weight={700} color={T.t3}>{t('notRatedByYou')}</Txt>
+                        </div>
+                      )}
+                      <Txt size={11} weight={600} color={T.t3} style={{ display: 'block', marginTop: 8 }}>
+                        {myRating > 0 ? t('yourEpisodeRating') : t('rateNow')}
+                      </Txt>
                     </div>
                   </div>
                 ) : (
@@ -376,36 +415,65 @@ function EpisodePageInner() {
                     <Icon name="star" size={16} color={T.t4} />
                     <Txt size={13} weight={600} color={T.t3}>{t('noRatingYet')}</Txt>
                   </div>
-                )
-              ) : reactionReviews.length > 0 ? (
-                <div>
-                  <Txt size={11} color={T.t4} style={{ display: 'block', marginBottom: 12 }}>{t('reactionStatsHint')}</Txt>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-                    {reactionBuckets.map(bucket => {
-                      const percentage = Math.round((bucket.count / reactionReviews.length) * 100);
-                      return (
-                        <div key={bucket.label} style={{ display: 'grid', gridTemplateColumns: '26px 92px minmax(0, 1fr) 34px', alignItems: 'center', gap: 8 }}>
-                          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>{bucket.emoji}</span>
-                          <Txt size={12} weight={600} color={T.t2}>{bucket.label}</Txt>
-                          <div style={{ height: 7, borderRadius: 999, background: T.surface2, overflow: 'hidden' }}>
-                            <div style={{ width: `${percentage}%`, height: '100%', borderRadius: 999, background: bucket.color, transition: 'width 0.25s ease' }} />
+                )}
+              </div>
+
+              <div data-episode-reactions>
+                <Txt size={16} weight={800} style={{ display: 'block', marginBottom: 12 }}>
+                  {t('reactionsTab')}
+                </Txt>
+                {reactionReviews.length > 0 ? (
+                  <div>
+                    <Txt size={11} color={T.t4} style={{ display: 'block', marginBottom: 12 }}>{t('reactionStatsHint')}</Txt>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                      {reactionBuckets.map(bucket => {
+                        const percentage = Math.round((bucket.count / reactionReviews.length) * 100);
+                        return (
+                          <div key={bucket.label} style={{ display: 'grid', gridTemplateColumns: '26px 92px minmax(0, 1fr) 34px', alignItems: 'center', gap: 8 }}>
+                            <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>{bucket.emoji}</span>
+                            <Txt size={12} weight={600} color={T.t2}>{bucket.label}</Txt>
+                            <div style={{ height: 7, borderRadius: 999, background: T.surface2, overflow: 'hidden' }}>
+                              <div style={{ width: `${percentage}%`, height: '100%', borderRadius: 999, background: bucket.color, transition: 'width 0.25s ease' }} />
+                            </div>
+                            <Txt size={11} weight={700} color={T.t3} style={{ textAlign: 'right' }}>{percentage}%</Txt>
                           </div>
-                          <Txt size={11} weight={700} color={T.t3} style={{ textAlign: 'right' }}>{percentage}%</Txt>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 6px' }}>
-                  <span aria-hidden style={{ fontSize: 16 }}>😶</span>
-                  <Txt size={13} weight={600} color={T.t3}>{t('noReactionsYet')}</Txt>
-                </div>
-              )}
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 6px' }}>
+                    <span aria-hidden style={{ fontSize: 16 }}>😶</span>
+                    <Txt size={13} weight={600} color={T.t3}>{t('noReactionsYet')}</Txt>
+                  </div>
+                )}
+              </div>
             </section>
           </div>
-          <div style={{ height: 80 }} />
+          <div style={{ height: 'calc(92px + var(--interactive-safe-bottom))' }} />
         </ScrollArea>
+
+        <div
+          data-episode-comments-dock
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 30,
+            padding: '18px 16px calc(12px + var(--interactive-safe-bottom))',
+            background: `linear-gradient(to top, ${T.bg} 74%, transparent)`,
+            pointerEvents: 'none',
+          }}>
+          <button
+            onClick={() => appSettings.commentsEnabled ? router.push(`/comments?key=${encodeURIComponent(storageKey)}&title=${encodeURIComponent(`${episodeCode}${epName ? `: ${epName}` : ''}`)}&showName=${encodeURIComponent(showName)}`) : showToast('Os comentários estão temporariamente desativados.')}
+            style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: T.card, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', pointerEvents: 'auto' }}>
+            <Icon name="message" size={18} color={T.t2} />
+            <Txt size={15} weight={700} color={T.t1}>
+              {t('viewComments')}{commentCount > 0 ? ` (${commentCount})` : ''}
+            </Txt>
+          </button>
+        </div>
 
         <Toast msg={toast} visible={!!toast} />
 
@@ -415,7 +483,7 @@ function EpisodePageInner() {
             <div onClick={() => { setModalOpen(false); setModalRating(0); setModalReaction(null); }}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
 
-            <div className="safe-bottom-sheet" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
+            <div className="safe-bottom-sheet" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.popup, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
               {/* handle + title */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
                 <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />

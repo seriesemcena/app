@@ -9,6 +9,7 @@ export const T = {
   card:     'var(--c-card)',
   surface:  'var(--c-surface)',
   surface2: 'var(--c-surface2)',
+  popup:    'var(--c-popup)',
 
   /* text */
   t1: 'var(--c-t1)',

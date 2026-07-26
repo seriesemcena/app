@@ -27,8 +27,8 @@ const ICONS: Record<IconName, string> = {
   list: 'play-list-6-solid',
   playlist: 'playlist-solid',
   user: 'user-circle-single-solid',
-  star: 'star-circle-solid',
-  starO: 'star-circle-solid',
+  star: 'uim-star',
+  starO: 'uil-star',
   heart: 'heart-solid',
   heartO: 'heart-solid',
   play: 'play-list-4-solid',
@@ -74,7 +74,7 @@ const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlai
 
 // These were explicitly selected from IconBuddy and must remain visually
 // identical on every platform instead of being substituted by SF Symbols.
-const SVG_ICON_OVERRIDES = new Set<IconName>(['check', 'bell', 'film', 'tv', 'message', 'playlist']);
+const SVG_ICON_OVERRIDES = new Set<IconName>(['star', 'starO', 'check', 'bell', 'film', 'tv', 'message', 'playlist']);
 
 /** Native iOS names. The public IconName API stays platform-independent. */
 const SF_SYMBOLS: Record<IconName, string> = {

@@ -203,7 +203,9 @@ export default function SeriesPage() {
                                       {item.title}
                                     </Txt>
                                     <Txt size={12} color={T.t3}>
-                                      {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : t('newEpisode')}
+                                      {item.nextSeason && item.nextEpisode
+                                        ? <>{t('season', { number: item.nextSeason, ns: 'title' })} · {t('episode', { number: item.nextEpisode, ns: 'title' })}</>
+                                        : t('newEpisode')}
                                     </Txt>
                                   </div>
                                 </button>

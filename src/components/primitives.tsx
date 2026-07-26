@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { useTheme } from '@/context/ThemeContext';
-import { STREAMING_COLORS } from '@/lib/streamingPlatforms';
+import { STREAMING_COLORS, streamingLogoAsset } from '@/lib/streamingPlatforms';
 
 // size >= 20 → Greed (H1/H2 level); size < 20 → Area (H3/H4/body)
 // size >= 20 → Greed (H1/H2); size < 20 → Area (H3/H4/body)
@@ -197,7 +197,7 @@ export const Stars = ({ value = 0, max = 5, size = 14, onChange }: { value?: num
   <div style={{ display: 'flex', gap: 2 }}>
     {[...Array(max)].map((_, i) => (
       <div key={i} onClick={() => onChange?.(i + 1)} style={{ cursor: onChange ? 'pointer' : 'default' }}>
-        <Icon name="star" size={size} color={i < value ? T.gold : 'var(--c-t4)'} />
+        <Icon name={i < value ? 'star' : 'starO'} size={size} color={i < value ? T.gold : 'var(--c-t4)'} />
       </div>
     ))}
   </div>
@@ -227,7 +227,7 @@ export const BottomSheet = ({ visible, onClose, title, children }: { visible: bo
       <div
         aria-hidden={!visible}
         className={`safe-bottom-sheet${visible ? ' keyboard-aware-bottom' : ''}`}
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.surface, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: visible ? 'auto' : 'none' }}>
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, transform: visible ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)', background: T.popup, borderRadius: '20px 20px 0 0', zIndex: 51, maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column', pointerEvents: visible ? 'auto' : 'none' }}>
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
           <div style={{ width: 40 }} />
           <div style={{ width: 40, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
@@ -245,10 +245,29 @@ export const BottomSheet = ({ visible, onClose, title, children }: { visible: bo
 };
 
 export const StreamBadge = ({ name }: { name: string }) => {
-  const colors: Record<string, string> = { Netflix: STREAMING_COLORS.netflix, Prime: STREAMING_COLORS.prime, 'Disney+': STREAMING_COLORS.disney, HBO: STREAMING_COLORS.hbo, Apple: STREAMING_COLORS.apple, Globo: STREAMING_COLORS.globo, Paramount: STREAMING_COLORS.paramount, 'MGM+': STREAMING_COLORS.mgm };
+  const { theme } = useTheme();
+  const logo = streamingLogoAsset(name, theme === 'dark');
   return (
-    <div style={{ padding: '4px 10px', borderRadius: 6, background: colors[name] || T.surface2, display: 'inline-flex', alignItems: 'center' }}>
-      <Txt size={10} weight={700} color={T.white}>{name}</Txt>
+    <div
+      aria-label={name}
+      title={name}
+      style={{
+        minWidth: logo ? 52 : 38,
+        minHeight: logo ? 28 : 26,
+        padding: logo ? 0 : '4px 10px',
+        borderRadius: logo ? 0 : 7,
+        background: logo ? 'transparent' : T.surface2,
+        border: logo ? 'none' : `1px solid ${T.border}`,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+      {logo ? (
+        <img src={logo} alt={name} style={{ width: 52, height: 24, objectFit: 'contain', display: 'block' }} />
+      ) : (
+        <Txt size={10} weight={700} color={T.t2}>{name}</Txt>
+      )}
     </div>
   );
 };

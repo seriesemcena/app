@@ -548,10 +548,11 @@ function CommentsPageInner() {
               </div>
             )}
           </div>
-          <div style={{ height: 150 }} />
+          <div style={{ height: sorted.length > 0 || composerExpanded ? 150 : 24 }} />
         </ScrollArea>
 
         {/* ── Compositor fixo de comentários ── */}
+        {(sorted.length > 0 || composerExpanded) && (
         <div className="keyboard-aware-bottom" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 60, padding: '48px calc(12px + var(--safe-area-right)) calc(12px + var(--interactive-safe-bottom)) calc(12px + var(--safe-area-left))', background: `linear-gradient(to bottom, transparent, ${T.bg} 34%)` }}>
 
           {/* More menu */}
@@ -646,7 +647,7 @@ function CommentsPageInner() {
                 aria-label={t('comments.commentNow')}
                 style={{ minHeight: 48, padding: '0 20px', borderRadius: 24, background: T.pink, border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, boxShadow: `0 6px 20px ${T.pinkGlow}`, cursor: 'pointer', fontFamily: "'Area','Inter',sans-serif", fontSize: 14, fontWeight: 800 }}
               >
-                <Icon name="reply" size={19} color="#fff" />
+                <Icon name="message" size={19} color="#fff" />
                 {t('comments.commentNow')}
               </button>
             </div>
@@ -705,6 +706,7 @@ function CommentsPageInner() {
           </div>
           )}
         </div>
+        )}
 
         <Toast msg={toast} visible={!!toast} />
         <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />

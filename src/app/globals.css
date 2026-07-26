@@ -117,6 +117,7 @@
   --c-card-deep: #16161A;
   --c-surface:   #2A2A32;
   --c-surface2:  #34343E;
+  --c-popup:     #18181C;
   --c-t1:        rgba(255,255,255,0.95);
   --c-t2:        rgba(255,255,255,0.60);
   --c-t3:        rgba(255,255,255,0.38);
@@ -153,6 +154,7 @@ html[data-keyboard-open="true"] {
   --c-card-deep: #EAEAF0;
   --c-surface:   #FFFFFF;
   --c-surface2:  #E5E5EA;
+  --c-popup:     #D1D1D6;
   --c-t1:        rgba(0,0,0,0.88);
   --c-t2:        rgba(0,0,0,0.55);
   --c-t3:        rgba(0,0,0,0.38);
@@ -227,6 +229,12 @@ html[data-keyboard-open="true"] .tab-bar-wrap {
   pointer-events: none !important;
 }
 
+html[data-modal-open="true"] .tab-bar-wrap {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
 .keyboard-aware-bottom {
   bottom: var(--keyboard-offset) !important;
 }
@@ -243,6 +251,7 @@ html[data-keyboard-open="true"] .tab-bar-wrap {
 
 .safe-bottom-sheet {
   max-height: calc(100% - var(--safe-area-top) - 8px) !important;
+  background: var(--c-popup) !important;
 }
 
 /* Desktop/tablet (≥ 768px): sidebar layout — no phone frame */

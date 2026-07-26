@@ -10,12 +10,31 @@ import { TMDBBackdrop, TMDBPersonPhoto, TMDBPosterCard, ImgWithSkeleton } from '
 import { StreamCircle } from '@/components/primitives';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, useTMDB } from '@/lib/tmdb';
-import { navigateBack } from '@/lib/navigation';
+import { navigateBack, navigateTo } from '@/lib/navigation';
+import { selectTitleTrailer, titleVideoUrl, type TMDBTitleVideo } from '@/lib/titleVideos';
 import { AppErrorState } from '@/components/AppStates';
-import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
+import { listStore, revStore, profileStore, epWatchedStore, prefsStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRevStore, dbListStore, dbActivityStore, dbEpWatchedStore, dbRatingSummaryStore, type RatingSummary } from '@/lib/db';
+import { initFCM, requestPushPermission } from '@/lib/fcm';
+import {
+  dbRevStore,
+  dbListStore,
+  dbActivityStore,
+  dbEpWatchedStore,
+  dbPrefsStore,
+  dbRatingSummaryStore,
+  dbSeasonPremiereReminderStore,
+  type RatingSummary,
+  type SeasonPremiereReminder,
+} from '@/lib/db';
+import {
+  formatPremiereCountdown,
+  getSeasonPremiereDate,
+  isFutureSeason,
+  localPremiereDate,
+  seasonPremiereNotifyAt,
+} from '@/lib/seasonPremiere';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
@@ -76,9 +95,18 @@ export default function TitleDetailPage() {
   const [emojiTab, setEmojiTab]         = useState(0);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [epWatchedRefresh, setEpWatchedRefresh] = useState(0);
+  const [fallbackVideos, setFallbackVideos] = useState<TMDBTitleVideo[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const reviewTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [showNavTitle, setShowNavTitle] = useState(false);
+
+  useEffect(() => {
+    if (!showForm || isTV || reportTarget !== null) return;
+    document.documentElement.dataset.modalOpen = 'true';
+    return () => {
+      delete document.documentElement.dataset.modalOpen;
+    };
+  }, [isTV, reportTarget, showForm]);
 
   // Load reviews: localStorage first, then Firestore for cross-device sync
   useEffect(() => {
@@ -121,6 +149,26 @@ export default function TitleDetailPage() {
     () => tmdb.titleDetail(isTV ? 'tv' : 'movie', id),
     [id, isTV]
   );
+
+  // TMDB localizes appended videos. When the selected locale has no playable
+  // result, make one English fallback request rather than leaving a trailer
+  // that exists on TMDB inaccessible.
+  useEffect(() => {
+    if (!detail || selectTitleTrailer(detail.videos?.results)) {
+      setFallbackVideos([]);
+      return;
+    }
+
+    let alive = true;
+    tmdb.titleVideos(isTV ? 'tv' : 'movie', id)
+      .then((data) => {
+        if (alive) setFallbackVideos(Array.isArray(data?.results) ? data.results : []);
+      })
+      .catch(() => {
+        if (alive) setFallbackVideos([]);
+      });
+    return () => { alive = false; };
+  }, [detail, id, isTV]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -210,6 +258,11 @@ export default function TitleDetailPage() {
   const seasons: number[] = (detail.seasons || []).map((s: any) => s.season_number).filter((n: number) => n > 0);
   // Default to last/latest season
   const activeSeason = selectedSeason ?? seasons[seasons.length - 1] ?? 1;
+  const trailer = selectTitleTrailer([
+    ...(detail.videos?.results || []),
+    ...fallbackVideos,
+  ]);
+  const trailerUrl = titleVideoUrl(trailer);
 
   // Tabs
   const tabs: Tab[] = [
@@ -220,6 +273,11 @@ export default function TitleDetailPage() {
   ];
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2500); };
+  const openTrailer = () => {
+    if (!trailerUrl) return;
+    setMaisSheet(false);
+    navigateTo(router, trailerUrl);
+  };
   const openProblemReport = () => {
     setMaisSheet(false);
     setListSheet(false);
@@ -519,6 +577,8 @@ export default function TitleDetailPage() {
               <SeasonProgressPanel
                 tvId={id}
                 seasonNum={activeSeason}
+                showName={title}
+                posterPath={detail.poster_path}
                 fallbackRuntime={Number((detail as any).episode_run_time?.[0]) || 45}
                 refreshKey={epWatchedRefresh}
                 user={user}
@@ -660,7 +720,7 @@ export default function TitleDetailPage() {
           <>
             <div onClick={() => { setShowForm(false); setShowGif(false); setShowEmoji(false); }}
               style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 40 }} />
-            <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.surface, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
+            <div className="safe-bottom-sheet keyboard-aware-bottom" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50, background: T.popup, borderRadius: '20px 20px 0 0', overflow: 'hidden', maxHeight: '88%', display: 'flex', flexDirection: 'column' }}>
               {/* handle + title */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: `1px solid ${T.border}`, flexShrink: 0, position: 'relative' }}>
                 <div style={{ width: 36, height: 4, background: T.t4, borderRadius: 2, position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)' }} />
@@ -855,14 +915,14 @@ export default function TitleDetailPage() {
         {maisSheet && reportTarget === null && (
           <BottomSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
             {([
-              { icon: 'play'     as const, label: t('viewTrailer'),  action: () => { setTab('whereToWatch'); setMaisSheet(false); } },
-              { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); setListSheet(true); } },
-              { icon: 'share'    as const, label: t('shareTitle'),   action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); } },
-              { icon: 'flag'     as const, label: t('reportIssue'),  action: openProblemReport },
-            ]).map(({ icon, label, action }, idx, arr) => (
-              <button key={label} onClick={action} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: idx < arr.length - 1 ? `1px solid ${T.border}` : 'none', textAlign: 'left', color: T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
+              { icon: 'play'     as const, label: t('viewTrailer'),  action: openTrailer, disabled: !trailerUrl },
+              { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); setListSheet(true); }, disabled: false },
+              { icon: 'share'    as const, label: t('shareTitle'),   action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); }, disabled: false },
+              { icon: 'flag'     as const, label: t('reportIssue'),  action: openProblemReport, disabled: false },
+            ]).map(({ icon, label, action, disabled }, idx, arr) => (
+              <button key={label} type="button" onClick={action} disabled={disabled} aria-disabled={disabled} style={{ width: '100%', padding: '16px 0', background: 'none', border: 'none', borderBottom: idx < arr.length - 1 ? `1px solid ${T.border}` : 'none', textAlign: 'left', color: disabled ? T.t3 : T.t1, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif", cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.48 : 1, display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon name={icon} size={17} color={T.t2} />
+                  <Icon name={icon} size={17} color={disabled ? T.t3 : T.t2} />
                 </div>
                 {label}
               </button>
@@ -1020,7 +1080,6 @@ function WatchProvidersTab({ type, id, onVIP }: {
   type ProviderType = 'subscription' | 'rent' | 'buy';
   const ProviderRow = ({ p, providerType }: { p: any; providerType: ProviderType }) => {
     const label = providerType === 'subscription' ? t('subscriptionIncluded') : providerType === 'rent' ? t('rentBtn') : t('buyBtn');
-    const btnLabel = providerType === 'subscription' ? t('watchBtn') : label;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: T.card, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 8 }}>
         {p.logo_path
@@ -1031,7 +1090,7 @@ function WatchProvidersTab({ type, id, onVIP }: {
           <Txt size={14} weight={700} style={{ display: 'block' }}>{p.provider_name}</Txt>
           <Txt size={11} color={T.t3}>{t('streamingPlatform')}</Txt>
         </div>
-        <Btn label={btnLabel} variant="pink" size="sm" />
+        {providerType !== 'subscription' && <Btn label={label} variant="pink" size="sm" />}
       </div>
     );
   };
@@ -1202,6 +1261,8 @@ function formatSeasonTime(minutes: number) {
 function SeasonProgressPanel({
   tvId,
   seasonNum,
+  showName,
+  posterPath,
   fallbackRuntime,
   refreshKey,
   user,
@@ -1210,22 +1271,56 @@ function SeasonProgressPanel({
 }: {
   tvId: string;
   seasonNum: number;
+  showName: string;
+  posterPath?: string | null;
   fallbackRuntime: number;
   refreshKey: number;
   user: { uid: string } | null | undefined;
   onChanged: () => void;
   onToast: (message: string) => void;
 }) {
-  const { t } = useTranslation('title');
+  const { t, i18n } = useTranslation('title');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { data, loading } = useTMDB(() => tmdb.season(tvId, seasonNum), [tvId, seasonNum]);
   const episodes: any[] = data?.episodes || [];
   const [watchedMap, setWatchedMap] = useState<Record<string, number[]>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderSaving, setReminderSaving] = useState(false);
 
   useEffect(() => {
     setWatchedMap(epWatchedStore.getShow(tvId));
   }, [tvId, seasonNum, refreshKey]);
+
+  const premiereDate = getSeasonPremiereDate(data);
+  const upcomingSeason = isFutureSeason(premiereDate, new Date(nowMs));
+  const premiereAt = premiereDate ? localPremiereDate(premiereDate) : null;
+
+  useEffect(() => {
+    if (!premiereDate || !isFutureSeason(premiereDate)) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [premiereDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReminderEnabled(false);
+    if (!firebaseConfigured || !user || !premiereDate) return;
+
+    void dbSeasonPremiereReminderStore
+      .get(getDB(), user.uid, tvId, seasonNum)
+      .then((reminder) => {
+        if (cancelled) return;
+        setReminderEnabled(Boolean(
+          reminder?.enabled
+          && !reminder.notifiedAt
+          && reminder.premiereDate === premiereDate
+        ));
+      });
+
+    return () => { cancelled = true; };
+  }, [user, tvId, seasonNum, premiereDate]);
 
   const watchedNumbers = new Set(watchedMap[String(seasonNum)] ?? []);
   const watchedCount = episodes.filter((episode) => watchedNumbers.has(episode.episode_number)).length;
@@ -1238,6 +1333,71 @@ function SeasonProgressPanel({
     return total + runtime;
   }, 0);
   const circleLength = 138.23;
+
+  const togglePremiereReminder = async () => {
+    if (!premiereDate || reminderSaving) return;
+    if (!firebaseConfigured || !user) {
+      onToast(t('premiereReminderLogin'));
+      return;
+    }
+
+    setReminderSaving(true);
+    try {
+      if (reminderEnabled) {
+        await dbSeasonPremiereReminderStore.remove(getDB(), user.uid, tvId, seasonNum);
+        setReminderEnabled(false);
+        onToast(t('premiereReminderDisabled'));
+        return;
+      }
+
+      const notifyAt = seasonPremiereNotifyAt(premiereDate);
+      if (!notifyAt) throw new Error('Invalid season premiere date');
+
+      // The permission prompt must be initiated directly from this click.
+      // Saving only the Firestore reminder is not enough for a native/PWA
+      // notification to reach the device.
+      let pushReady = false;
+      try {
+        const permission = await requestPushPermission();
+        if (permission === 'granted') {
+          pushReady = Boolean(await initFCM(getDB(), user.uid));
+        }
+      } catch {}
+
+      // Enabling this explicit reminder also re-enables the corresponding
+      // notification category, otherwise the scheduled worker would skip it.
+      const currentPrefs = prefsStore.get();
+      const nextPrefs = {
+        ...currentPrefs,
+        notifPrefs: {
+          ...currentPrefs.notifPrefs,
+          reminders: true,
+        },
+      };
+      prefsStore.set(nextPrefs);
+      await dbPrefsStore.set(getDB(), user.uid, nextPrefs);
+
+      const reminder: SeasonPremiereReminder = {
+        uid: user.uid,
+        tvId: Number(tvId),
+        seasonNumber: seasonNum,
+        title: showName,
+        premiereDate,
+        notifyAt,
+        posterPath: posterPath ?? null,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        notifiedAt: null,
+      };
+      await dbSeasonPremiereReminderStore.set(getDB(), user.uid, reminder);
+      setReminderEnabled(true);
+      onToast(t(pushReady ? 'premiereReminderEnabled' : 'premiereReminderPushUnavailable'));
+    } catch {
+      onToast(t('premiereReminderError'));
+    } finally {
+      setReminderSaving(false);
+    }
+  };
 
   const finishSeason = async () => {
     if (totalCount === 0 || completed) return;
@@ -1266,6 +1426,116 @@ function SeasonProgressPanel({
         overflow: 'hidden', position: 'relative',
       }}>
         <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />
+      </div>
+    );
+  }
+
+  if (upcomingSeason && premiereDate && premiereAt) {
+    const formattedPremiereDate = new Intl.DateTimeFormat(i18n.language || 'pt-BR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(premiereAt);
+    const seasonPosterUrl = tmdbImg(data?.poster_path || posterPath, 'w342');
+
+    return (
+      <div style={{
+        marginTop: 16,
+        padding: 16,
+        borderRadius: 18,
+        overflow: 'hidden',
+        position: 'relative',
+        background: isDark
+          ? 'linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.022) 62%, rgba(255,255,255,.045))'
+          : 'linear-gradient(145deg, rgba(0,0,0,.045), rgba(0,0,0,.012) 62%, rgba(0,0,0,.025))',
+        border: `1px solid ${isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.10)'}`,
+        boxShadow: isDark
+          ? 'inset 0 1px 0 rgba(255,255,255,.055)'
+          : 'inset 0 1px 0 rgba(255,255,255,.8)',
+      }}>
+        <div aria-hidden style={{
+          position: 'absolute',
+          width: 180,
+          height: 180,
+          right: -70,
+          top: -95,
+          borderRadius: '50%',
+          background: isDark
+            ? 'radial-gradient(circle, rgba(255,255,255,.09), transparent 70%)'
+            : 'radial-gradient(circle, rgba(0,0,0,.05), transparent 70%)',
+          pointerEvents: 'none',
+        }} />
+
+        <Txt size={9} weight={800} color={T.t3} style={{
+          display: 'block',
+          textTransform: 'uppercase',
+          letterSpacing: 1.15,
+          marginBottom: 13,
+        }}>
+          {t('seasonPremiere')}
+        </Txt>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+          <ImgWithSkeleton
+            src={seasonPosterUrl}
+            alt={`${showName} — ${t('season', { number: seasonNum })}`}
+            width={64}
+            height={88}
+            radius={10}
+            style={{
+              border: `1px solid ${isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.10)'}`,
+            }}
+          />
+
+          <div style={{ minWidth: 0 }}>
+            <Txt size={16} weight={800} color={T.t1} style={{ display: 'block', marginBottom: 3 }}>
+              {t('season', { number: seasonNum })}
+            </Txt>
+            <Txt size={20} weight={850} color={T.t1} style={{ display: 'block', letterSpacing: '-.35px' }}>
+              {formatPremiereCountdown(premiereDate, new Date(nowMs))}
+            </Txt>
+            <Txt size={10} color={T.t3} style={{ display: 'block', marginTop: 3 }}>
+              {t('premieresIn')} {formattedPremiereDate}
+            </Txt>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={reminderSaving}
+          aria-pressed={reminderEnabled}
+          onClick={() => { void togglePremiereReminder(); }}
+          style={{
+            width: '100%',
+            minHeight: 42,
+            marginTop: 15,
+            padding: '10px 14px',
+            borderRadius: 999,
+            border: `1px solid ${reminderEnabled
+              ? (isDark ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.16)')
+              : T.pillActiveBorder}`,
+            background: reminderEnabled
+              ? (isDark ? 'rgba(255,255,255,.09)' : 'rgba(0,0,0,.07)')
+              : T.pillActiveBg,
+            color: reminderEnabled ? T.t1 : T.pillActiveText,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            fontFamily: "'Area','Inter',sans-serif",
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: reminderSaving ? 'wait' : 'pointer',
+            opacity: reminderSaving ? .68 : 1,
+          }}
+        >
+          <Icon name={reminderEnabled ? 'check' : 'bell'} size={15} color={reminderEnabled ? T.t1 : T.pillActiveText} />
+          {reminderSaving
+            ? t('savingReminder')
+            : reminderEnabled
+              ? t('premiereReminderActive')
+              : t('remindPremiere')}
+        </button>
       </div>
     );
   }

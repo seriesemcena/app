@@ -31,11 +31,11 @@ function letterGradient(letter: string) {
 
 /* ── "Do app" icon/color map ── */
 const APP_ICON: Record<InboxNotif['type'], string> = {
-  new_episode: 'play', like: 'heart', reply: 'message',
+  new_episode: 'play', season_premiere: 'bell', like: 'heart', reply: 'message',
   follow: 'user', release: 'star', pro_reminder: 'bell', general: 'bell',
 };
 const APP_COLOR: Record<InboxNotif['type'], string> = {
-  new_episode: '#60a5fa', like: T.pink, reply: '#a78bfa',
+  new_episode: '#60a5fa', season_premiere: T.pink, like: T.pink, reply: '#a78bfa',
   follow: '#4ade80', release: T.gold, pro_reminder: T.pink, general: T.t3,
 };
 
@@ -288,7 +288,7 @@ export default function NotificationsPage() {
   };
   const APP_PREF: Partial<Record<InboxNotif['type'], NotifPrefKey>> = {
     like: 'likes', reply: 'replies', follow: 'followers',
-    release: 'premieres', new_episode: 'episodes', pro_reminder: 'reminders',
+    release: 'premieres', new_episode: 'episodes', season_premiere: 'reminders', pro_reminder: 'reminders',
   };
   const visibleAccount = accountNotifs.filter(n => {
     const key = ACCOUNT_PREF[n.type];

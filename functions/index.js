@@ -858,6 +858,93 @@ exports.scanAutomatedNotifications = onSchedule({
   logger.info('Automatic notification scan complete', { users: usersChecked, checked });
 });
 
+function seasonPremiereCopy(locale, reminder) {
+  const language = String(locale || 'pt-BR').toLowerCase();
+  if (language.startsWith('en')) {
+    return {
+      title: 'New season premieres tomorrow',
+      body: `${reminder.title} · Season ${reminder.seasonNumber}`,
+    };
+  }
+  if (language.startsWith('es')) {
+    return {
+      title: 'La nueva temporada se estrena mañana',
+      body: `${reminder.title} · Temporada ${reminder.seasonNumber}`,
+    };
+  }
+  return {
+    title: 'A nova temporada estreia amanhã',
+    body: `${reminder.title} · Temporada ${reminder.seasonNumber}`,
+  };
+}
+
+/** Delivers only reminders explicitly enabled by a member. `notifyAt` is
+ * generated in that member's local time exactly 24 hours before the TMDB
+ * premiere date; the hourly worker may add at most one hour of delay. */
+exports.sendSeasonPremiereReminders = onSchedule({
+  schedule: '0 * * * *',
+  timeZone: 'UTC',
+  timeoutSeconds: 540,
+  memory: '256MiB',
+}, async () => {
+  const now = new Date();
+  const due = await db.collectionGroup('seasonReminders')
+    .where('enabled', '==', true)
+    .where('notifyAt', '<=', now.toISOString())
+    .orderBy('notifyAt')
+    .limit(200)
+    .get();
+
+  let deliveredCount = 0;
+  for (const reminderDoc of due.docs) {
+    const reminder = reminderDoc.data();
+    const uid = reminderDoc.ref.parent.parent?.id;
+    if (!uid || reminder.uid !== uid) {
+      logger.warn('Invalid season reminder owner', { reminderId: reminderDoc.id });
+      await reminderDoc.ref.set({ enabled: false }, { merge: true });
+      continue;
+    }
+
+    const user = (await db.doc(`users/${uid}`).get()).data() || {};
+    if (user.prefs?.notifPrefs?.reminders === false) {
+      await reminderDoc.ref.set({ enabled: false }, { merge: true });
+      continue;
+    }
+
+    try {
+      const copy = seasonPremiereCopy(user.prefs?.locale, reminder);
+      const result = await deliver(
+        uid,
+        `season-premiere-${reminder.tvId}-s${reminder.seasonNumber}`,
+        {
+          type: 'season_premiere',
+          ...copy,
+          link: `/title/tv/${reminder.tvId}`,
+          poster: reminder.posterPath
+            ? `https://image.tmdb.org/t/p/w154${reminder.posterPath}`
+            : null,
+        },
+      );
+      await reminderDoc.ref.set({
+        enabled: false,
+        notifiedAt: now.toISOString(),
+      }, { merge: true });
+      if (result.created) deliveredCount += 1;
+    } catch (error) {
+      logger.warn('Season premiere reminder delivery failed', {
+        uid,
+        reminderId: reminderDoc.id,
+        error: String(error),
+      });
+    }
+  }
+
+  logger.info('Season premiere reminder scan complete', {
+    due: due.size,
+    delivered: deliveredCount,
+  });
+});
+
 exports.processNotificationJobs = onSchedule({
   schedule: 'every 5 minutes',
   timeZone: 'America/Bahia',

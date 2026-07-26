@@ -23,6 +23,14 @@ test('comments load automatically without changing the existing page cursor flow
   assert.match(source, /setPageCursor\(page\.cursor\)/);
 });
 
+test('comments only show the collapsed footer action for existing discussions', async () => {
+  const source = await readFile(new URL('src/app/comments/page.tsx', projectRoot), 'utf8');
+
+  assert.match(source, /\{\(sorted\.length > 0 \|\| composerExpanded\) && \([\s\S]*?className="keyboard-aware-bottom"/);
+  assert.match(source, /!composerExpanded \? \([\s\S]*?aria-label=\{t\('comments\.commentNow'\)\}[\s\S]*?<Icon name="message"/);
+  assert.doesNotMatch(source, /aria-label=\{t\('comments\.commentNow'\)\}[\s\S]*?<Icon name="reply"/);
+});
+
 test('feed loads automatically while preserving its Firestore cursor and page limits', async () => {
   const source = await readFile(new URL('src/app/feed/page.tsx', projectRoot), 'utf8');
 

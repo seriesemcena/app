@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
-import { MasonryGrid2 } from '@/components/posters';
+import { ImgWithSkeleton, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
 import { profileStore } from '@/lib/store';
@@ -16,23 +16,20 @@ import { getDB } from '@/lib/firebase';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { AppBannerSlot } from '@/components/AppBannerSlot';
+import {
+  addRecentSearchLocal,
+  clearRecentSearchesLocal,
+  dbRecentSearchStore,
+  loadRecentSearchesLocal,
+  mergeRecentSearches,
+  recentSearchKey,
+  saveRecentSearchesLocal,
+  type RecentSearchItem,
+} from '@/lib/recentSearches';
 
 type FilterType = 'series' | 'movies' | 'people' | 'users';
 type SortOrder = 'relevance' | 'newest' | 'oldest';
 type TrendingType = 'tv' | 'movie';
-type RecentItem = { id: number; title: string; type: string; poster_path?: string | null };
-
-const RECENT_KEY = 'sec_recent_search_v1';
-
-function loadRecent(): RecentItem[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
-}
-function saveRecent(item: RecentItem) {
-  const prev = loadRecent().filter((r) => r.id !== item.id);
-  const next = [item, ...prev].slice(0, 5);
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
-}
 
 export default function SearchPage() {
   const router = useRouter();
@@ -47,8 +44,9 @@ export default function SearchPage() {
   const [sortOpen, setSortOpen] = useState(false);
   const [trendingType, setTrendingType] = useState<TrendingType>('tv');
   const [focused, setFocused] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<RecentItem[]>([]);
-  const [textlessPosters, setTextlessPosters] = useState<Record<number, string | null>>({});
+  const [recentSearches, setRecentSearches] = useState<RecentSearchItem[]>([]);
+  const [textlessPosters, setTextlessPosters] = useState<Record<string, string | null>>({});
+  const requestedPosterKeys = useRef(new Set<string>());
   const [userResults, setUserResults] = useState<UserSearchResult[]>([]);
   const [userLoading, setUserLoading] = useState(false);
 
@@ -58,22 +56,46 @@ export default function SearchPage() {
   const avatarImage = profile.avatarImage || user?.photoURL || null;
 
   useEffect(() => {
-    const recents = loadRecent();
-    setRecentSearches(recents);
-    recents.forEach(async (item) => {
-      if (textlessPosters[item.id] !== undefined) return;
+    let cancelled = false;
+    setRecentSearches(loadRecentSearchesLocal());
+    if (!user?.uid) return () => { cancelled = true; };
+
+    void (async () => {
       try {
-        // include_image_language must be its own query param — a "?" inside
-        // the endpoint value is rejected by the API's endpoint allowlist
-        const data = await fetch(`/api/tmdb?endpoint=/${item.type}/${item.id}/images&include_image_language=null`).then(r => r.json());
-        const found = (data.posters || []).find((p: any) => p.iso_639_1 === null);
-        setTextlessPosters(prev => ({ ...prev, [item.id]: found ? tmdbImg(found.file_path, 'w342') : null }));
+        const db = getDB();
+        const cloud = await dbRecentSearchStore.get(db, user.uid);
+        if (cancelled) return;
+        // Read local again so a search made while Firestore was loading is kept.
+        const merged = mergeRecentSearches(loadRecentSearchesLocal(), cloud);
+        saveRecentSearchesLocal(merged);
+        setRecentSearches(merged);
+        await dbRecentSearchStore.set(db, user.uid, merged);
       } catch {
-        setTextlessPosters(prev => ({ ...prev, [item.id]: null }));
+        // Offline/auth failures keep the per-device history available.
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    recentSearches.forEach((item) => {
+      const key = recentSearchKey(item);
+      if (requestedPosterKeys.current.has(key)) return;
+      requestedPosterKeys.current.add(key);
+      void (async () => {
+        try {
+          // Wait for the definitive language-free artwork instead of briefly
+          // showing the translated poster and swapping it afterwards.
+          const data = await fetch(`/api/tmdb?endpoint=/${item.type}/${item.id}/images&include_image_language=null`).then(r => r.json());
+          const found = (data.posters || []).find((p: { iso_639_1?: string | null }) => p.iso_639_1 === null);
+          setTextlessPosters(prev => ({ ...prev, [key]: found ? tmdbImg(found.file_path, 'w342') : null }));
+        } catch {
+          setTextlessPosters(prev => ({ ...prev, [key]: null }));
+        }
+      })();
+    });
+  }, [recentSearches]);
 
   const isSearching = query.length > 0;
 
@@ -123,15 +145,25 @@ export default function SearchPage() {
 
   const openTitle = (item: TMDBItem) => {
     const n = normalize(item);
-    const recent: RecentItem = { id: n.id, title: n.title, type: n.type, poster_path: item.poster_path };
-    saveRecent(recent);
-    setRecentSearches(loadRecent());
+    const recent = { id: n.id, title: n.title, type: n.type, poster_path: item.poster_path };
+    const next = addRecentSearchLocal(recent);
+    setRecentSearches(next);
+    if (user?.uid) {
+      try {
+        void dbRecentSearchStore.set(getDB(), user.uid, next).catch(() => {});
+      } catch {}
+    }
     router.push(`/title/${n.type}/${n.id}`);
   };
 
-  const openRecent = (item: RecentItem) => {
-    saveRecent(item);
-    setRecentSearches(loadRecent());
+  const openRecent = (item: RecentSearchItem) => {
+    const next = addRecentSearchLocal({ ...item, searchedAt: Date.now() });
+    setRecentSearches(next);
+    if (user?.uid) {
+      try {
+        void dbRecentSearchStore.set(getDB(), user.uid, next).catch(() => {});
+      } catch {}
+    }
     router.push(`/title/${item.type}/${item.id}`);
   };
 
@@ -205,19 +237,33 @@ export default function SearchPage() {
                       {t('search.recentSearches')}
                     </Txt>
                     <button
-                      onClick={() => { localStorage.removeItem(RECENT_KEY); setRecentSearches([]); setTextlessPosters({}); }}
+                      onClick={() => {
+                        clearRecentSearchesLocal();
+                        setRecentSearches([]);
+                        setTextlessPosters({});
+                        requestedPosterKeys.current.clear();
+                        if (user?.uid) {
+                          try {
+                            void dbRecentSearchStore.clear(getDB(), user.uid).catch(() => {});
+                          } catch {}
+                        }
+                      }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}>
                       <Txt size={11} weight={700} color={T.pink}>{t('search.clear')}</Txt>
                     </button>
                   </div>
                   <div style={{ display: 'flex', gap: 14, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 } as React.CSSProperties}>
                     {recentSearches.map((item) => (
-                      <div key={item.id} onClick={() => openRecent(item)} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                      <div key={recentSearchKey(item)} onClick={() => openRecent(item)} style={{ flexShrink: 0, cursor: 'pointer' }}>
                         <div style={{ width: 130, height: 130, borderRadius: 28, overflow: 'hidden', background: 'rgba(255,255,255,0.10)', border: '2px solid rgba(255,255,255,0.18)', position: 'relative', flexShrink: 0 }}>
                           {(() => {
-                            const src = textlessPosters[item.id] ?? tmdbImg(item.poster_path, 'w185');
+                            const poster = textlessPosters[recentSearchKey(item)];
+                            if (poster === undefined) {
+                              return <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />;
+                            }
+                            const src = poster || tmdbImg(item.poster_path, 'w185');
                             return src
-                              ? <img src={src} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              ? <ImgWithSkeleton src={src} alt={item.title} width="100%" height="100%" />
                               : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   <Icon name="film" size={36} color="rgba(255,255,255,0.4)" />
                                 </div>;
@@ -306,6 +352,7 @@ export default function SearchPage() {
                     ))}
                     {filter !== 'users' && (
                       <button
+                        aria-label={t('search.sort.relevance')}
                         onClick={() => setSortOpen((v) => !v)}
                         style={{
                           marginLeft: 'auto', width: 36, height: 36, borderRadius: 18, flexShrink: 0,
@@ -314,7 +361,7 @@ export default function SearchPage() {
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           transition: 'background 0.2s',
                         }}>
-                        <Icon name="list" size={16} color="#fff" />
+                        <Icon name="menuDots" size={18} color="#fff" />
                       </button>
                     )}
                   </div>

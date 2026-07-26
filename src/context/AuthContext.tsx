@@ -127,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 try {
                   const allowedTypes: InboxNotif['type'][] = [
                     'new_episode',
+                    'season_premiere',
                     'like',
                     'reply',
                     'follow',

@@ -554,7 +554,7 @@ export const reactionStore = {
 /* ─── Notification inbox store ─── */
 export type InboxNotif = {
   id: string;
-  type: 'new_episode' | 'like' | 'reply' | 'follow' | 'release' | 'pro_reminder' | 'general';
+  type: 'new_episode' | 'season_premiere' | 'like' | 'reply' | 'follow' | 'release' | 'pro_reminder' | 'general';
   title: string;
   body: string;
   time: string;    // ISO date
