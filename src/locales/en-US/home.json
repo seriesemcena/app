@@ -27,9 +27,9 @@
     "para_voce": "For you",
     "em_alta": "Trending",
     "novidades": "New",
-    "minha_lista": "My list",
-    "em_breve": "Coming soon",
-    "atrasadas": "Behind"
+    "maratonando": "Watching",
+    "atrasadas": "Behind",
+    "finalizadas": "Finished"
   },
   "tags": {
     "novo": "NEW",
@@ -80,9 +80,12 @@
   "noUpcoming": "No scheduled episodes",
   "noUpcomingDetail": "When your series have confirmed new episodes, they'll appear here",
   "newEpisode": "New episode",
-  "behindDetail": "Series you haven't watched in more than 30 days",
+  "seasonNumber": "Season {{number}}",
+  "behindDetail": "Current-season episodes left unwatched for at least 72 hours",
   "upToDate": "You're all caught up!",
   "noBehind": "No overdue series. Keep it up!",
+  "overdueEpisodes_one": "{{count}} overdue episode",
+  "overdueEpisodes_other": "{{count}} overdue episodes",
   "lastAiredPrefix": "Last:",
   "categories": {
     "nos_cinemas": "In theaters",

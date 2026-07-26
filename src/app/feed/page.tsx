@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbReactionStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
 type FeedTab = 'para_voce' | 'seguindo';
 
@@ -159,6 +160,17 @@ export default function FeedPage() {
     }
   };
 
+  const {
+    sentinelRef: feedSentinelRef,
+    observerSupported: feedObserverSupported,
+  } = useInfiniteScroll({
+    rootRef: scrollRef,
+    hasMore: feedHasMore,
+    loading: loadingMore,
+    onLoadMore: loadMoreFeed,
+    enabled: !feedError,
+  });
+
   const handleDeleteItem = (id: string, titleKey: string, reviewId?: string) =>
     setGlobalFeed(prev => prev.filter(item => {
       if (item.id === id) return false;
@@ -272,10 +284,22 @@ export default function FeedPage() {
               <div className="feed-activity-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {feedItems.map((item) => <FeedCard key={item.id} item={item} onDelete={handleDeleteItem} />)}
                 {feedError && <Txt size={12} color="#FF7378" style={{ display: 'block', textAlign: 'center' }}>{feedError}</Txt>}
-                {feedHasMore ? (
+                {feedError && feedHasMore ? (
+                  <button type="button" onClick={loadMoreFeed} disabled={loadingMore} style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.85)', background: '#FFFFFF', color: '#0B0B0D', fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.65 : 1 }}>
+                    {loadingMore ? 'Carregando…' : 'Tentar novamente'}
+                  </button>
+                ) : feedHasMore && !feedObserverSupported ? (
                   <button type="button" onClick={loadMoreFeed} disabled={loadingMore} style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.85)', background: '#FFFFFF', color: '#0B0B0D', fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: loadingMore ? 'default' : 'pointer', opacity: loadingMore ? 0.65 : 1 }}>
                     {loadingMore ? 'Carregando…' : 'Carregar mais atividades'}
                   </button>
+                ) : feedHasMore ? (
+                  <div
+                    ref={feedSentinelRef}
+                    aria-hidden="true"
+                    style={{ minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {loadingMore && <Txt size={12} color={T.t3}>Carregando…</Txt>}
+                  </div>
                 ) : (
                   <Txt size={11} color={T.t4} style={{ display: 'block', textAlign: 'center', padding: '6px 0' }}>Não há mais atividades.</Txt>
                 )}

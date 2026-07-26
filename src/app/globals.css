@@ -7,6 +7,29 @@
   to   { opacity: 1; }
 }
 
+@keyframes seriesEpisodeTodayBorder {
+  from { background-position: 0 0, 0% 50%; }
+  to   { background-position: 0 0, 200% 50%; }
+}
+
+.series-episode-card-today {
+  border-color: transparent !important;
+  background-image:
+    linear-gradient(var(--c-card), var(--c-card)),
+    linear-gradient(
+      110deg,
+      rgba(52,52,58,.32),
+      rgba(141,141,148,.40),
+      rgba(222,222,227,.52),
+      rgba(102,102,109,.36),
+      rgba(52,52,58,.32)
+    ) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  background-size: 100% 100%, 200% 100% !important;
+  animation: seriesEpisodeTodayBorder 2.8s linear infinite;
+}
+
 /* ── Area font family (paragraphs, H3, H4) ── */
 @font-face {
   font-family: 'Area';
@@ -394,7 +417,7 @@ html[data-has-tabbar="true"] .offline-banner {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .screen-anim, .app-state-pulse, .ui-skeleton, .img-skeleton, .masonry-skeleton { animation: none !important; }
+  .screen-anim, .app-state-pulse, .ui-skeleton, .img-skeleton, .masonry-skeleton, .series-episode-card-today { animation: none !important; }
 }
 
 /* ── Semantic heading defaults ── */

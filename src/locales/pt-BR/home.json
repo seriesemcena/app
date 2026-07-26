@@ -27,9 +27,9 @@
     "para_voce": "Para você",
     "em_alta": "Em alta",
     "novidades": "Novidades",
-    "minha_lista": "Minha lista",
-    "em_breve": "Em breve",
-    "atrasadas": "Atrasadas"
+    "maratonando": "Maratonando",
+    "atrasadas": "Atrasadas",
+    "finalizadas": "Finalizadas"
   },
   "tags": {
     "novo": "NOVO",
@@ -80,9 +80,12 @@
   "noUpcoming": "Sem episódios agendados",
   "noUpcomingDetail": "Quando suas séries tiverem novos episódios confirmados, eles aparecerão aqui",
   "newEpisode": "Novo episódio",
-  "behindDetail": "Séries que você está há mais de 30 dias sem assistir",
+  "seasonNumber": "Temporada {{number}}",
+  "behindDetail": "Episódios da temporada atual não assistidos há pelo menos 72 horas",
   "upToDate": "Você está em dia!",
   "noBehind": "Nenhuma série atrasada. Continue assim!",
+  "overdueEpisodes_one": "{{count}} episódio atrasado",
+  "overdueEpisodes_other": "{{count}} episódios atrasados",
   "lastAiredPrefix": "Último:",
   "categories": {
     "nos_cinemas": "Nos cinemas",

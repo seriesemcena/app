@@ -6,15 +6,15 @@ import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, type TMDBItem } from '@/lib/tmdb';
-import { listStore } from '@/lib/store';
+import { epWatchedStore, listStore } from '@/lib/store';
+import { currentAiredSeason, overdueEpisodes } from '@/lib/seriesSchedule';
 import { MasonryGrid2 } from '@/components/posters';
 import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import i18next from '@/lib/i18n';
 
-type SeriesTab = 'minha_lista' | 'em_breve' | 'atrasadas';
-type WatchingTag = 'novo' | 'nao_assistido' | 'atrasado';
+type SeriesTab = 'maratonando' | 'atrasadas' | 'finalizadas';
 
 type WatchingItem = {
   id: number; title: string; type: string;
@@ -22,8 +22,9 @@ type WatchingItem = {
   backdrop_path?: string | null;
   nextSeason?: number; nextEpisode?: number;
   nextAirDate?: string | null;
-  lastAirDate?: string | null;
-  tag?: WatchingTag;
+  overdueSeason?: number;
+  overdueEpisode?: number;
+  overdueCount?: number;
   network?: string;
 };
 
@@ -44,10 +45,9 @@ export default function SeriesPage() {
     return { label, isToday: false, isTomorrow: false };
   }
   const isDark = theme === 'dark';
-  const [tab, setTab] = useState<SeriesTab>('minha_lista');
+  const [tab, setTab] = useState<SeriesTab>('maratonando');
   const [items, setItems] = useState<WatchingItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [wantList,    setWantList]    = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
   const [watchedList, setWatchedList] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
   const [scrolled, setScrolled] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -56,7 +56,6 @@ export default function SeriesPage() {
     const watched = listStore.get('watched').filter((i) => i.type === 'tv');
     const watchedIds = new Set(watched.map((i) => i.id));
     setWatchedList(watched);
-    setWantList(listStore.get('want').filter((i) => i.type === 'tv' && !watchedIds.has(i.id)));
 
     const watching = listStore.get('watching').filter((i) => i.type === 'tv' && !watchedIds.has(i.id));
     if (watching.length === 0) { setItems([]); setLoading(false); return; }
@@ -66,23 +65,26 @@ export default function SeriesPage() {
         try {
           const detail = await tmdb.tvDetail(item.id);
           const next = detail?.next_episode_to_air;
-          const lastAirDate = detail?.last_episode_to_air?.air_date ?? null;
-          let tag: WatchingTag | undefined;
-          if (lastAirDate) {
-            const diffDays = (Date.now() - new Date(lastAirDate).getTime()) / 86_400_000;
-            if (diffDays <= 14) tag = 'novo';
-            else if (diffDays > 30) tag = 'atrasado';
-            else tag = 'nao_assistido';
+          const seasonNumber = currentAiredSeason(detail || {});
+          let overdue: ReturnType<typeof overdueEpisodes> = [];
+
+          if (seasonNumber) {
+            const season = await tmdb.season(item.id, seasonNumber);
+            const watched = epWatchedStore.getShow(item.id)[String(seasonNumber)] ?? [];
+            overdue = overdueEpisodes(season?.episodes || [], watched);
           }
+
+          const latestOverdue = overdue.at(-1);
           return {
-            id: item.id, title: item.title, type: item.type,
+            id: item.id, title: detail?.name || item.title, type: item.type,
             poster_path: detail?.poster_path ?? item.poster_path ?? null,
             backdrop_path: detail?.backdrop_path ?? null,
             nextSeason: next?.season_number ?? undefined,
             nextEpisode: next?.episode_number ?? undefined,
             nextAirDate: next?.air_date ?? null,
-            lastAirDate,
-            tag,
+            overdueSeason: latestOverdue?.season_number ?? seasonNumber ?? undefined,
+            overdueEpisode: latestOverdue?.episode_number ?? undefined,
+            overdueCount: overdue.length,
             network: (detail as any)?.networks?.[0]?.name ?? '',
           } as WatchingItem;
         } catch {
@@ -92,7 +94,7 @@ export default function SeriesPage() {
     ).then((res) => { setItems(res); setLoading(false); });
   }, []);
 
-  const atrasadas = useMemo(() => items.filter((i) => i.tag === 'atrasado'), [items]);
+  const atrasadas = useMemo(() => items.filter((item) => (item.overdueCount ?? 0) > 0), [items]);
   const emBreve = useMemo(() =>
     items.filter((i) => i.nextAirDate)
       .sort((a, b) => new Date(a.nextAirDate!).getTime() - new Date(b.nextAirDate!).getTime()),
@@ -105,12 +107,6 @@ export default function SeriesPage() {
     });
     return Array.from(groups, ([date, groupItems]) => ({ date, items: groupItems }));
   }, [emBreve]);
-
-  const TAG_STYLES: Record<WatchingTag, { bg: string; color: string; label: string; icon: 'sparkles' | 'eye' | 'clock' }> = {
-    novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo'), icon: 'sparkles' },
-    nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido'), icon: 'eye' },
-    atrasado:      { bg: '#e0352b', color: '#fff', label: t('tags.atrasado'), icon: 'clock' },
-  };
 
   return (
     <Frame>
@@ -137,7 +133,7 @@ export default function SeriesPage() {
             background: 'transparent',
             transition: 'padding 0.25s ease',
           } as React.CSSProperties}>
-            {(['minha_lista', 'em_breve', 'atrasadas'] as const).map((id) => (
+            {(['maratonando', 'atrasadas', 'finalizadas'] as const).map((id) => (
               <button key={id} onClick={() => setTab(id)} style={{
                 minHeight: scrolled ? 34 : 36,
                 padding: scrolled ? '6px 15px' : '8px 18px',
@@ -161,75 +157,8 @@ export default function SeriesPage() {
           {/* ── Content — fade in do bg cobre gradiente ao rolar ── */}
           <div style={{ minHeight: 400 }}>
 
-            {/* ══ TAB: Minha lista ══ */}
-            {tab === 'minha_lista' && (
-              <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 32 }}>
-
-                {/* ── Minhas séries (assistindo) ── */}
-                <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('mySeries')}</Txt>
-                  {items.length === 0 && !loading ? (
-                    <div style={{ padding: '20px 0', display: 'flex', alignItems: 'center', gap: 12, borderRadius: 14, background: T.card, border: `1px solid ${T.border}`, paddingLeft: 16 }}>
-                      <Icon name="tv" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3} style={{ flex: 1 }}>
-                        {t('emptySeriesDetail')}
-                      </Txt>
-                    </div>
-                  ) : (
-                    <MasonryGrid2
-                      items={items as unknown as TMDBItem[]}
-                      onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
-                      loading={loading}
-                      skeletonCount={6}
-                      padding="0"
-                      getTag={(item) => {
-                        const tag = (item as any).tag as WatchingTag | undefined;
-                        return tag ? TAG_STYLES[tag] : undefined;
-                      }}
-                    />
-                  )}
-                </div>
-
-                {/* ── Quero assistir ── */}
-                <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('wantToWatchTitle')}</Txt>
-                  {wantList.length === 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
-                      <Icon name="bookmark" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>{t('emptyWantSeries')}</Txt>
-                    </div>
-                  ) : (
-                    <MasonryGrid2
-                      items={wantList as unknown as TMDBItem[]}
-                      onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
-                      padding="0"
-                    />
-                  )}
-                </div>
-
-                {/* ── Finalizadas ── */}
-                <div>
-                  <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 14 }}>{t('finished')}</Txt>
-                  {watchedList.length === 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px', borderRadius: 14, background: T.card, border: `1px solid ${T.border}` }}>
-                      <Icon name="check" size={22} color={T.t4} />
-                      <Txt size={13} color={T.t3}>{t('emptyFinished')}</Txt>
-                    </div>
-                  ) : (
-                    <MasonryGrid2
-                      items={watchedList as unknown as TMDBItem[]}
-                      onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
-                      padding="0"
-                      getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' })}
-                    />
-                  )}
-                </div>
-
-              </div>
-            )}
-
-            {/* ══ TAB: Em breve ══ */}
-            {tab === 'em_breve' && (
+            {/* ══ TAB: Maratonando ══ */}
+            {tab === 'maratonando' && (
               <div style={{ padding: '20px 16px' }}>
                 {loading ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -247,39 +176,43 @@ export default function SeriesPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-                    {emBreveGroups.map((group) => (
-                      <section key={group.date}>
-                        <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 10 }}>
-                          {formatDate(group.date).label}
-                        </Txt>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {group.items.map((item) => {
-                            const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
-                            return (
-                              <button
-                                key={item.id}
-                                onClick={() => router.push(`/title/${item.type}/${item.id}`)}
-                                style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
-                                <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
-                                  {thumb
-                                    ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                    : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
-                                  }
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0, padding: '14px 16px 14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                  <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
-                                    {item.title}
-                                  </Txt>
-                                  <Txt size={12} color={T.t3}>
-                                    {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : t('newEpisode')}
-                                  </Txt>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    ))}
+                    {emBreveGroups.map((group) => {
+                      const groupDate = formatDate(group.date);
+                      return (
+                        <section key={group.date}>
+                          <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 10 }}>
+                            {groupDate.label}
+                          </Txt>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {group.items.map((item) => {
+                              const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
+                              return (
+                                <button
+                                  key={item.id}
+                                  className={groupDate.isToday ? 'series-episode-card-today' : undefined}
+                                  onClick={() => router.push(`/title/${item.type}/${item.id}`)}
+                                  style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
+                                  <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
+                                    {thumb
+                                      ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
+                                    }
+                                  </div>
+                                  <div style={{ flex: 1, minWidth: 0, padding: '14px 16px 14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                    <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
+                                      {item.title}
+                                    </Txt>
+                                    <Txt size={12} color={T.t3}>
+                                      {item.nextSeason && item.nextEpisode ? `T${item.nextSeason} · Ep ${item.nextEpisode}` : t('newEpisode')}
+                                    </Txt>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -311,40 +244,63 @@ export default function SeriesPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {atrasadas.map((item) => {
                       const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
-                      const lastDate = item.lastAirDate
-                        ? new Intl.DateTimeFormat(i18next.language, { day: 'numeric', month: 'short' }).format(new Date(item.lastAirDate + 'T00:00:00'))
-                        : null;
                       return (
                         <button
                           key={item.id}
                           onClick={() => router.push(`/title/${item.type}/${item.id}`)}
-                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: T.card, border: '1px solid rgba(255,59,48,0.18)', borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
+                          style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
                           {/* Thumbnail */}
-                          <div style={{ width: 88, height: 60, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
+                          <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2, position: 'relative' }}>
                             {thumb
                               ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                               : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
                             }
+                            <span style={{ position: 'absolute', left: 10, bottom: 10, padding: '3px 8px', borderRadius: 999, background: '#e0352b', lineHeight: 1 }}>
+                              <Txt size={10} weight={800} color="#fff">{t('tags.atrasado')}</Txt>
+                            </span>
                           </div>
                           {/* Info */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ flex: 1, minWidth: 0, padding: '12px 16px 12px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                             <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 5 }}>
                               {item.title}
                             </Txt>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ padding: '2px 7px', borderRadius: 6, background: '#e0352b' }}>
-                                <Txt size={10} weight={800} color="#fff">{t('tags.atrasado')}</Txt>
-                              </span>
-                              {lastDate && (
-                                <Txt size={12} color={T.t3}>{t('lastAiredPrefix')} {lastDate}</Txt>
-                              )}
+                            <Txt size={12} color={T.t2} style={{ display: 'block', marginBottom: 6 }}>
+                              {item.overdueSeason
+                                ? t('seasonNumber', { number: item.overdueSeason })
+                                : t('newEpisode')}
+                            </Txt>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <Icon name="clock" size={13} color={T.t3} />
+                              <Txt size={12} weight={700} color={T.t3}>
+                                {t('overdueEpisodes', { count: item.overdueCount ?? 0 })}
+                              </Txt>
                             </div>
                           </div>
-                          <Icon name="chevronR" size={16} color={T.t4} />
                         </button>
                       );
                     })}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* ══ TAB: Finalizadas ══ */}
+            {tab === 'finalizadas' && (
+              <div style={{ padding: '20px 16px' }}>
+                {watchedList.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(52,199,89,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="check" size={30} color="#1a8f3a" />
+                    </div>
+                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block' }}>{t('emptyFinished')}</Txt>
+                  </div>
+                ) : (
+                  <MasonryGrid2
+                    items={watchedList as unknown as TMDBItem[]}
+                    onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
+                    padding="0"
+                    getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' })}
+                  />
                 )}
               </div>
             )}

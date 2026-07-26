@@ -27,9 +27,9 @@
     "para_voce": "Para ti",
     "em_alta": "Tendencias",
     "novidades": "Novedades",
-    "minha_lista": "Mi lista",
-    "em_breve": "Próximamente",
-    "atrasadas": "Atrasadas"
+    "maratonando": "Viendo",
+    "atrasadas": "Atrasadas",
+    "finalizadas": "Terminadas"
   },
   "tags": {
     "novo": "NUEVO",
@@ -80,9 +80,12 @@
   "noUpcoming": "Sin episodios programados",
   "noUpcomingDetail": "Cuando tus series tengan nuevos episodios confirmados, aparecerán aquí",
   "newEpisode": "Nuevo episodio",
-  "behindDetail": "Series que no has visto en más de 30 días",
+  "seasonNumber": "Temporada {{number}}",
+  "behindDetail": "Episodios de la temporada actual sin ver durante al menos 72 horas",
   "upToDate": "¡Estás al día!",
   "noBehind": "Sin series atrasadas. ¡Sigue así!",
+  "overdueEpisodes_one": "{{count}} episodio atrasado",
+  "overdueEpisodes_other": "{{count}} episodios atrasados",
   "lastAiredPrefix": "Último:",
   "categories": {
     "nos_cinemas": "En cines",

@@ -15,6 +15,7 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbNotifStore, type ReviewPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useTranslation } from 'react-i18next';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import '@/lib/i18n';
 
 type SortKey = 'recentes' | 'populares';
@@ -47,6 +48,7 @@ function CommentsPageInner() {
   const [pageLoading, setPageLoading] = useState(false);
   const [pageError, setPageError] = useState('');
   const requestGeneration = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   /* fixed composer */
   const [composerExpanded, setComposerExpanded] = useState(false);
@@ -123,6 +125,17 @@ function CommentsPageInner() {
       if (generation === requestGeneration.current) setPageLoading(false);
     }
   };
+
+  const {
+    sentinelRef: commentsSentinelRef,
+    observerSupported: commentsObserverSupported,
+  } = useInfiniteScroll({
+    rootRef: scrollRef,
+    hasMore: hasMoreComments,
+    loading: pageLoading,
+    onLoadMore: loadMoreComments,
+    enabled: !pageError,
+  });
 
   useEffect(() => {
     if (composerPanel !== 'gif') return;
@@ -412,7 +425,7 @@ function CommentsPageInner() {
   return (
     <Frame>
       <Screen>
-        <ScrollArea>
+        <ScrollArea ref={scrollRef}>
           <GlassHeader
             left={
               <button onClick={() => navigateBack(router)}
@@ -501,7 +514,16 @@ function CommentsPageInner() {
                     <Txt size={12} color="#FF7378">{pageError}</Txt>
                   </div>
                 )}
-                {hasMoreComments ? (
+                {pageError && hasMoreComments ? (
+                  <button
+                    type="button"
+                    onClick={loadMoreComments}
+                    disabled={pageLoading}
+                    style={{ alignSelf: 'center', minHeight: 40, padding: '0 18px', borderRadius: 20, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area','Inter',sans-serif", fontSize: 12, fontWeight: 800, cursor: pageLoading ? 'default' : 'pointer', opacity: pageLoading ? 0.65 : 1 }}
+                  >
+                    {pageLoading ? 'Carregando…' : 'Tentar novamente'}
+                  </button>
+                ) : hasMoreComments && !commentsObserverSupported ? (
                   <button
                     type="button"
                     onClick={loadMoreComments}
@@ -510,6 +532,14 @@ function CommentsPageInner() {
                   >
                     {pageLoading ? 'Carregando…' : 'Carregar mais comentários'}
                   </button>
+                ) : hasMoreComments ? (
+                  <div
+                    ref={commentsSentinelRef}
+                    aria-hidden="true"
+                    style={{ minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {pageLoading && <Txt size={12} color={T.t3}>Carregando…</Txt>}
+                  </div>
                 ) : !pageLoading && sorted.length > 0 ? (
                   <Txt size={11} color={T.t4} style={{ display: 'block', textAlign: 'center', padding: '6px 0' }}>
                     Não há mais comentários.

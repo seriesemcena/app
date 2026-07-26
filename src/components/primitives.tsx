@@ -1,5 +1,5 @@
 'use client';
-import { CSSProperties, ReactNode, useEffect, useState } from 'react';
+import { CSSProperties, ReactNode, forwardRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
@@ -30,8 +30,14 @@ export const Screen = ({ children, style = {} }: { children: ReactNode; style?: 
   <div className="app-screen" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: T.bg, fontFamily: "'Area',sans-serif", overflow: 'hidden', position: 'relative', ...style }}>{children}</div>
 );
 
-export const ScrollArea = ({ children, style = {} }: { children: ReactNode; style?: CSSProperties }) => (
-  <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehaviorY: 'contain', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', ...style, paddingBottom: 'var(--content-bottom-inset)' } as CSSProperties}>{children}</div>
+export const ScrollArea = forwardRef<HTMLDivElement, { children: ReactNode; style?: CSSProperties }>(
+  function ScrollArea({ children, style = {} }, ref) {
+    return (
+      <div ref={ref} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehaviorY: 'contain', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', ...style, paddingBottom: 'var(--content-bottom-inset)' } as CSSProperties}>
+        {children}
+      </div>
+    );
+  }
 );
 
 export const AppBar = ({
