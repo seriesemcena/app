@@ -4,6 +4,7 @@ const isDev    = process.env.NODE_ENV !== 'production';
 
 /* Content-Security-Policy tuned to what the app actually loads:
    - Firestore/Auth/FCM talk to *.googleapis.com (WebChannel over https)
+   - Authenticated callable functions use *.cloudfunctions.net
    - Firebase social sign-in mounts a helper iframe on *.firebaseapp.com
    - Google Fonts (stylesheet + woff2), TMDB/Giphy/news images over https
    - 'unsafe-inline' scripts: required by Next hydration + the anti-FOUC
@@ -15,7 +16,7 @@ const csp = [
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "media-src 'self' https:",
-  `connect-src 'self' https://*.googleapis.com https://*.google.com https://api.tvmaze.com https://www.recaptcha.net${isDev ? ' ws: wss:' : ''}`,
+  `connect-src 'self' https://*.googleapis.com https://*.google.com https://*.cloudfunctions.net https://api.tvmaze.com https://www.recaptcha.net${isDev ? ' ws: wss:' : ''}`,
   "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://appleid.apple.com https://www.recaptcha.net",
   "worker-src 'self' blob:",
   "object-src 'none'",
