@@ -63,6 +63,7 @@ symbols.push(
   '<symbol id="fa7-solid-bell" viewBox="0 0 448 512"><path fill="currentColor" d="M224 0c-17.7 0-32 14.3-32 32v3.2C119 50 64 114.6 64 192v21.7c0 48.1-16.4 94.8-46.4 132.4l-9.8 12.2C2.7 364.6 0 372.4 0 380.5C0 400.1 15.9 416 35.5 416h376.9c19.6 0 35.5-15.9 35.5-35.5c0-8.1-2.7-15.9-7.8-22.2l-9.8-12.2c-29.9-37.6-46.3-84.3-46.3-132.4V192c0-77.4-55-142-128-156.8V32c0-17.7-14.3-32-32-32m-62 464c7.1 27.6 32.2 48 62 48s54.9-20.4 62-48z"/></symbol>',
   '<symbol id="icon-park-solid-play" viewBox="0 0 48 48"><path fill="currentColor" fill-rule="evenodd" d="M24 46C11.85 46 2 36.15 2 24S11.85 2 24 2s22 9.85 22 22s-9.85 22-22 22m-6-28.928v13.856c0 1.54 1.667 2.503 3 1.733l12-6.928a2 2 0 0 0 0-3.466l-12-6.928c-1.333-.77-3 .192-3 1.733" clip-rule="evenodd"/></symbol>',
   '<symbol id="uis-comment-dots" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.5 2 2 6.5 2 12c0 2.3.8 4.5 2.3 6.3l-2 2c-.4.4-.4 1 0 1.4c.2.2.4.3.7.3h9c5.5 0 10-4.5 10-10S17.5 2 12 2M8 13c-.6 0-1-.4-1-1s.4-1 1-1s1 .4 1 1s-.4 1-1 1m4 0c-.6 0-1-.4-1-1s.4-1 1-1s1 .4 1 1s-.4 1-1 1m4 0c-.6 0-1-.4-1-1s.4-1 1-1s1 .4 1 1s-.4 1-1 1"/></symbol>',
+  '<symbol id="ep-close-bold" viewBox="0 0 1024 1024"><path fill="currentColor" d="M195.2 195.2a64 64 0 0 1 90.496 0L512 421.504 738.304 195.2a64 64 0 0 1 90.496 90.496L602.496 512 828.8 738.304a64 64 0 0 1-90.496 90.496L512 602.496 285.696 828.8a64 64 0 0 1-90.496-90.496L421.504 512 195.2 285.696a64 64 0 0 1 0-90.496z"/></symbol>',
   playlistSource
     .replace(/^[\s\S]*?<svg[^>]*viewBox="([^"]+)"[^>]*>/, '<symbol id="playlist-solid" viewBox="$1">')
     .replace(/<\/svg>\s*$/, '</symbol>')
@@ -86,7 +87,7 @@ const output = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<!-- Streamline Flex solid icons by Streamline (CC BY 4.0): https://streamlinehq.com -->',
   '<!-- Font Awesome Solid icons (Font Awesome Free License): https://fontawesome.com -->',
-  '<!-- IconPark Solid and Unicons Solid icons selected through IconBuddy -->',
+  '<!-- Element Plus, IconPark Solid and Unicons icons selected through IconBuddy -->',
   '<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true">',
   '<defs>',
   ...symbols,

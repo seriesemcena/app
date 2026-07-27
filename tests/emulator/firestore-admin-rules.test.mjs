@@ -38,6 +38,19 @@ test('exclusão direta de comentário é somente do autor; moderação não usa 
   assert.ok(true);
 });
 
+test('curtida altera somente o uid do próprio usuário', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => setDoc(
+    doc(context.firestore(), 'reviews/tv_1/items/review-like'),
+    { authorUid: 'author', text: 'teste', likedBy: ['existing'], likes: 1 },
+  ));
+  const user = environment.authenticatedContext('user-a').firestore();
+  const review = doc(user, 'reviews/tv_1/items/review-like');
+
+  await assertSucceeds(updateDoc(review, { likedBy: ['existing', 'user-a'], likes: 2 }));
+  await assertFails(updateDoc(review, { likedBy: ['user-a'], likes: 1 }));
+  await assertSucceeds(updateDoc(review, { likedBy: ['existing'], likes: 1 }));
+});
+
 test('conta suspensa perde escritas mesmo com token de cliente ainda presente', async () => {
   await environment.withSecurityRulesDisabled(async (context) => setDoc(doc(context.firestore(), 'users/suspended'), { profile: { name: 'S' }, accountStatus: 'suspended' }));
   const suspended = environment.authenticatedContext('suspended').firestore();

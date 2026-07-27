@@ -12,7 +12,7 @@
    ───────────────────────────────────────────────────────────── */
 import {
   doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, increment, writeBatch,
-  collection, addDoc, getDocs, deleteDoc, query, orderBy, limit, onSnapshot, where,
+  collection, collectionGroup, addDoc, getDocs, deleteDoc, query, orderBy, limit, onSnapshot, where,
   deleteField, documentId, startAfter, startAt, endAt, runTransaction, serverTimestamp,
   type Firestore, type Unsubscribe, type QueryDocumentSnapshot, type DocumentData,
   type QueryConstraint,
@@ -302,6 +302,29 @@ export type FirestorePage<T, Cursor> = {
 const stripUndefined = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 export const dbRevStore = {
+  async getById(
+    db: Firestore,
+    titleKey: string,
+    reviewId: string,
+  ): Promise<Review | null> {
+    try {
+      const current = await getDoc(doc(revCol(db, titleKey), reviewId));
+      dataCostDebug.query('reviews:single', current.exists() ? 1 : 0);
+      if (current.exists()) {
+        const review = current.data() as Review;
+        return reviewIsVisible(review) ? review : null;
+      }
+
+      const legacySnap = await getDoc(doc(db, 'reviews', titleKey));
+      dataCostDebug.query('reviews:single-legacy', legacySnap.exists() ? 1 : 0);
+      const legacy = ((legacySnap.data()?.items ?? []) as Review[])
+        .find((review) => review.id === reviewId);
+      return legacy && reviewIsVisible(legacy) ? legacy : null;
+    } catch {
+      return null;
+    }
+  },
+
   async getPage(
     db: Firestore,
     titleKey: string,
@@ -448,16 +471,17 @@ export const dbRevStore = {
   async toggleLike(
     db: Firestore, titleKey: string, reviewId: string, userId: string,
   ): Promise<Review[] | null> {
-    try {
-      const ref  = doc(revCol(db, titleKey), reviewId);
-      const snap = await getDoc(ref);
+    const ref = doc(revCol(db, titleKey), reviewId);
+    const exists = await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
       if (!snap.exists()) return null;
       const likedBy = (((snap.data() as Review).likedBy) ?? []).slice();
       const idx = likedBy.indexOf(userId);
       if (idx >= 0) likedBy.splice(idx, 1); else likedBy.push(userId);
-      await updateDoc(ref, { likedBy, likes: likedBy.length });
-      return dbRevStore.get(db, titleKey);
-    } catch { return null; }
+      transaction.update(ref, { likedBy, likes: likedBy.length });
+      return true;
+    });
+    return exists ? dbRevStore.get(db, titleKey) : null;
   },
 };
 
@@ -514,6 +538,33 @@ export const dbRatingStore = {
       if (snap.exists() && snap.data()?.sourceReviewId === sourceReviewId) transaction.delete(ref);
     });
     invalidateRatingSummary(titleKey);
+  },
+  /** Account-wide ratings used by private profile statistics. Each rating
+      document carries its titleId, so series, episodes and films can be split
+      without downloading public review threads. */
+  async listForUser(
+    db: Firestore,
+    uid: string,
+  ): Promise<Array<{ titleId: string; rating: number; updatedAt?: unknown }>> {
+    if (!uid) return [];
+    try {
+      const snap = await getDocs(query(
+        collectionGroup(db, 'userRatings'),
+        where('authorUid', '==', uid),
+        limit(500),
+      ));
+      dataCostDebug.query('ratings:user', snap.size);
+      return snap.docs
+        .map((entry) => entry.data())
+        .filter((entry) => typeof entry.titleId === 'string' && Number(entry.rating) > 0)
+        .map((entry) => ({
+          titleId: String(entry.titleId),
+          rating: Math.max(1, Math.min(10, Number(entry.rating))),
+          updatedAt: entry.updatedAt,
+        }));
+    } catch {
+      return [];
+    }
   },
 };
 

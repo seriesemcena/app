@@ -11,7 +11,7 @@ const css = fs.readFileSync(
   'utf8',
 );
 
-test('title detail tabs use a transparent row with an elevated active segment', () => {
+test('title detail tabs use a transparent row with content-sized solid segments', () => {
   assert.match(page, /className="title-detail-tabs-shell"/);
   assert.match(page, /className="title-detail-tabs"/);
   assert.match(page, /role="tablist"/);
@@ -22,7 +22,12 @@ test('title detail tabs use a transparent row with an elevated active segment', 
   assert.match(css, /\.title-detail-tabs-shell\s*\{[\s\S]*background:\s*transparent/);
   assert.doesNotMatch(css, /\.title-detail-tabs-shell\s*\{[^}]*border-/);
   assert.doesNotMatch(css, /\.title-detail-tabs-shell\s*\{[^}]*box-shadow/);
-  assert.match(css, /\.title-detail-tab\s*\{[\s\S]*flex:\s*1 1 0/);
+  assert.match(css, /\.title-detail-tabs\s*\{[\s\S]*gap:\s*8px/);
+  assert.match(css, /\.title-detail-tabs\s*\{[\s\S]*overflow-x:\s*auto/);
+  assert.match(css, /\.title-detail-tab\s*\{[\s\S]*width:\s*max-content/);
+  assert.match(css, /\.title-detail-tab\s*\{[\s\S]*flex:\s*0 0 auto/);
   assert.match(css, /\.title-detail-tab\s*\{[\s\S]*border:\s*0/);
-  assert.match(css, /\.title-detail-tab\.is-active\s*\{[\s\S]*linear-gradient/);
+  assert.match(css, /\.title-detail-tab\.is-active\s*\{[\s\S]*background:\s*var\(--c-title-description-bg\)/);
+  assert.match(page, /background:\s*'var\(--c-title-description-bg\)'/);
+  assert.doesNotMatch(css, /\.title-detail-tab\.is-active\s*\{[^}]*linear-gradient/);
 });

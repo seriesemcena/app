@@ -33,6 +33,7 @@ test('every Streamline Flex fallback has a native SF Symbols equivalent', async 
   assert.match(spriteSource, /id="fa7-solid-bell"/);
   assert.match(spriteSource, /id="film-slate-solid"/);
   assert.match(spriteSource, /id="uis-comment-dots"/);
+  assert.match(spriteSource, /id="ep-close-bold"/);
   assert.match(spriteSource, /id="icon-park-solid-play"/);
   assert.match(spriteSource, /id="playlist-solid"/);
   assert.match(spriteSource, /id="uil-star"/);
@@ -45,8 +46,9 @@ test('every Streamline Flex fallback has a native SF Symbols equivalent', async 
   assert.match(iconSource, /film: 'film-slate-solid'/);
   assert.match(iconSource, /tv: 'icon-park-solid-play'/);
   assert.match(iconSource, /message: 'uis-comment-dots'/);
+  assert.match(iconSource, /close: 'ep-close-bold'/);
   assert.match(iconSource, /playlist: 'playlist-solid'/);
-  assert.match(iconSource, /SVG_ICON_OVERRIDES = new Set<IconName>\(\['star', 'starO', 'check', 'bell', 'film', 'tv', 'message', 'playlist'\]\)/);
+  assert.match(iconSource, /SVG_ICON_OVERRIDES = new Set<IconName>\(\['star', 'starO', 'check', 'bell', 'film', 'tv', 'message', 'playlist', 'close'\]\)/);
   assert.match(iconSource, /!nativeIOS \|\| SVG_ICON_OVERRIDES\.has\(name\)/);
   assert.match(packageJson, /"@iconify-json\/streamline-flex"/);
   assert.doesNotMatch(packageJson, /"@solar-icons\/react"/);

@@ -43,7 +43,7 @@ const ICONS: Record<IconName, string> = {
   film: 'film-slate-solid',
   tv: 'icon-park-solid-play',
   crown: 'crown-solid',
-  close: 'control-close-circle',
+  close: 'ep-close-bold',
   info: 'information-circle-solid',
   eye: 'control-eye',
   share: 'share-link-solid',
@@ -74,7 +74,7 @@ const BOLD_ICONS = new Set<IconName>(['star', 'heart', 'play', 'plus', 'plusPlai
 
 // These were explicitly selected from IconBuddy and must remain visually
 // identical on every platform instead of being substituted by SF Symbols.
-const SVG_ICON_OVERRIDES = new Set<IconName>(['star', 'starO', 'check', 'bell', 'film', 'tv', 'message', 'playlist']);
+const SVG_ICON_OVERRIDES = new Set<IconName>(['star', 'starO', 'check', 'bell', 'film', 'tv', 'message', 'playlist', 'close']);
 
 /** Native iOS names. The public IconName API stays platform-independent. */
 const SF_SYMBOLS: Record<IconName, string> = {

@@ -20,6 +20,15 @@ test('rating ownership and numeric bounds are enforced', () => {
   assert.match(rules, /request\.resource\.data\.rating <= 10/);
 });
 
+test('review likes can only toggle the authenticated user', () => {
+  assert.match(rules, /function togglesOwnReviewLike\(\)/);
+  assert.match(rules, /changed\.hasOnly\(\['likedBy', 'likes'\]\)/);
+  assert.match(rules, /after\.hasAny\(\[request\.auth\.uid\]\)/);
+  assert.match(rules, /after\.hasAll\(before\)/);
+  assert.match(rules, /before\.hasAll\(after\)/);
+  assert.match(rules, /request\.resource\.data\.likes == after\.size\(\)/);
+});
+
 test('social graph only lets an owner write following and never followers', () => {
   assert.match(rules, /match \/following\/\{targetUid\}[\s\S]*request\.auth\.uid == uid[\s\S]*targetUid != uid/);
   assert.match(rules, /match \/followers\/\{followerUid\}[\s\S]*allow write: if false/);

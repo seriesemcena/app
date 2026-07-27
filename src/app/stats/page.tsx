@@ -8,7 +8,7 @@ import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
 import { listStore, revStore, prefsStore, epWatchedStore, profileStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbUserStatsStore } from '@/lib/db';
+import { dbActivityStore, dbRatingStore, dbUserStatsStore } from '@/lib/db';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
 import { useTranslation } from 'react-i18next';
@@ -44,6 +44,37 @@ function last7DateLabels(): string[] {
   return labels;
 }
 
+type StatsRating = { titleId: string; rating: number };
+
+function dedupeRatings(ratings: StatsRating[]): StatsRating[] {
+  const byTitle = new Map<string, StatsRating>();
+  ratings.forEach((rating) => {
+    if (!rating.titleId || rating.rating <= 0) return;
+    byTitle.set(rating.titleId, {
+      titleId: rating.titleId,
+      rating: Math.max(1, Math.min(10, Number(rating.rating))),
+    });
+  });
+  return Array.from(byTitle.values());
+}
+
+function ratingMetrics(ratings: StatsRating[]) {
+  const dist = [0, 0, 0, 0, 0];
+  const valid = dedupeRatings(ratings);
+  valid.forEach(({ rating }) => {
+    // The product stores ratings on a 1–10 scale; each pair maps to one star.
+    const star = Math.max(1, Math.min(5, Math.ceil(rating / 2)));
+    dist[star - 1] += 1;
+  });
+  return {
+    count: valid.length,
+    average: valid.length
+      ? Math.round((valid.reduce((sum, item) => sum + item.rating, 0) / valid.length) * 10) / 10
+      : 0,
+    dist,
+  };
+}
+
 /* ── StatCard ────────────────────────────────────────────────── */
 function StatCard({ children, style, padding }: { children: React.ReactNode; style?: React.CSSProperties; padding?: string | number }) {
   const { theme } = useTheme();
@@ -67,20 +98,20 @@ function DayBarChart({ data, labels, unit, barColor = '#22c55e', todayColor = '#
   useEffect(() => { const t = setTimeout(() => setAnim(true), 300); return () => clearTimeout(t); }, []);
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 90 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 104 }}>
         {data.map((val, i) => {
           const pct = val / max;
           const isToday = i === data.length - 1;
           const color = isToday ? todayColor : val > 0 ? barColor : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)');
           return (
-            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%', justifyContent: 'flex-end' }}>
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, height: '100%', justifyContent: 'flex-end' }}>
               {val > 0 && (
                 <Txt size={9} weight={700} color={isToday ? todayColor : barColor} style={{ lineHeight: 1 }}>
                   {Number.isInteger(val) ? val : val.toFixed(1)}
                 </Txt>
               )}
-              <div style={{ width: '100%', flex: 1, display: 'flex', alignItems: 'flex-end' }}>
-                <div style={{ width: '100%', height: anim && val > 0 ? `${Math.max(pct * 100, 6)}%` : val > 0 ? '6%' : '3%', borderRadius: 4, background: color, transition: `height 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 35}ms` }} />
+              <div style={{ width: 18, flex: 1, display: 'flex', alignItems: 'flex-end', borderRadius: 5, background: isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.045)', overflow: 'hidden' }}>
+                <div style={{ width: '100%', minHeight: val > 0 ? 5 : 2, height: anim && val > 0 ? `${Math.max(pct * 100, 8)}%` : val > 0 ? '8%' : '2px', borderRadius: '5px 5px 2px 2px', background: color, transition: `height 0.55s cubic-bezier(0.16,1,0.3,1) ${i * 35}ms` }} />
               </div>
               <Txt size={9} weight={isToday ? 700 : 400} color={isToday ? todayColor : T.t4}>{labels[i]}</Txt>
             </div>
@@ -291,6 +322,18 @@ export default function StatsPage() {
   const [ratingDist, setRatingDist]   = useState<{ series: number[]; filmes: number[] }>({ series: [0,0,0,0,0], filmes: [0,0,0,0,0] });
   const [avgSeriesRating, setAvgSeriesRating] = useState(0);
   const [avgFilmRating,   setAvgFilmRating]   = useState(0);
+  const [ratingCounts, setRatingCounts] = useState({ series: 0, filmes: 0 });
+
+  const applyRatings = (records: StatsRating[]) => {
+    const series = ratingMetrics(records.filter((record) => (
+      record.titleId.startsWith('tv_') || record.titleId.startsWith('ep_')
+    )));
+    const filmes = ratingMetrics(records.filter((record) => record.titleId.startsWith('movie_')));
+    setRatingDist({ series: series.dist, filmes: filmes.dist });
+    setAvgSeriesRating(series.average);
+    setAvgFilmRating(filmes.average);
+    setRatingCounts({ series: series.count, filmes: filmes.count });
+  };
 
   /* ── Stats calculation ── */
   useEffect(() => {
@@ -323,21 +366,15 @@ export default function StatsPage() {
 
     const profile = profileStore.get(user?.uid);
     const myName  = profile.username || profile.name || '';
-    const myRevs  = myName ? revStore.getByUser(myName) : [];
-    const tvRevs  = myRevs.filter(r => r.itemKey?.startsWith('tv_'));
+    const myRevs  = revStore.getByAuthor(user?.uid, myName);
+    const tvRevs  = myRevs.filter(r => r.itemKey?.startsWith('tv_') || r.itemKey?.startsWith('ep_'));
     const mvRevs  = myRevs.filter(r => r.itemKey?.startsWith('movie_'));
     const tvLikes = tvRevs.reduce((s, r) => s + (r.likes ?? 0), 0);
     const mvLikes = mvRevs.reduce((s, r) => s + (r.likes ?? 0), 0);
 
-    const tvDist = [0,0,0,0,0]; const mvDist = [0,0,0,0,0];
-    tvRevs.forEach(r => { const s = Math.round((r as any).rating ?? 0); if (s >= 1 && s <= 5) tvDist[s-1]++; });
-    mvRevs.forEach(r => { const s = Math.round((r as any).rating ?? 0); if (s >= 1 && s <= 5) mvDist[s-1]++; });
-    setRatingDist({ series: tvDist, filmes: mvDist });
-
-    const tvAvg = tvRevs.length > 0 ? tvRevs.reduce((s,r) => s + ((r as any).rating ?? 0), 0) / tvRevs.length : 0;
-    const mvAvg = mvRevs.length > 0 ? mvRevs.reduce((s,r) => s + ((r as any).rating ?? 0), 0) / mvRevs.length : 0;
-    setAvgSeriesRating(Math.round(tvAvg * 10) / 10);
-    setAvgFilmRating(Math.round(mvAvg * 10) / 10);
+    applyRatings(myRevs
+      .filter((review) => review.rating > 0)
+      .map((review) => ({ titleId: review.itemKey, rating: review.rating })));
 
     const allTracked = [...tvWatched, ...tvWatching, ...movieWatched, ...mvWatching];
     const tvWatchedIds  = new Set(tvWatched.map(w => w.id));
@@ -390,12 +427,28 @@ export default function StatsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user]);
 
+  /* Firestore ratings are account-wide and therefore include evaluations
+     created on mobile, PWA and desktop. Local records remain the offline and
+     pre-migration fallback. */
+  useEffect(() => {
+    if (loading || !user || !firebaseConfigured) return;
+    let cancelled = false;
+    dbRatingStore.listForUser(getDB(), user.uid).then((ratings) => {
+      if (!cancelled && ratings.length > 0) applyRatings(ratings);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user]);
+
   /* ── Firestore activity ── */
   useEffect(() => {
     if (loading || !user || !firebaseConfigured) return;
     (async () => {
       try {
-        const aggregate = await dbUserStatsStore.get(getDB(), user.uid);
+        const [aggregate, activities] = await Promise.all([
+          dbUserStatsStore.get(getDB(), user.uid),
+          dbActivityStore.getForUser(getDB(), user.uid),
+        ]);
         const weekEp: number[]  = Array(7).fill(0);
         const weekAct: number[] = Array(7).fill(0);
         for (let index = 0; index < 7; index += 1) {
@@ -403,18 +456,49 @@ export default function StatsPage() {
           weekEp[index] = aggregate.recentDays[date]?.watched || 0;
           weekAct[index] = aggregate.recentDays[date]?.activities || 0;
         }
+        // Compatibility for accounts whose activity predates userStats.
+        if (weekAct.every((value) => value === 0) && activities.length > 0) {
+          activities.forEach((activity) => {
+            const createdAt = new Date(activity.createdAt);
+            if (Number.isNaN(createdAt.getTime())) return;
+            const daysAgo = Math.floor((Date.now() - createdAt.getTime()) / 86_400_000);
+            if (daysAgo < 0 || daysAgo > 6) return;
+            const index = 6 - daysAgo;
+            weekAct[index] += 1;
+            if (activity.action === 'watched') weekEp[index] += 1;
+          });
+        }
         const months: Array<{ label: string; key: string; minutes: number }> = [];
         for (let i = 5; i >= 0; i--) {
           const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
           const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
           months.push({ label: getMonthShort(d), key, minutes: aggregate.months[key]?.watchedMinutes || 0 });
         }
+        if (months.every((month) => month.minutes === 0)) {
+          activities.forEach((activity) => {
+            if (activity.action !== 'watched') return;
+            const createdAt = new Date(activity.createdAt);
+            if (Number.isNaN(createdAt.getTime())) return;
+            const key = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}`;
+            const month = months.find((entry) => entry.key === key);
+            if (month) month.minutes += Number((activity as typeof activity & { runtimeMinutes?: number }).runtimeMinutes) || 90;
+          });
+        }
+        // Episode data imported before dated aggregates cannot be placed on an
+        // exact day. Preserve the total as a current-month legacy baseline
+        // instead of presenting a misleading all-zero consumption history.
+        if (months.every((month) => month.minutes === 0)) {
+          months[months.length - 1].minutes = Math.max(
+            seriesStats?.minutesTotal ?? 0,
+            filmesStats?.minutesTotal ?? 0,
+          );
+        }
         setWeekEpData(weekEp);
         setWeekActData(weekAct);
-        setMonthlyHoursData(months.map(m => ({ label: m.label, hours: Math.round(m.minutes / 60) })));
+        setMonthlyHoursData(months.map(m => ({ label: m.label, hours: Math.round(m.minutes / 6) / 10 })));
       } catch {}
     })();
-  }, [loading, user]);
+  }, [loading, user, seriesStats?.minutesTotal, filmesStats?.minutesTotal]);
 
   /* ── Nav title observer ── */
   useEffect(() => {
@@ -548,7 +632,7 @@ export default function StatsPage() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, margin:'10px 16px 0' }}>
             {[
               { value: active?.watchedCount ?? 0, label: tab === 'series' ? t('statsPage.seriesWatched') : t('statsPage.moviesWatched') },
-              { value: active?.reviewsCount ?? 0, label: t('statsPage.reviewsCount') },
+              { value: tab === 'series' ? ratingCounts.series : ratingCounts.filmes, label: t('statsPage.reviewsCount') },
               { value: avgRating > 0 ? avgRating : '—', label: t('statsPage.avgRating') },
             ].map((s, i) => (
               <div key={i} style={{ background: isDark ? '#141416' : 'var(--c-card)', borderRadius: 16, border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid var(--c-border)', padding: '14px 10px', textAlign:'center', position:'relative', overflow:'hidden' }}>

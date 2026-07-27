@@ -72,6 +72,8 @@
     "emptyComposer": "Write something or add media",
     "published": "Comment posted!",
     "removeAttachment": "Remove attachment",
+    "repliesTitle": "Replies",
+    "episodeContext": "Season {{season}} · Episode {{episode}}",
     "replyCount_one": "{{count}} reply",
     "replyCount_other": "{{count}} replies"
   },

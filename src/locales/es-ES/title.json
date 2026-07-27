@@ -72,6 +72,8 @@
     "emptyComposer": "Escribe algo o añade contenido multimedia",
     "published": "¡Comentario publicado!",
     "removeAttachment": "Eliminar archivo adjunto",
+    "repliesTitle": "Respuestas",
+    "episodeContext": "Temporada {{season}} · Episodio {{episode}}",
     "replyCount_one": "{{count}} respuesta",
     "replyCount_other": "{{count}} respuestas"
   },

@@ -118,7 +118,20 @@ export const blockStore = {
 export type Review = {
   id: string; user: string; uid?: string; avatar: string; photoUrl?: string; rating: number; text: string;
   gifUrl?: string; imageUrl?: string; reaction?: string; spoiler?: boolean; date: string; likes?: number; likedBy?: string[];
-  replies?: Array<{ id: string; uid?: string; user: string; avatar: string; photoUrl?: string; text: string; date: string; likes?: number; likedBy?: string[] }>;
+  replies?: Array<{
+    id: string;
+    uid?: string;
+    user: string;
+    avatar: string;
+    photoUrl?: string;
+    text: string;
+    gifUrl?: string;
+    imageUrl?: string;
+    spoiler?: boolean;
+    date: string;
+    likes?: number;
+    likedBy?: string[];
+  }>;
 };
 
 const REV_KEY = 'sec_reviews_v1';
@@ -173,6 +186,25 @@ export const revStore = {
         if (!Array.isArray(reviews)) continue;
         for (const r of reviews) {
           if (r.user === username) result.push({ ...r, itemKey: key });
+        }
+      }
+      return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } catch { return []; }
+  },
+  /** Returns the signed-in account's reviews. UID is authoritative; username
+      is only a compatibility fallback for reviews created before auth IDs
+      were persisted with each record. */
+  getByAuthor(uid?: string | null, username?: string): Array<Review & { itemKey: string }> {
+    if (typeof window === 'undefined') return [];
+    try {
+      const all: Record<string, Review[]> = JSON.parse(localStorage.getItem(REV_KEY) || '{}');
+      const result: Array<Review & { itemKey: string }> = [];
+      for (const [key, reviews] of Object.entries(all)) {
+        if (!Array.isArray(reviews)) continue;
+        for (const review of reviews) {
+          const matchesUid = !!uid && review.uid === uid;
+          const matchesLegacyUsername = !review.uid && !!username && review.user === username;
+          if (matchesUid || matchesLegacyUsername) result.push({ ...review, itemKey: key });
         }
       }
       return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

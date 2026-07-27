@@ -331,7 +331,16 @@ function FeedCard({ item, onDelete }: {
 
   /* ── TMDB label ── */
   const displayLabel = item.displayTitle || item.titleKey;
-  const openComments = () => router.push(`/comments?key=${encodeURIComponent(item.titleKey)}&title=${encodeURIComponent(displayLabel)}`);
+  const [resolvedReviewId, setResolvedReviewId] = useState(item.reviewId || '');
+  const openComments = (openReply = false) => {
+    const params = new URLSearchParams({
+      key: item.titleKey,
+      title: displayLabel,
+    });
+    if (resolvedReviewId) params.set('commentId', resolvedReviewId);
+    if (openReply && resolvedReviewId) params.set('replyTo', resolvedReviewId);
+    router.push(`/comments?${params.toString()}`);
+  };
   // Title artwork is context, not user content. Only explicit GIF/image
   // attachments are rendered inside a feed post.
   const mediaSrc = item.mediaUrl || '';
@@ -400,6 +409,7 @@ function FeedCard({ item, onDelete }: {
       if (!alive) return;
       const exact = findReviewForFeedItem(list, item);
       setReplyCount(exact?.replies?.length ?? 0);
+      if (exact?.id) setResolvedReviewId(exact.id);
     }).catch(() => {});
     return () => { alive = false; };
   }, [item.rating, item.rawDate, item.reviewId, item.text, item.titleKey, item.uid, item.user]);
@@ -502,7 +512,7 @@ function FeedCard({ item, onDelete }: {
   ];
 
   return (
-    <SocialCard dimmed={deleting} edgeToEdge onClick={openComments}>
+    <SocialCard dimmed={deleting} edgeToEdge onClick={() => openComments()}>
 
       {/* Toast feedback */}
       {toast && (
@@ -562,7 +572,7 @@ function FeedCard({ item, onDelete }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
 
         {/* Reacts: emoji picker trigger + count que abre popup de quem reagiu */}
-        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : 'color-mix(in srgb, var(--c-surface2) 80%, #000 20%)', border: `1px solid ${myReaction ? 'rgba(192,105,255,0.24)' : T.border}`, borderRadius: 20, overflow: 'visible' }}>
+        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : 'color-mix(in srgb, var(--c-surface2) 64%, #000 36%)', border: 'none', borderRadius: 20, overflow: 'visible' }}>
           {/* Emoji trigger — ícone coração por padrão */}
           <button
             onClick={() => setShowEmojis(v => !v)}
@@ -613,9 +623,10 @@ function FeedCard({ item, onDelete }: {
         <SocialAction
           icon="message"
           width={58}
-          background="color-mix(in srgb, var(--c-surface2) 80%, #000 20%)"
+          background="color-mix(in srgb, var(--c-surface2) 64%, #000 36%)"
+          border="none"
           ariaLabel="Abrir respostas"
-          onClick={openComments}
+          onClick={() => openComments(true)}
         >
           <Txt size={12} weight={700} color="currentColor">{replyCount}</Txt>
         </SocialAction>
@@ -642,7 +653,7 @@ function FeedCard({ item, onDelete }: {
           {showMenu && (
             <>
               <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
-              <div style={{ position: 'absolute', bottom: 44, right: 0, zIndex: 30, background: T.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 230 }}>
+              <div style={{ position: 'absolute', top: 44, right: 0, zIndex: 30, background: T.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 230 }}>
                 {menuOptions.map(({ label, icon, color, action }, idx) => (
                   <button key={label} onClick={action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: idx < menuOptions.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', textAlign: 'left' }}>
                     <Icon name={icon} size={16} color={color} />

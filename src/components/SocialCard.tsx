@@ -47,6 +47,7 @@ export function SocialAuthor({
   badge,
   endPadding = 0,
   contextOnSecondLine = false,
+  timeColor = T.t4,
   onClick,
 }: {
   name: string;
@@ -58,6 +59,7 @@ export function SocialAuthor({
   badge?: ReactNode;
   endPadding?: number;
   contextOnSecondLine?: boolean;
+  timeColor?: string;
   onClick: () => void;
 }) {
   return (
@@ -88,7 +90,7 @@ export function SocialAuthor({
             {context}
           </div>
         )}
-        {time && <Txt size={11} color={T.t4} style={{ display: 'block', marginTop: 1 }}>{time}</Txt>}
+        {time && <Txt size={11} color={timeColor} style={{ display: 'block', marginTop: 1 }}>{time}</Txt>}
       </div>
     </div>
   );
@@ -127,6 +129,7 @@ export function SocialAction({
   ariaLabel,
   width,
   background,
+  border,
 }: {
   icon: IconName;
   active?: boolean;
@@ -135,6 +138,7 @@ export function SocialAction({
   ariaLabel?: string;
   width?: number;
   background?: string;
+  border?: string;
 }) {
   return (
     <button
@@ -146,7 +150,7 @@ export function SocialAction({
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         padding: width || children === undefined ? 0 : '0 12px',
         borderRadius: 20, background: active ? 'rgba(192,105,255,0.14)' : (background ?? T.surface2),
-        border: `1px solid ${active ? 'rgba(192,105,255,0.24)' : T.border}`,
+        border: border ?? `1px solid ${active ? 'rgba(192,105,255,0.24)' : T.border}`,
         cursor: 'pointer', color: active ? T.pink : T.t3,
       }}
     >

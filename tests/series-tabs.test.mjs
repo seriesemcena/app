@@ -33,6 +33,7 @@ test('today episode cards use the animated gradient border with reduced-motion s
 
   assert.match(page, /className=\{groupDate\.isToday \? 'series-episode-card-today' : undefined\}/);
   assert.match(styles, /@keyframes seriesEpisodeTodayBorder/);
+  assert.match(styles, /\.series-episode-card-today[\s\S]*?linear-gradient\(var\(--c-surface\), var\(--c-surface\)\)/);
   assert.match(styles, /\.series-episode-card-today[\s\S]*?linear-gradient\(\s*110deg/);
   assert.match(styles, /prefers-reduced-motion[\s\S]*?\.series-episode-card-today/);
 });

@@ -27,26 +27,51 @@ service cloud.firestore {
       return request.auth != null && accountIsActive(request.auth.uid);
     }
 
+    function togglesOwnReviewLike() {
+      let before = resource.data.get('likedBy', []);
+      let after = request.resource.data.get('likedBy', []);
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+
+      return changed.hasOnly(['likedBy', 'likes'])
+        && request.resource.data.likes is int
+        && request.resource.data.likes == after.size()
+        && (
+          (
+            !before.hasAny([request.auth.uid])
+            && after.hasAny([request.auth.uid])
+            && after.hasAll(before)
+            && after.size() == before.size() + 1
+          )
+          ||
+          (
+            before.hasAny([request.auth.uid])
+            && !after.hasAny([request.auth.uid])
+            && before.hasAll(after)
+            && after.size() == before.size() - 1
+          )
+        );
+    }
+
     function isProMember(data) {
       return data.get('profile', {}).get('proMember', false) == true;
     }
 
     function isMaratonouAdmin() {
       return request.auth != null
-        && request.auth.token.admin == true
-        && request.auth.token.role in [
+        && request.auth.token.get('admin', false) == true
+        && request.auth.token.get('role', '') in [
           'super_admin', 'admin', 'moderator', 'editor', 'support'
         ];
     }
 
     function canManageCommunityContent() {
       return isMaratonouAdmin()
-        && request.auth.token.role in ['super_admin', 'admin', 'editor'];
+        && request.auth.token.get('role', '') in ['super_admin', 'admin', 'editor'];
     }
 
     function canModerateCommunity() {
       return isMaratonouAdmin()
-        && request.auth.token.role in [
+        && request.auth.token.get('role', '') in [
           'super_admin', 'admin', 'moderator', 'support'
         ];
     }
@@ -129,15 +154,21 @@ service cloud.firestore {
                       && request.resource.data.authorUid == request.auth.uid;
         allow delete: if activeUser()
                       && resource.data.authorUid == request.auth.uid;
-        // The author may edit the review; anyone signed in
-        // may ONLY touch likes/replies (and may not reassign authorship).
+        // A like update may only add/remove the authenticated user's uid.
+        // Authors can edit their own content, but likes remain protected.
+        // Signed-in members may append replies without changing authorship.
         allow update: if activeUser()
                       && request.resource.data.authorUid == resource.data.authorUid
                       && (
-                           resource.data.authorUid == request.auth.uid
+                           togglesOwnReviewLike()
+                           || (
+                             resource.data.authorUid == request.auth.uid
+                             && !request.resource.data.diff(resource.data)
+                                  .affectedKeys()
+                                  .hasAny(['likedBy', 'likes'])
+                           )
                            || request.resource.data.diff(resource.data)
-                                .affectedKeys()
-                                .hasOnly(['likedBy', 'likes', 'replies'])
+                                .affectedKeys().hasOnly(['replies'])
                          );
       }
     }

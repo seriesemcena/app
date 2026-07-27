@@ -10,21 +10,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore } from '@/lib/db';
 import { navigateBack } from '@/lib/navigation';
+import { GiphyImage } from '@/components/GiphyImage';
+import { fetchGiphyGifs, giphyDisplayUrl, type GiphyGif } from '@/lib/giphy';
 
 const EMOJI_GROUPS = [
   { label: '😀', emojis: ['😀','😂','🤣','😍','🥰','😎','🤩','😱','😭','😤','🙄','🤔','😴','🤯','🥳'] },
   { label: '❤️', emojis: ['❤️','🔥','⭐','💯','👏','🎬','🍿','📺','🎥','🏆','💀','✨','💫','🎭','🎞️'] },
   { label: '👍', emojis: ['👍','👎','🤌','💪','🙏','👀','🫣','🤦','🤷','💁','🫡','🫶','🤟','✌️','🤞'] },
 ];
-
-type GiphyGif = {
-  id: string;
-  title: string;
-  images: {
-    fixed_height_small: { url: string; width: string; height: string };
-    downsized_small: { mp4: string };
-  };
-};
 
 function AddCommentPageInner() {
   const router = useRouter();
@@ -50,17 +43,22 @@ function AddCommentPageInner() {
 
   useEffect(() => {
     if (!showGif) return;
+    const controller = new AbortController();
     const delay = gifSearch ? 400 : 0;
     const timer = setTimeout(async () => {
       setGifLoading(true);
       try {
-        const res  = await fetch(`/api/giphy?q=${encodeURIComponent(gifSearch)}&limit=15`);
-        const data = await res.json();
-        setGifResults(data.data || []);
-      } catch {}
-      setGifLoading(false);
+        setGifResults(await fetchGiphyGifs(gifSearch, 15, controller.signal));
+      } catch {
+        if (!controller.signal.aborted) setGifResults([]);
+      } finally {
+        if (!controller.signal.aborted) setGifLoading(false);
+      }
     }, delay);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [gifSearch, showGif]);
 
   const insertEmoji = (e: string) => {
@@ -86,7 +84,7 @@ function AddCommentPageInner() {
       photoUrl,
       rating:   0,
       text:     comment.trim(),
-      gifUrl:   selectedGif?.images?.fixed_height_small?.url || '',
+      gifUrl:   selectedGif ? giphyDisplayUrl(selectedGif) : '',
       date:     new Date().toISOString(),
       likes: 0, likedBy: [], replies: [],
     };
@@ -136,9 +134,9 @@ function AddCommentPageInner() {
             {/* GIF preview */}
             {selectedGif && (
               <div style={{ position: 'relative', marginBottom: 16 }}>
-                <img
-                  src={selectedGif.images.fixed_height_small.url}
-                  alt={selectedGif.title}
+                <GiphyImage
+                  gif={selectedGif}
+                  eager
                   style={{ width: '100%', borderRadius: 12, display: 'block', maxHeight: 200, objectFit: 'cover' }}
                 />
                 <button
@@ -233,9 +231,8 @@ function AddCommentPageInner() {
                         onClick={() => { setSelectedGif(gif); setShowGif(false); }}
                         style={{ padding: 0, border: 'none', cursor: 'pointer', borderRadius: 6, overflow: 'hidden', height: 110, background: T.surface }}
                       >
-                        <img
-                          src={gif.images.fixed_height_small.url}
-                          alt={gif.title}
+                        <GiphyImage
+                          gif={gif}
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         />
                       </button>

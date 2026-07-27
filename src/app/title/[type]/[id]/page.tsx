@@ -36,7 +36,9 @@ import {
   seasonPremiereNotifyAt,
 } from '@/lib/seasonPremiere';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
+import { GiphyImage } from '@/components/GiphyImage';
 import { useTranslation } from 'react-i18next';
+import { fetchGiphyGifs, giphyDisplayUrl, type GiphyGif } from '@/lib/giphy';
 import '@/lib/i18n';
 
 const EMOJI_GROUPS = [
@@ -44,15 +46,6 @@ const EMOJI_GROUPS = [
   { label: '❤️', emojis: ['❤️','🔥','⭐','💯','👏','🎬','🍿','📺','🎥','🏆','💀','✨','💫','🎭','🎞️'] },
   { label: '👍', emojis: ['👍','👎','🤌','💪','🙏','👀','🫣','🤦','🤷','💁','🫡','🫶','🤟','✌️','🤞'] },
 ];
-
-type GiphyGif = {
-  id: string;
-  title: string;
-  images: {
-    fixed_height_small: { url: string; width: string; height: string };
-    downsized_small:     { mp4: string };
-  };
-};
 
 export default function TitleDetailPage() {
   const router = useRouter();
@@ -132,17 +125,22 @@ export default function TitleDetailPage() {
   /* ── Giphy (movie reviews only) ── */
   useEffect(() => {
     if (!showGif || !showForm || isTV) return;
+    const controller = new AbortController();
     const delay = gifSearch ? 400 : 0;
     const timer = setTimeout(async () => {
       setGifLoading(true);
       try {
-        const res  = await fetch(`/api/giphy?q=${encodeURIComponent(gifSearch)}&limit=15`);
-        const data = await res.json();
-        setGifResults(data.data || []);
-      } catch {}
-      setGifLoading(false);
+        setGifResults(await fetchGiphyGifs(gifSearch, 15, controller.signal));
+      } catch {
+        if (!controller.signal.aborted) setGifResults([]);
+      } finally {
+        if (!controller.signal.aborted) setGifLoading(false);
+      }
     }, delay);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [gifSearch, showGif, showForm, isTV]);
 
   const { data: detail, loading, error, retry } = useTMDB(
@@ -325,7 +323,7 @@ export default function TitleDetailPage() {
       photoUrl,
       rating:  reviewRating * 2,
       text:    reviewText.trim(),
-      gifUrl:  selectedGif?.images?.fixed_height_small?.url || '',
+      gifUrl:  selectedGif ? giphyDisplayUrl(selectedGif) : '',
       date:    new Date().toISOString(),
       likes: 0, likedBy: [], replies: [],
     };
@@ -523,7 +521,7 @@ export default function TitleDetailPage() {
           </div>
 
           {/* ── Info card — overlaps hero ── */}
-          <div style={{ margin: '16px 12px 0', background: isDark ? 'var(--c-card-deep)' : '#fff', borderRadius: 20, padding: '18px 18px 20px', position: 'relative', boxShadow: '0 -2px 24px rgba(0,0,0,0.08)' }}>
+          <div style={{ margin: '16px 12px 0', background: 'var(--c-title-description-bg)', borderRadius: 20, padding: '18px 18px 20px', position: 'relative', boxShadow: '0 -2px 24px rgba(0,0,0,0.08)' }}>
             {/* Chips: nota do app · genre · runtime */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {/* Nota média do app */}
@@ -555,7 +553,7 @@ export default function TitleDetailPage() {
               <>
                 <div style={{ position: 'relative', overflow: 'hidden', maxHeight: '4.8em' }}>
                   <Txt size={13} color={T.t2} style={{ lineHeight: 1.7, display: 'block' }}>{overview}</Txt>
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2em', background: isDark ? 'linear-gradient(to bottom, transparent, var(--c-card-deep))' : 'linear-gradient(to bottom, transparent, #fff)', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2em', background: 'linear-gradient(to bottom, transparent, var(--c-title-description-bg))', pointerEvents: 'none' }} />
                 </div>
                 <button onClick={() => setExpanded(true)} style={{ marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                   <Txt size={13} weight={700} color={T.t2}>{t('readMore')}</Txt>
@@ -648,7 +646,7 @@ export default function TitleDetailPage() {
 
             {/* Onde assistir */}
             {tab === 'whereToWatch' && (
-              <WatchProvidersTab type={isTV ? 'tv' : 'movie'} id={id} onVIP={() => router.push('/pro')} />
+              <WatchProvidersTab type={isTV ? 'tv' : 'movie'} id={id} />
             )}
 
             {/* Avaliações (filmes) */}
@@ -733,8 +731,11 @@ export default function TitleDetailPage() {
                 {/* GIF preview */}
                 {selectedGif && (
                   <div style={{ position: 'relative', marginBottom: 12 }}>
-                    <img src={selectedGif.images.fixed_height_small.url} alt={selectedGif.title}
-                      style={{ width: '100%', borderRadius: 10, display: 'block', maxHeight: 140, objectFit: 'cover' }} />
+                    <GiphyImage
+                      gif={selectedGif}
+                      eager
+                      style={{ width: '100%', borderRadius: 10, display: 'block', maxHeight: 140, objectFit: 'cover' }}
+                    />
                     <button onClick={() => setSelectedGif(null)}
                       style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name="close" size={12} color={T.white} />
@@ -804,7 +805,7 @@ export default function TitleDetailPage() {
                         {gifResults.map(gif => (
                           <button key={gif.id} onClick={() => { setSelectedGif(gif); setShowGif(false); }}
                             style={{ padding: 0, border: 'none', cursor: 'pointer', borderRadius: 6, overflow: 'hidden', height: 110, background: T.surface }}>
-                            <img src={gif.images.fixed_height_small.url} alt={gif.title}
+                            <GiphyImage gif={gif}
                               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           </button>
                         ))}
@@ -1053,8 +1054,8 @@ function MovieReviewsTab({ reviews, avgRating, totalRatings, onAddReview, onView
   );
 }
 
-function WatchProvidersTab({ type, id, onVIP }: {
-  type: 'movie' | 'tv'; id: string; onVIP: () => void;
+function WatchProvidersTab({ type, id }: {
+  type: 'movie' | 'tv'; id: string;
 }) {
   const { t } = useTranslation('title');
   const { data, loading } = useTMDB(() => tmdb.watchProviders(type, id), [type, id]);
@@ -1062,10 +1063,11 @@ function WatchProvidersTab({ type, id, onVIP }: {
   const flatrate: any[] = regionData?.flatrate || [];
   const rent: any[]     = regionData?.rent     || [];
   const buy: any[]      = regionData?.buy      || [];
+  const providers = Array.from(
+    new Map([...flatrate, ...rent, ...buy].map((provider: any) => [provider.provider_id, provider])).values(),
+  );
 
-  type ProviderType = 'subscription' | 'rent' | 'buy';
-  const ProviderRow = ({ p, providerType }: { p: any; providerType: ProviderType }) => {
-    const label = providerType === 'subscription' ? t('subscriptionIncluded') : providerType === 'rent' ? t('rentBtn') : t('buyBtn');
+  const ProviderRow = ({ p }: { p: any }) => {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: T.card, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 8 }}>
         {p.logo_path
@@ -1076,7 +1078,6 @@ function WatchProvidersTab({ type, id, onVIP }: {
           <Txt size={14} weight={700} style={{ display: 'block' }}>{p.provider_name}</Txt>
           <Txt size={11} color={T.t3}>{t('streamingPlatform')}</Txt>
         </div>
-        {providerType !== 'subscription' && <Btn label={label} variant="pink" size="sm" />}
       </div>
     );
   };
@@ -1086,25 +1087,15 @@ function WatchProvidersTab({ type, id, onVIP }: {
       {loading && (
         <div>{[...Array(3)].map((_, i) => <div key={i} style={{ height: 68, borderRadius: 10, background: T.card, marginBottom: 8 }} />)}</div>
       )}
-      {!loading && flatrate.length === 0 && rent.length === 0 && buy.length === 0 && (
+      {!loading && providers.length === 0 && (
         <div style={{ padding: '28px 0', textAlign: 'center' }}>
           <Txt size={13} color={T.t3} style={{ display: 'block', marginBottom: 4 }}>{t('noStreamingBrazil')}</Txt>
           <Txt size={12} color={T.t4}>{t('checkBackSoon')}</Txt>
         </div>
       )}
-      {flatrate.length > 0 && (
+      {providers.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          {flatrate.map((p: any) => <ProviderRow key={p.provider_id} p={p} providerType="subscription" />)}
-        </div>
-      )}
-      {rent.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          {rent.map((p: any) => <ProviderRow key={p.provider_id} p={p} providerType="rent" />)}
-        </div>
-      )}
-      {buy.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          {buy.map((p: any) => <ProviderRow key={p.provider_id} p={p} providerType="buy" />)}
+          {providers.map((p: any) => <ProviderRow key={p.provider_id} p={p} />)}
         </div>
       )}
     </div>

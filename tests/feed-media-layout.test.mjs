@@ -46,19 +46,27 @@ test('feed separates the comment and places its timestamp beside the options men
   assert.match(component, /contextOnSecondLine[\s\S]*?alignItems:\s*'baseline'/);
   assert.match(feed, /<div style=\{\{ marginBottom:\s*18 \}\}>/);
   assert.match(feed, /minHeight:\s*spoilerHidden\s*\?\s*86\s*:\s*undefined,\s*marginBottom:\s*18/);
-  assert.match(feed, /Menu discreto — canto inferior direito do card[\s\S]*?bottom:\s*44,\s*right:\s*0/);
+  assert.match(feed, /Menu discreto — canto inferior direito do card[\s\S]*?top:\s*44,\s*right:\s*0/);
 });
 
 test('clicking non-interactive feed card content opens the same comments route as replies', async () => {
-  const [feed, component] = await Promise.all([
+  const [feed, component, comments] = await Promise.all([
     readFile(new URL('src/app/feed/page.tsx', projectRoot), 'utf8'),
     readFile(new URL('src/components/SocialCard.tsx', projectRoot), 'utf8'),
+    readFile(new URL('src/app/comments/page.tsx', projectRoot), 'utf8'),
   ]);
 
-  assert.match(feed, /const openComments = \(\) => router\.push\(`\/comments\?key=/);
-  assert.match(feed, /<SocialCard dimmed=\{deleting\} edgeToEdge onClick=\{openComments\}>/);
-  assert.match(feed, /ariaLabel="Abrir respostas"[\s\S]*?onClick=\{openComments\}/);
+  assert.match(feed, /const openComments = \(openReply = false\)/);
+  assert.match(feed, /if \(resolvedReviewId\) params\.set\('commentId', resolvedReviewId\)/);
+  assert.match(feed, /if \(openReply && resolvedReviewId\) params\.set\('replyTo', resolvedReviewId\)/);
+  assert.match(feed, /<SocialCard dimmed=\{deleting\} edgeToEdge onClick=\{\(\) => openComments\(\)\}>/);
+  assert.match(feed, /ariaLabel="Abrir respostas"[\s\S]*?onClick=\{\(\) => openComments\(true\)\}/);
   assert.match(component, /target\.closest\('button, a, input, textarea, select, \[role="button"\]'\)/);
+  assert.match(comments, /const replyTarget = sp\.get\('replyTo'\) \|\| ''/);
+  assert.match(comments, /const selectedCommentId = sp\.get\('commentId'\) \|\| replyTarget/);
+  assert.match(comments, /const focusedComments = selectedCommentId[\s\S]*?sorted\.filter\(review => review\.id === selectedCommentId\)/);
+  assert.match(comments, />\s*Ver mais comentários\s*</);
+  assert.match(comments, /setReplyOpenId\(replyTarget\)/);
 });
 
 test('feed action controls use a darker gray and load-more uses white with black text', async () => {
@@ -67,8 +75,11 @@ test('feed action controls use a darker gray and load-more uses white with black
     readFile(new URL('src/components/SocialCard.tsx', projectRoot), 'utf8'),
   ]);
 
-  assert.match(feed, /color-mix\(in srgb, var\(--c-surface2\) 80%, #000 20%\)/);
-  assert.match(feed, /background="color-mix\(in srgb, var\(--c-surface2\) 80%, #000 20%\)"/);
+  assert.match(feed, /color-mix\(in srgb, var\(--c-surface2\) 64%, #000 36%\)/);
+  assert.match(feed, /background="color-mix\(in srgb, var\(--c-surface2\) 64%, #000 36%\)"/);
+  assert.match(feed, /background: myReaction[\s\S]*?border: 'none'/);
+  assert.match(feed, /background="color-mix[\s\S]*?border="none"/);
+  assert.match(component, /border:\s*border \?\?/);
   assert.match(component, /background:\s*active\s*\?[\s\S]*?:\s*\(background \?\? T\.surface2\)/);
   assert.match(feed, /background:\s*'#FFFFFF',\s*color:\s*'#0B0B0D'/);
 });

@@ -26,5 +26,7 @@ test('home media filters share the transparent segmented tab style', () => {
 
   assert.match(css, /\.home-media-tabs-shell\s*\{[\s\S]*margin:\s*0 0 16px/);
   assert.match(css, /\.title-detail-tabs-shell\s*\{[\s\S]*background:\s*transparent/);
-  assert.match(css, /\.title-detail-tab\.is-active\s*\{[\s\S]*linear-gradient/);
+  assert.match(css, /\.title-detail-tab\s*\{[\s\S]*width:\s*max-content/);
+  assert.match(css, /\.title-detail-tab\.is-active\s*\{[\s\S]*background:\s*var\(--c-title-description-bg\)/);
+  assert.doesNotMatch(css, /\.title-detail-tab\.is-active\s*\{[^}]*linear-gradient/);
 });

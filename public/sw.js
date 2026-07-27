@@ -2,7 +2,7 @@
 
 const CACHE_PREFIX = 'maratonou-';
 const STATIC_CACHE = `${CACHE_PREFIX}static-v5`;
-const IMAGE_CACHE = `${CACHE_PREFIX}images-v4`;
+const IMAGE_CACHE = `${CACHE_PREFIX}images-v5`;
 const OFFLINE_URL = '/offline';
 const STATIC_ASSETS = [
   OFFLINE_URL,
@@ -109,8 +109,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Giphy already serves immutable CDN assets. Do not route those cross-origin
+  // opaque responses through Cache Storage: iOS standalone PWAs can retain a
+  // failed/partial GIF response and keep rendering it as a broken image.
   const publicImage = request.destination === 'image'
-    && (sameOrigin || url.hostname === 'image.tmdb.org' || url.hostname.endsWith('giphy.com'));
+    && (sameOrigin || url.hostname === 'image.tmdb.org');
   if (publicImage) event.respondWith(staleWhileRevalidateImage(request));
 });
 
