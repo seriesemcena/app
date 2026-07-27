@@ -7,7 +7,7 @@
    ───────────────────────────────────────────────────────────── */
 import { Capacitor } from '@capacitor/core';
 import type { Firestore } from 'firebase/firestore';
-import { getFirebaseFunctions, getFirebaseMessaging, VAPID_KEY } from './firebase';
+import { getFirebaseAuth, getFirebaseFunctions, getFirebaseMessaging, VAPID_KEY } from './firebase';
 import { dbTokenStore } from './db';
 
 const FCM_TOKEN_KEY = 'sec_fcm_token_v1';
@@ -138,8 +138,63 @@ export type PushTestResult = {
   pushFailure: number;
 };
 
+type PushCallableError = Error & { code?: string };
+
+function makePushCallableError(code: string, message: string): PushCallableError {
+  const error = new Error(message) as PushCallableError;
+  error.code = code.startsWith('functions/') ? code : `functions/${code}`;
+  return error;
+}
+
+/** Capacitor loads the hosted web app inside a native WebView. Calling the
+ * function explicitly avoids losing the Firebase Auth header in WebView
+ * callable transports while keeping the standard callable protocol. */
+async function sendNativePushTest(locale: string): Promise<PushTestResult> {
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim();
+  const user = getFirebaseAuth().currentUser;
+  if (!projectId || !user) {
+    throw makePushCallableError('unauthenticated', 'Entre na sua conta novamente para testar as notificações.');
+  }
+
+  const idToken = await user.getIdToken(true);
+  const response = await fetch(
+    `https://us-central1-${projectId}.cloudfunctions.net/sendTestPush`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ data: { locale } }),
+    },
+  );
+  const payload = await response.json().catch(() => null) as {
+    data?: PushTestResult;
+    result?: PushTestResult;
+    error?: { status?: string; message?: string };
+  } | null;
+
+  if (!response.ok || payload?.error) {
+    const status = String(payload?.error?.status || `http-${response.status}`)
+      .toLowerCase()
+      .replaceAll('_', '-');
+    throw makePushCallableError(
+      status,
+      payload?.error?.message || 'Não foi possível concluir o teste de notificação.',
+    );
+  }
+
+  const result = payload?.data || payload?.result;
+  if (!result?.accepted) {
+    throw makePushCallableError('internal', 'O servidor não confirmou o teste de notificação.');
+  }
+  return result;
+}
+
 /** Sends a real authenticated FCM message to the current member's devices. */
 export async function sendPushTest(locale: string): Promise<PushTestResult> {
+  if (isNativePushRuntime()) return sendNativePushTest(locale);
+
   const { httpsCallable } = await import('firebase/functions');
   const callable = httpsCallable<{ locale: string }, PushTestResult>(
     getFirebaseFunctions(),

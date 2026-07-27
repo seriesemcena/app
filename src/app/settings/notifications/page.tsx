@@ -135,10 +135,16 @@ export default function NotificationPrefsPage() {
       const code = typeof error === 'object' && error && 'code' in error
         ? String((error as { code?: unknown }).code)
         : '';
+      console.error('[Notifications] Push test failed', {
+        code,
+        message: error instanceof Error ? error.message : String(error),
+      });
       setTestState('error');
       setTestMessage(
         code.includes('resource-exhausted')
           ? t('notifPrefs.testWait')
+          : code.includes('unauthenticated')
+            ? t('notifPrefs.testLoginRequired')
           : code.includes('failed-precondition') || (error instanceof Error && error.message === 'device-token-unavailable')
             ? t('notifPrefs.testNoDevice')
             : t('notifPrefs.testError'),
