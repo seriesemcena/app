@@ -7,7 +7,14 @@ import { T } from '@/lib/tokens';
 export default function LegalLayout({ children }: { children: ReactNode }) {
   return (
     <div style={{
-      minHeight: '100dvh',
+      width: '100%',
+      height: 'var(--app-height)',
+      minHeight: 0,
+      overflowX: 'hidden',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      overscrollBehaviorY: 'contain',
+      touchAction: 'pan-y',
       background: T.bg,
       color: T.t1,
       paddingTop: 'calc(var(--safe-area-top) + 24px)',
