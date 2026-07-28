@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, Logo } from '@/components/primitives';
+import { Screen, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { ImgWithSkeleton, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
@@ -14,6 +14,7 @@ import { useMyProfileUrl } from '@/hooks/useMyProfileUrl';
 import { AppErrorState } from '@/components/AppStates';
 import { getDB } from '@/lib/firebase';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '@/context/ThemeContext';
 import '@/lib/i18n';
 import { AppBannerSlot } from '@/components/AppBannerSlot';
 import {
@@ -35,6 +36,8 @@ export default function SearchPage() {
   const router = useRouter();
   const myProfileUrl = useMyProfileUrl();
   const { t } = useTranslation('common');
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const { user } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
@@ -182,9 +185,9 @@ export default function SearchPage() {
               padding: 'calc(var(--safe-area-top) + 12px) calc(var(--safe-area-right) + 16px) 20px calc(var(--safe-area-left) + 16px)',
             }}>
 
-              {/* Linha 1: Avatar + Logo + Notificações */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', border: '2px solid rgba(255,255,255,0.25)' }} onClick={() => router.push(myProfileUrl)}>
+              {/* Linha 1: Avatar + Notificações */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', border: isDark ? '2px solid rgba(255,255,255,0.25)' : '2px solid rgba(0,0,0,0.10)' }} onClick={() => router.push(myProfileUrl)}>
                   {avatarImage
                     ? <img src={avatarImage} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                     : <div style={{ width: '100%', height: '100%', background: avatarGradient, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -193,38 +196,37 @@ export default function SearchPage() {
                   }
                 </div>
 
-                <Logo height={22} />
-
                 <button
                   onClick={() => router.push('/notifications')}
-                  style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.20)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="bell" size={17} color="#fff" />
+                  style={{ width: 36, height: 36, borderRadius: 18, background: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.07)', border: isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.10)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="bell" size={17} color={isDark ? '#fff' : 'rgba(0,0,0,0.72)'} />
                 </button>
               </div>
 
               {/* Linha 2: Barra de pesquisa */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                background: 'rgba(255,255,255,0.12)',
+                background: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,15,20,0.06)',
                 backdropFilter: 'blur(8px)',
                 WebkitBackdropFilter: 'blur(8px)',
                 borderRadius: T.radiusSm,
                 padding: '11px 14px',
-                border: 'none',
+                border: isDark ? 'none' : '1px solid rgba(0,0,0,0.06)',
               } as React.CSSProperties}>
-                <Icon name="search" size={18} color="rgba(255,255,255,0.55)" />
+                <Icon name="search" size={18} color={isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.52)'} />
                 <input
+                  className="search-primary-input"
                   ref={inputRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
                   placeholder={t('search.placeholder')}
-                  style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none' }}
+                  style={{ flex: 1, background: 'transparent', border: 'none', color: isDark ? '#fff' : T.t1, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none', '--search-placeholder-color': isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.46)' } as React.CSSProperties}
                 />
                 {query && (
                   <button onClick={() => { setQuery(''); setDQ(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    <Icon name="close" size={16} color="rgba(255,255,255,0.55)" />
+                    <Icon name="close" size={16} color={isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.52)'} />
                   </button>
                 )}
               </div>
@@ -233,7 +235,7 @@ export default function SearchPage() {
               {recentSearches.length > 0 && (
                 <div style={{ marginTop: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <Txt size={22} weight={800} color="rgba(255,255,255,0.90)" style={{ fontStretch: 'condensed' } as React.CSSProperties}>
+                    <Txt size={22} weight={800} color={isDark ? 'rgba(255,255,255,0.90)' : T.t1} style={{ fontStretch: 'condensed' } as React.CSSProperties}>
                       {t('search.recentSearches')}
                     </Txt>
                     <button
@@ -255,7 +257,7 @@ export default function SearchPage() {
                   <div style={{ display: 'flex', gap: 14, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 } as React.CSSProperties}>
                     {recentSearches.map((item) => (
                       <div key={recentSearchKey(item)} onClick={() => openRecent(item)} style={{ flexShrink: 0, cursor: 'pointer' }}>
-                        <div style={{ width: 130, height: 130, borderRadius: 28, overflow: 'hidden', background: 'rgba(255,255,255,0.10)', border: '2px solid rgba(255,255,255,0.18)', position: 'relative', flexShrink: 0 }}>
+                        <div style={{ width: 130, height: 130, borderRadius: 28, overflow: 'hidden', background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.04)', border: isDark ? '2px solid rgba(255,255,255,0.18)' : '2px solid rgba(0,0,0,0.10)', position: 'relative', flexShrink: 0 }}>
                           {(() => {
                             const poster = textlessPosters[recentSearchKey(item)];
                             if (poster === undefined) {
@@ -265,7 +267,7 @@ export default function SearchPage() {
                             return src
                               ? <ImgWithSkeleton src={src} alt={item.title} width="100%" height="100%" />
                               : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <Icon name="film" size={36} color="rgba(255,255,255,0.4)" />
+                                  <Icon name="film" size={36} color={isDark ? 'rgba(255,255,255,0.4)' : T.t3} />
                                 </div>;
                           })()}
                           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.80) 0%, rgba(0,0,0,0.20) 50%, transparent 100%)' }} />

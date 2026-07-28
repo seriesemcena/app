@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { navigateBack, navigateTo } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbAppNotifStore, dbNotifStore, dbProSettingsStore, type NotifDoc, type NotificationPageCursor } from '@/lib/db';
+import { useTheme } from '@/context/ThemeContext';
 
 type ActiveTab = 'account' | 'app';
 
@@ -78,6 +79,8 @@ export default function NotificationsPage() {
   const router             = useRouter();
   const searchParams       = useSearchParams();
   const { t }              = useTranslation('notifications');
+  const { theme }          = useTheme();
+  const isDark             = theme === 'dark';
   const { user, loading }  = useAuth();
   const uid                = user?.uid ?? null;
 
@@ -313,13 +316,13 @@ export default function NotificationsPage() {
         <GlassHeader
           left={
             <button onClick={() => navigateBack(router)}
-              style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
-              <Icon name="chevronL" size={16} color="#fff" />
+              style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.92)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.98)'}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: isDark ? '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' : '0 1px 4px rgba(0,0,0,0.05)' } as React.CSSProperties}>
+              <Icon name="chevronL" size={16} color={isDark ? '#fff' : '#111113'} />
             </button>
           }
         >
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', fontFamily: "'Area',sans-serif" }}>{t('title')}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.t1, fontFamily: "'Area',sans-serif" }}>{t('title')}</div>
           </div>
         </GlassHeader>
 

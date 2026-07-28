@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, Btn, Logo, GlassHeader } from '@/components/primitives';
+import { Screen, Txt, Btn } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { TMDBBackdrop, MasonryGrid2, TMDBGridCard } from '@/components/posters';
 import { T } from '@/lib/tokens';
@@ -215,6 +215,9 @@ export default function HomePage() {
   const scNameColor = isDark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.82)';
   const scSubColor  = isDark ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.40)';
   const scInitialColor = isDark ? 'rgba(255,255,255,0.11)' : 'rgba(0,0,0,0.07)';
+  const homeScrollChromeTint = isDark
+    ? 'linear-gradient(to bottom, rgba(13,13,15,0.85) 0%, rgba(13,13,15,0.40) 70%, transparent 100%)'
+    : 'linear-gradient(to bottom, rgba(229,229,234,0.94) 0%, rgba(229,229,234,0.62) 70%, transparent 100%)';
   const scSpecular = isDark
     ? [
         'radial-gradient(ellipse 90% 52% at 50% -10%, rgba(255,255,255,0.13) 0%, transparent 54%)',
@@ -477,23 +480,30 @@ export default function HomePage() {
             const pbRow = 12 - scrollRatio * 4; // row bottom padding: 12 → 8px
             return (
               <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, overflow: 'visible', paddingTop: 'var(--safe-area-top)' } as React.CSSProperties}>
-                {[{ blur: 22, end: 35 }, { blur: 14, end: 60 }, { blur: 7, end: 80 }, { blur: 3, end: 95 }].map(({ blur, end }, i) => (
-                  <div key={i} style={{ position: 'absolute', inset: 0, backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)`, maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, pointerEvents: 'none' } as React.CSSProperties} />
-                ))}
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(13,13,15,0.85) 0%, rgba(13,13,15,0.40) 70%, transparent 100%)', pointerEvents: 'none' }} />
-                {/* Logo row */}
-                <div style={{ position: 'relative', zIndex: 2, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 12px' }}>
-                  <div style={{ width: 76 }} />
-                  <img src="/logo_dark.png" alt="Maratonou" style={{ height: 22, width: 'auto' }} />
-                  <div style={{ width: 76, display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
-                    <button aria-label="Notificações" onClick={() => router.push('/notifications')}
-                      style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                      <Icon name="bell" size={16} color="#fff" />
-                    </button>
-                  </div>
+                {/* O glass fica completamente ausente no topo e surge conforme o scroll,
+                    como no header das páginas de título. */}
+                <div
+                  data-testid="home-scroll-chrome"
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute', inset: 0,
+                    opacity: scrollRatio,
+                    visibility: scrollRatio === 0 ? 'hidden' : 'visible',
+                    transition: 'opacity 0.22s ease',
+                    pointerEvents: 'none',
+                  } as React.CSSProperties}
+                >
+                  {[{ blur: 22, end: 35 }, { blur: 14, end: 60 }, { blur: 7, end: 80 }, { blur: 3, end: 95 }].map(({ blur, end }, i) => (
+                    <div key={i} style={{ position: 'absolute', inset: 0, backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)`, maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`, WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)` } as React.CSSProperties} />
+                  ))}
+                  <div style={{ position: 'absolute', inset: 0, background: homeScrollChromeTint }} />
                 </div>
+                <button aria-label="Notificações" onClick={() => router.push('/notifications')}
+                  style={{ position: 'absolute', zIndex: 3, top: 'calc(var(--safe-area-top) + 6px)', right: 12, width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
+                  <Icon name="bell" size={16} color="#fff" />
+                </button>
                 {/* Tabs row — encolhe ao rolar */}
-                <div style={{ position: 'relative', zIndex: 2, padding: `0 16px ${pbRow}px`, display: 'flex', gap: 6 }}>
+                <div style={{ position: 'relative', zIndex: 2, padding: `6px 58px ${pbRow}px 16px`, display: 'flex', gap: 6 }}>
                   {(['para_voce','em_alta','novidades'] as const).map((id) => (
                     <button key={id} onClick={() => setHomeTab(id)} style={{
                       padding: `${pV}px ${pH}px`, minHeight: menuHeight, borderRadius: 20, flexShrink: 0,
@@ -516,7 +526,17 @@ export default function HomePage() {
           {homeTab === 'para_voce' && showSection('hero') ? (() => {
             const CARD_H = isDesktop ? 580 : 460;
             return (
-              <div className="hero-slider-wrap" style={{ position: 'relative', height: CARD_H, marginTop: -100, borderRadius: isDark ? 0 : '0 0 28px 28px', overflow: isDark ? 'visible' : 'hidden' }}>
+              <div
+                className="hero-slider-wrap"
+                data-testid="home-hero-slider"
+                style={{
+                  position: 'relative',
+                  height: isDesktop ? CARD_H : `calc(${CARD_H}px + var(--safe-area-top))`,
+                  marginTop: 'calc(-54px - var(--safe-area-top))',
+                  borderRadius: isDark ? 0 : '0 0 28px 28px',
+                  overflow: isDark ? 'visible' : 'hidden',
+                }}
+              >
 
                 {/* Slider scroll — preenche o hero inteiro */}
                 <div
@@ -582,9 +602,6 @@ export default function HomePage() {
                       })
                   }
                 </div>
-
-                {/* Gradiente topo — legibilidade do header/tabs */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 120, background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 100%)', zIndex: 4, pointerEvents: 'none' }} />
 
                 {/* Dots */}
                 {heroes.length > 0 && (

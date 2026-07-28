@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
 import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
@@ -104,6 +106,7 @@ function timeAgo(dateStr: string): string {
 /* ──────────────────────────────────────────────── */
 export default function FeedPage() {
   const router = useRouter();
+  const { t } = useTranslation('navigation');
   const { user } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -204,6 +207,19 @@ export default function FeedPage() {
 
           {/* ── Header glass sticky ── */}
           <GlassHeader
+            navTitle={t('activity')}
+            showNavTitle={scrolled}
+            contentAlign="start"
+            children={
+              <Txt
+                size={26}
+                weight={900}
+                color={T.t1}
+                style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
+              >
+                {t('activity')}
+              </Txt>
+            }
             right={
               <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                 <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
@@ -214,9 +230,9 @@ export default function FeedPage() {
             }
           />
 
-          {/* ── Tabs — sticky logo abaixo do header ── */}
+          {/* ── Tabs — sticky abaixo do título da página ── */}
           <div style={{
-            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
+            position: 'sticky', top: 'calc(46px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '4px 16px 10px' : '8px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',
@@ -251,7 +267,7 @@ export default function FeedPage() {
             {loadingFeed && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} style={{ background: '#121215', padding: 16, borderTop: '1px solid #29292f', borderBottom: '1px solid #29292f' }}>
+                  <div key={i} style={{ background: T.card, padding: 16, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                       <div className="img-skeleton" style={{ width: 42, height: 42, borderRadius: 21, flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
@@ -319,6 +335,11 @@ function FeedCard({ item, onDelete }: {
 }) {
   const router      = useRouter();
   const { user }    = useAuth();
+  const { theme }   = useTheme();
+  const isDark      = theme === 'dark';
+  const actionBackground = isDark
+    ? 'color-mix(in srgb, var(--c-surface2) 64%, #000 36%)'
+    : '#D1D1D6';
   const actionLabel = item.action === 'comentou' ? 'comentou em' : item.action;
 
   const myName   = user?.displayName || user?.email?.split('@')[0] || '';
@@ -352,6 +373,47 @@ function FeedCard({ item, onDelete }: {
   const [myReaction, setMyReaction]     = useState<string | null>(null);
   const [showEmojis, setShowEmojis]     = useState(false);
   const [showReactors, setShowReactors] = useState(false);
+  const sourceReviewRef = useRef<Review | null>(null);
+  const heartSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  /* A heart selected in the feed represents the same like shown on the
+     comments page. Older builds stored it only in reactions/{activityId},
+     while /comments reads likedBy from the source review. Keep both records
+     aligned and serialize rapid changes so add/remove cannot race. */
+  const syncHeartToSourceReview = (shouldLike: boolean) => {
+    heartSyncQueueRef.current = heartSyncQueueRef.current.then(async () => {
+      if (!firebaseConfigured || !user || !item.titleKey) return;
+
+      const db = getDB();
+      const reviewKey = item.reviewTitleKey || item.titleKey;
+      let review = sourceReviewRef.current;
+
+      if (!review || (resolvedReviewId && review.id !== resolvedReviewId)) {
+        review = resolvedReviewId
+          ? await dbRevStore.getById(db, reviewKey, resolvedReviewId)
+          : null;
+      }
+      if (!review) {
+        review = findReviewForFeedItem(await dbRevStore.get(db, reviewKey), item) || null;
+      }
+      if (!review) return;
+
+      sourceReviewRef.current = review;
+      if (!resolvedReviewId) setResolvedReviewId(review.id);
+
+      const isLiked = !!review.likedBy?.includes(user.uid);
+      if (isLiked === shouldLike) return;
+
+      const cloud = await dbRevStore.toggleLike(db, reviewKey, review.id, user.uid);
+      sourceReviewRef.current = cloud?.find(candidate => candidate.id === review!.id)
+        || { ...review, likedBy: shouldLike
+          ? [...(review.likedBy || []), user.uid]
+          : (review.likedBy || []).filter(uid => uid !== user.uid) };
+    }).catch(error => {
+      console.error('[feed] Falha ao sincronizar reação com o comentário:', error);
+    });
+    return heartSyncQueueRef.current;
+  };
 
   /* Apply a { uid: emoji } map to the counts + my-reaction UI state */
   const applyReactionMap = (map: Record<string, string>) => {
@@ -368,10 +430,13 @@ function FeedCard({ item, onDelete }: {
     if (!firebaseConfigured) return;
     let alive = true;
     dbReactionStore.get(getDB(), item.id).then(cloudMap => {
-      if (!alive || !cloudMap || Object.keys(cloudMap).length === 0) return;
+      if (!alive) return;
       // Cloud holds other users' reactions; local keeps mine if the cloud
       // write was blocked. Cloud wins on conflicts for a shared uid.
-      applyReactionMap({ ...localMap, ...cloudMap });
+      const mergedMap = { ...localMap, ...cloudMap };
+      applyReactionMap(mergedMap);
+      // One-time compatibility migration for hearts created by older builds.
+      if (user && mergedMap[user.uid] === '❤️') void syncHeartToSourceReview(true);
     }).catch(() => {});
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -394,6 +459,9 @@ function FeedCard({ item, onDelete }: {
     reactionStore.set(item.id, user.uid, nextEmoji);
     if (firebaseConfigured) {
       try { await dbReactionStore.set(getDB(), item.id, user.uid, nextEmoji); } catch {}
+      if ((prev === '❤️') !== (nextEmoji === '❤️')) {
+        await syncHeartToSourceReview(nextEmoji === '❤️');
+      }
     }
   };
 
@@ -409,7 +477,10 @@ function FeedCard({ item, onDelete }: {
       if (!alive) return;
       const exact = findReviewForFeedItem(list, item);
       setReplyCount(exact?.replies?.length ?? 0);
-      if (exact?.id) setResolvedReviewId(exact.id);
+      if (exact?.id) {
+        sourceReviewRef.current = exact;
+        setResolvedReviewId(exact.id);
+      }
     }).catch(() => {});
     return () => { alive = false; };
   }, [item.rating, item.rawDate, item.reviewId, item.text, item.titleKey, item.uid, item.user]);
@@ -572,7 +643,7 @@ function FeedCard({ item, onDelete }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
 
         {/* Reacts: emoji picker trigger + count que abre popup de quem reagiu */}
-        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : 'color-mix(in srgb, var(--c-surface2) 64%, #000 36%)', border: 'none', borderRadius: 20, overflow: 'visible' }}>
+        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : actionBackground, border: 'none', borderRadius: 20, overflow: 'visible' }}>
           {/* Emoji trigger — ícone coração por padrão */}
           <button
             onClick={() => setShowEmojis(v => !v)}
@@ -623,7 +694,7 @@ function FeedCard({ item, onDelete }: {
         <SocialAction
           icon="message"
           width={58}
-          background="color-mix(in srgb, var(--c-surface2) 64%, #000 36%)"
+          background={actionBackground}
           border="none"
           ariaLabel="Abrir respostas"
           onClick={() => openComments(true)}

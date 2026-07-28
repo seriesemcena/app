@@ -117,6 +117,17 @@ export default function SeriesPage() {
           <GlassHeader
             navTitle={t('series', { ns: 'navigation' })}
             showNavTitle={scrolled}
+            contentAlign="start"
+            children={
+              <Txt
+                size={26}
+                weight={900}
+                color={T.t1}
+                style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
+              >
+                {t('series', { ns: 'navigation' })}
+              </Txt>
+            }
             right={
               <button aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.12)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.14)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}>
                 <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.75)'} />
@@ -126,7 +137,7 @@ export default function SeriesPage() {
 
           {/* ── Tabs — sticky logo abaixo do header ── */}
           <div style={{
-            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
+            position: 'sticky', top: 'calc(46px + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '4px 16px 10px' : '8px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',

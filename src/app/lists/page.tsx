@@ -78,7 +78,7 @@ export default function ListsPage() {
 
           {/* ── Tabs sticky ── */}
           <div style={{
-            position: 'sticky', top: 'calc(56px + var(--safe-area-top))', zIndex: 48,
+            position: 'sticky', top: 'var(--safe-area-top)', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '4px 16px 10px' : '8px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',

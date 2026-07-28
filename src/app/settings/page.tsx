@@ -123,8 +123,20 @@ export default function SettingsPage() {
             navTitle={t('title')}
             showNavTitle={showNavTitle}
             right={
-              <button onClick={() => router.push(withProfileOrigin('/notifications'))} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="bell" size={16} color="#fff" />
+              <button
+                aria-label={t('items.notifications')}
+                onClick={() => router.push(withProfileOrigin('/notifications'))}
+                style={{
+                  width: 34, height: 34, borderRadius: 17,
+                  background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.92)',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.98)'}`,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backdropFilter: 'blur(24px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+                  boxShadow: isDark ? 'none' : '0 1px 4px rgba(0,0,0,0.05)',
+                } as React.CSSProperties}
+              >
+                <Icon name="bell" size={16} color={isDark ? '#fff' : '#1A1A1A'} />
               </button>
             }
           />
@@ -225,7 +237,6 @@ export default function SettingsPage() {
             <Group rows={[
               ...(AI_CURATION_ENABLED ? [{ icon: 'star' as IconName, label: t('vip.aiCuration'), onClick: () => router.push(withProfileOrigin('/curadoria')) }] : []),
               { icon: 'chart', label: t('vip.accountStats'),  onClick: () => router.push(withProfileOrigin('/stats')) },
-              { icon: 'wifi',  label: t('items.streamings'),  onClick: () => router.push(withProfileOrigin('/settings/streamings')) },
               { icon: 'heart', label: t('items.genres'),      onClick: () => router.push(withProfileOrigin('/settings/genres')) },
               { icon: 'play',  label: t('items.expenses'),    onClick: () => router.push(withProfileOrigin('/expenses')) },
             ]} />

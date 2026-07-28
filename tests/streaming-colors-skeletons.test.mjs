@@ -22,19 +22,29 @@ test('streaming colors are canonical and persisted legacy colors are normalized'
   assert.match(profile, /streamingColor\(p\.streamId, streamingColor\(p\.name, p\.color\)\)/);
 });
 
-test('shared skeletons use dark CSS shimmer and current card shapes', async () => {
-  const [css, primitives, loading, feed] = await Promise.all([
+test('shared skeletons use theme-aware CSS shimmer and current card shapes', async () => {
+  const [css, primitives, loading, feed, posters] = await Promise.all([
     read('src/app/globals.css'),
     read('src/components/primitives.tsx'),
     read('src/components/AppStates.tsx'),
     read('src/app/feed/page.tsx'),
+    read('src/components/posters.tsx'),
   ]);
 
   assert.match(css, /\.ui-skeleton,\s*\.img-skeleton,\s*\.masonry-skeleton/);
-  assert.match(css, /#141417 22%, #25252b 50%, #141417 78%/);
+  assert.match(css, /--c-skeleton-base: #141417/);
+  assert.match(css, /--c-skeleton-highlight: #25252b/);
+  assert.match(css, /--c-skeleton-base: #D9D9DF/);
+  assert.match(css, /--c-skeleton-highlight: #F2F2F6/);
+  assert.match(css, /var\(--c-skeleton-base\) 22%/);
   assert.match(primitives, /className="ui-skeleton"/);
   assert.doesNotMatch(primitives, /setInterval\(\(\) => setPulse/);
   assert.match(loading, /gridTemplateColumns: '34% 1fr'/);
   assert.match(loading, /aspectRatio: '5 \/ 6\.6'/);
   assert.match(feed, /className="img-skeleton"/);
+  assert.doesNotMatch(loading, /background: '#121215'|border: '1px solid #29292f'/);
+  assert.doesNotMatch(feed, /background: '#121215'|borderTop: '1px solid #29292f'/);
+  assert.doesNotMatch(posters, /background: '#121215'|border: '1px solid #29292f'/);
+  assert.match(loading, /background: T\.card, border: `1px solid \$\{T\.border\}`/);
+  assert.match(posters, /background: T\.card, border: `1px solid \$\{T\.border\}`/);
 });

@@ -17,6 +17,7 @@ test('all bottom-sheet popups use the dedicated darker surface', async () => {
 
   assert.match(tokens, /popup:\s+'var\(--c-popup\)'/);
   assert.match(styles, /--c-popup:\s+#18181C;/);
+  assert.match(styles, /\[data-theme="light"\][\s\S]*?--c-popup:\s+#E5E5EA;/);
   assert.match(styles, /\.safe-bottom-sheet\s*\{[\s\S]*?background:\s*var\(--c-popup\) !important;/);
 
   for (const source of [primitives, reviews, episode, title]) {

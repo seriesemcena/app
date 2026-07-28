@@ -19,6 +19,7 @@ test('episode streaming badge resolves official logos and keeps a text fallback'
   assert.match(primitives, /width: 52, height: 24, objectFit: 'contain'/);
   assert.match(episode, /\{network \? <StreamBadge name=\{network\} \/> : null\}/);
   assert.match(episode, /data-episode-hero[\s\S]*?height: 'calc\(334px \+ var\(--safe-area-top\)\)'/);
+  assert.match(episode, /background: isDark[\s\S]*color-mix\(in srgb, \$\{T\.bg\} 26%, transparent\)/);
   assert.match(episode, /marginTop: 'calc\(-56px - var\(--safe-area-top\)\)'[\s\S]*?borderRadius: 0/);
   assert.doesNotMatch(episode, /margin: '8px 16px 0', borderRadius: 20/);
   assert.doesNotMatch(episode, /socialTab|role="tablist"/);

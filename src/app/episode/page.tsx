@@ -15,6 +15,7 @@ import i18next from 'i18next';
 import '@/lib/i18n';
 import { tmdbImg } from '@/lib/tmdb';
 import { useAppSettings } from '@/context/AppSettingsContext';
+import { useTheme } from '@/context/ThemeContext';
 
 const EPISODE_REACTIONS = [
   { id: 'loved', key: 'reactionLoved', emoji: '😍', color: '#C069FF' },
@@ -32,6 +33,8 @@ function EpisodePageInner() {
   const sp = useSearchParams();
   const { user } = useAuth();
   const { settings: appSettings } = useAppSettings();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const { t } = useTranslation('title');
 
   /* ── params from URL ── */
@@ -222,22 +225,30 @@ function EpisodePageInner() {
     } catch { return dateStr; }
   }
 
+  const headerActionBackground = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.92)';
+  const headerActionBorder = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.98)';
+  const headerActionIcon = isDark ? '#fff' : '#111113';
+  const headerActionShadow = isDark
+    ? '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)'
+    : '0 1px 4px rgba(0,0,0,0.05)';
+
   return (
     <Frame>
       <Screen>
         <ScrollArea>
           <GlassHeader
             showLogo={false}
+            showChrome={isDark}
             left={
               <button onClick={() => navigateBack(router)}
-                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                <Icon name="chevronL" size={16} color={T.white} />
+                style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+                <Icon name="chevronL" size={16} color={headerActionIcon} />
               </button>
             }
             right={
               <button onClick={() => router.push('/notifications')}
-                style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-                <Icon name="bell" size={16} color={T.white} />
+                style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+                <Icon name="bell" size={16} color={headerActionIcon} />
               </button>
             }
             navTitle={`${episodeCode}${epName ? `: ${epName}` : ''}`}
@@ -261,7 +272,13 @@ function EpisodePageInner() {
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             )}
-            <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to bottom, rgba(0,0,0,0.1) 30%, ${T.bg} 100%)` }} />
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              background: isDark
+                ? `linear-gradient(to bottom, rgba(0,0,0,0.04) 58%, color-mix(in srgb, ${T.bg} 34%, transparent) 82%, ${T.bg} 100%)`
+                : `linear-gradient(to bottom, transparent 66%, color-mix(in srgb, ${T.bg} 26%, transparent) 84%, ${T.bg} 100%)`,
+            }} />
           </div>
 
           <div style={{ padding: '0 16px' }}>

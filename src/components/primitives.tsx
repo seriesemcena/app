@@ -51,11 +51,11 @@ export const AppBar = ({
 );
 
 /* ─────────────────────────────────────────────────────────
-   GlassHeader — header sticky com logo centralizado,
+   GlassHeader — header sticky compacto com título opcional,
    blur glass por trás, ação à esquerda e/ou direita
    ───────────────────────────────────────────────────────── */
 export function GlassHeader({
-  left, right, children, navTitle, showNavTitle, showLogo = true,
+  left, right, children, navTitle, showNavTitle, showLogo = false, showChrome = true, contentAlign = 'center',
 }: {
   left?: ReactNode;
   right?: ReactNode;
@@ -63,6 +63,8 @@ export function GlassHeader({
   navTitle?: string;
   showNavTitle?: boolean;
   showLogo?: boolean;
+  showChrome?: boolean;
+  contentAlign?: 'center' | 'start';
 }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -71,51 +73,59 @@ export function GlassHeader({
     ? 'linear-gradient(to bottom, rgba(13,13,15,0.82) 0%, rgba(13,13,15,0.30) 70%, transparent 100%)'
     : 'linear-gradient(to bottom, rgba(242,242,247,0.94) 0%, rgba(242,242,247,0.60) 70%, transparent 100%)';
   const navTitleColor = isDark ? '#fff' : 'rgba(0,0,0,0.85)';
+  const hasHeaderContent = Boolean(left || right || children || navTitle || showLogo);
+
+  if (!hasHeaderContent) return null;
 
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(56px + var(--safe-area-top))', overflow: 'visible' } as CSSProperties}>
-      {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
-      {[
-        { blur: 22, end: 35 },
-        { blur: 14, end: 55 },
-        { blur: 7,  end: 75 },
-        { blur: 3,  end: 90 },
-      ].map(({ blur, end }, i) => (
-        <div key={i} style={{
-          position: 'absolute', inset: 0,
-          backdropFilter: `blur(${blur}px)`,
-          WebkitBackdropFilter: `blur(${blur}px)`,
-          maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
-          WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
-          pointerEvents: 'none',
-        } as CSSProperties} />
-      ))}
+    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(46px + var(--safe-area-top))', overflow: 'visible' } as CSSProperties}>
+      {showChrome && (
+        <>
+          {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
+          {[
+            { blur: 22, end: 35 },
+            { blur: 14, end: 55 },
+            { blur: 7,  end: 75 },
+            { blur: 3,  end: 90 },
+          ].map(({ blur, end }, i) => (
+            <div key={i} style={{
+              position: 'absolute', inset: 0,
+              backdropFilter: `blur(${blur}px)`,
+              WebkitBackdropFilter: `blur(${blur}px)`,
+              maskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+              WebkitMaskImage: `linear-gradient(to bottom, black 0%, transparent ${end}%)`,
+              pointerEvents: 'none',
+            } as CSSProperties} />
+          ))}
 
-      {/* Tint em degradê — escuro no dark mode, cinza claro no light mode */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: tint,
-        pointerEvents: 'none',
-      }} />
+          {/* Tint em degradê — escuro no dark mode, cinza claro no light mode */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: tint,
+            pointerEvents: 'none',
+          }} />
+        </>
+      )}
 
-      {/* Conteúdo — logo + botões */}
+      {/* Conteúdo — título opcional + botões */}
       <div style={{
         position: 'absolute', zIndex: 2,
         top: 'var(--safe-area-top)', left: 0, right: 0,
-        height: 56,
+        height: 46,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', padding: '0 12px',
       }}>
         <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
 
-        <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          {/* Logo — some quando navTitle ativo */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: contentAlign === 'start' ? 'flex-start' : 'center', alignItems: 'center' }}>
+          {/* Conteúdo central — some quando navTitle ativo */}
           <div style={{
             opacity: navTitle && showNavTitle ? 0 : 1,
             transform: navTitle && showNavTitle ? 'translateY(-4px) scale(0.92)' : 'translateY(0) scale(1)',
             transition: 'opacity 0.22s ease, transform 0.22s ease',
+            marginLeft: contentAlign === 'start' ? -40 : undefined,
           } as CSSProperties}>
-            {showLogo ? (children ?? <Logo height={22} />) : null}
+            {children ?? (showLogo ? <Logo height={22} /> : null)}
           </div>
 
           {/* Nav title — aparece ao rolar */}

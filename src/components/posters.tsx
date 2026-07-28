@@ -169,7 +169,7 @@ export const SkeletonCards = ({ count = 5, size = 'md' }: { count?: number; size
   return (
     <div style={{ display: 'flex', gap: 12, padding: '0 16px 12px', overflow: 'hidden' }}>
       {[...Array(count)].map((_, i) => (
-        <div key={i} style={{ width: w, flexShrink: 0, overflow: 'hidden', borderRadius: 16, background: '#121215', border: '1px solid #29292f' }}>
+        <div key={i} style={{ width: w, flexShrink: 0, overflow: 'hidden', borderRadius: 16, background: T.card, border: `1px solid ${T.border}` }}>
           <Skeleton w={w} h={h} radius={0} />
           <div style={{ padding: '10px 11px 12px' }}>
             <Skeleton w={w * 0.72} h={12} radius={5} />

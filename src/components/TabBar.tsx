@@ -17,11 +17,13 @@ const BASE_TABS: Array<{ id: string; icon: IconName; href: string; labelKey: str
   { id: 'profile', icon: 'user',    href: '/profile', labelKey: 'profile'  },
 ];
 
-// Spring: leading edge uses ease-out (runs ahead), trailing uses spring+delay (follows with bounce)
+// SwiftUI's segmented controls use a short, highly damped spring. Moving the
+// two horizontal edges independently recreates the matched-geometry stretch:
+// the leading edge advances first and the trailing edge catches up softly.
 const EASE_OUT = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-const SPRING   = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
-const DUR_MS   = 380;
-const DELAY_MS = 60;
+const SPRING   = 'cubic-bezier(0.22, 1.28, 0.36, 1)';
+const DUR_MS   = 440;
+const DELAY_MS = 42;
 
 const TAB_STYLES = `
   .tb-btn {
@@ -34,14 +36,99 @@ const TAB_STYLES = `
     border-radius: 9999px;
   }
   .tb-icon {
-    transition: transform 0.20s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: center;
+    transition: transform 0.20s cubic-bezier(0.22, 1.28, 0.36, 1), opacity 0.16s ease;
   }
   .tb-btn:active .tb-icon {
     transform: scale(0.84);
   }
+  .tb-btn[aria-current="page"] .tb-icon {
+    animation: tb-segment-content-in 0.44s cubic-bezier(0.22, 1.28, 0.36, 1) both;
+  }
+  .tb-segment-label {
+    display: inline-block;
+    animation: tb-segment-label-in 0.34s cubic-bezier(0.22, 1.12, 0.36, 1) both;
+    transform-origin: left center;
+  }
+  @keyframes tb-segment-content-in {
+    0%   { opacity: 0.52; transform: scale(0.86); }
+    62%  { opacity: 1; transform: scale(1.045); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes tb-segment-label-in {
+    0%   { opacity: 0; transform: translateX(-7px) scale(0.92); }
+    72%  { opacity: 1; transform: translateX(1px) scale(1.01); }
+    100% { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  .tb-pill {
+    isolation: isolate;
+    overflow: hidden;
+    transform: translateZ(0);
+  }
+  .tb-pill::before,
+  .tb-pill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .tb-pill::before {
+    z-index: 1;
+    background:
+      radial-gradient(120% 86% at 14% -16%, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.08) 28%, transparent 58%),
+      linear-gradient(112deg, rgba(255,255,255,0.10) 0%, transparent 31%, transparent 66%, rgba(255,255,255,0.06) 100%);
+    mix-blend-mode: screen;
+    opacity: 0.72;
+  }
+  .tb-pill::after {
+    z-index: 1;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.26),
+      inset 1px 0 0 rgba(255,255,255,0.08),
+      inset 0 -1px 0 rgba(0,0,0,0.34);
+  }
+  .tb-capsule {
+    overflow: hidden;
+    will-change: left, right, transform;
+    transform-origin: center;
+    backdrop-filter: blur(14px) saturate(150%);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+  }
+  .tb-capsule::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(155deg, rgba(255,255,255,0.34), transparent 42%);
+    opacity: 0.38;
+    pointer-events: none;
+  }
+  html[data-platform="ios"][data-capacitor="true"] .tb-pill {
+    background: rgba(20,20,22,0.50) !important;
+    border-color: rgba(255,255,255,0.22) !important;
+    backdrop-filter: blur(38px) saturate(210%) contrast(108%) !important;
+    -webkit-backdrop-filter: blur(38px) saturate(210%) contrast(108%) !important;
+    box-shadow:
+      0 18px 52px rgba(0,0,0,0.46),
+      0 4px 14px rgba(0,0,0,0.26),
+      inset 0 1px 0 rgba(255,255,255,0.24),
+      inset 0 -1px 0 rgba(0,0,0,0.28) !important;
+  }
+  html[data-platform="ios"][data-capacitor="true"][data-theme="light"] .tb-pill {
+    background: rgba(244,244,248,0.54) !important;
+    border-color: rgba(255,255,255,0.58) !important;
+    box-shadow:
+      0 16px 44px rgba(20,20,30,0.18),
+      0 3px 12px rgba(20,20,30,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.86),
+      inset 0 -1px 0 rgba(0,0,0,0.08) !important;
+  }
   @media (prefers-reduced-motion: reduce) {
     .tb-icon { transition: none !important; }
     .tb-btn:active .tb-icon { transform: none !important; }
+    .tb-btn[aria-current="page"] .tb-icon,
+    .tb-segment-label { animation: none !important; }
   }
 `;
 
@@ -95,11 +182,11 @@ export function TabBar() {
 
   /* ── Pill tokens ────────────────────────────── */
   const pillBg = isDark
-    ? 'rgba(14, 14, 16, 0.84)'
-    : 'rgba(255, 255, 255, 0.90)';
+    ? 'rgba(18, 18, 20, 0.58)'
+    : 'rgba(248, 248, 251, 0.66)';
   const pillBorder = isDark
-    ? '1px solid rgba(255,255,255,0.10)'
-    : '1px solid rgba(0,0,0,0.07)';
+    ? '1px solid rgba(255,255,255,0.18)'
+    : '1px solid rgba(255,255,255,0.72)';
   const pillShadow = isDark
     ? ['0 18px 56px rgba(0,0,0,0.72)', '0 4px 16px rgba(0,0,0,0.42)',
        'inset 0 1px 0 rgba(255,255,255,0.13)', 'inset 0 -1px 0 rgba(0,0,0,0.32)'].join(', ')
@@ -109,14 +196,14 @@ export function TabBar() {
   /* ── Capsule tokens ─────────────────────────── */
   const activeBg = isDark
     ? 'rgba(244, 244, 246, 0.97)'
-    : 'rgba(8, 8, 10, 0.93)';
+    : 'rgba(255, 255, 255, 0.98)';
   const activeShadow = isDark
     ? ['0 2px 16px rgba(0,0,0,0.34)', '0 1px 4px rgba(0,0,0,0.20)',
        'inset 0 1px 0 rgba(255,255,255,0.60)'].join(', ')
     : ['0 2px 12px rgba(0,0,0,0.28)', '0 1px 4px rgba(0,0,0,0.16)',
        'inset 0 1px 0 rgba(255,255,255,0.07)'].join(', ');
 
-  const activeColor   = isDark ? '#0B0B0D' : '#FFFFFF';
+  const activeColor   = '#0B0B0D';
   const inactiveColor = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.35)';
   const activeTab     = TABS[activeIndex];
 
@@ -194,7 +281,9 @@ export function TabBar() {
       if (!node) return;
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       animsRef.current.forEach((a) => a.cancel());
-      // Leading edge runs ahead with ease-out; trailing edge follows with spring + delay
+      // Leading edge runs ahead with ease-out; trailing edge follows with a
+      // damped spring. The short vertical compression is the same tactile
+      // settle used by SwiftUI segmented controls when selection changes.
       animsRef.current = [
         node.animate(
           [{ left: `${start.left}px` }, { left: `${end.left}px` }],
@@ -205,6 +294,15 @@ export function TabBar() {
           [{ right: `${start.right}px` }, { right: `${end.right}px` }],
           { duration: DUR_MS, delay: toRight ? 0 : DELAY_MS,
             easing: toRight ? EASE_OUT : SPRING, fill: 'backwards' },
+        ),
+        node.animate(
+          [
+            { transform: 'scaleY(1)', offset: 0 },
+            { transform: 'scaleY(0.91)', offset: 0.30 },
+            { transform: 'scaleY(1.025)', offset: 0.76 },
+            { transform: 'scaleY(1)', offset: 1 },
+          ],
+          { duration: DUR_MS + DELAY_MS, easing: EASE_OUT },
         ),
       ];
     });
@@ -244,6 +342,7 @@ export function TabBar() {
         {/* Pill */}
         <div
           ref={pillRef}
+          className="tb-pill"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -251,8 +350,8 @@ export function TabBar() {
             height: 64,
             borderRadius: 9999,
             padding: '10px 8px',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            backdropFilter: 'blur(30px) saturate(190%) contrast(105%)',
+            WebkitBackdropFilter: 'blur(30px) saturate(190%) contrast(105%)',
             background: pillBg,
             border: pillBorder,
             boxShadow: pillShadow,
@@ -262,6 +361,7 @@ export function TabBar() {
           {capsule && (
             <div
               ref={capRef}
+              className="tb-capsule"
               style={{
                 position: 'absolute',
                 top: 10,
@@ -271,6 +371,7 @@ export function TabBar() {
                 borderRadius: 9999,
                 background: activeBg,
                 boxShadow: activeShadow,
+                zIndex: 2,
                 pointerEvents: 'none',
                 transition: capsule.transition,
               } as React.CSSProperties}
@@ -300,7 +401,7 @@ export function TabBar() {
                   cursor: 'pointer',
                   padding: 0,
                   position: 'relative',
-                  zIndex: 1,
+                  zIndex: 3,
                 }}
               >
                 <div className="tb-icon" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -310,7 +411,7 @@ export function TabBar() {
                     color={isActive ? activeColor : inactiveColor}
                   />
                   {isActive && (
-                    <span style={{
+                    <span className="tb-segment-label" style={{
                       fontSize: 13,
                       fontWeight: 700,
                       color: activeColor,

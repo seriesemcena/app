@@ -32,7 +32,7 @@ export function PageLoadingState() {
         <Skeleton w="100%" h={238} radius={20} />
         <Skeleton w="46%" h={22} radius={7} style={{ marginTop: 8 }} />
         {[0, 1].map((item) => (
-          <div key={item} style={{ display: 'grid', gridTemplateColumns: '34% 1fr', minHeight: 102, borderRadius: 16, overflow: 'hidden', background: '#121215', border: '1px solid #29292f' }}>
+          <div key={item} style={{ display: 'grid', gridTemplateColumns: '34% 1fr', minHeight: 102, borderRadius: 16, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}` }}>
             <Skeleton w="100%" h="100%" radius={0} />
             <div style={{ padding: '18px 14px', display: 'grid', alignContent: 'center', gap: 9 }}>
               <Skeleton w="72%" h={15} radius={6} />

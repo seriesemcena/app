@@ -359,6 +359,12 @@ export default function TitleDetailPage() {
       ? (locallyRatedReviews.reduce((sum, review) => sum + review.rating, 0) / locallyRatedReviews.length).toFixed(1)
       : null;
   const totalRatings = ratingSummary?.total || locallyRatedReviews.length;
+  const headerActionBackground = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.92)';
+  const headerActionBorder = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.94)';
+  const headerActionIcon = isDark ? '#fff' : '#111113';
+  const headerActionShadow = isDark
+    ? '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)'
+    : '0 1px 4px rgba(0,0,0,0.05)';
 
   return (
     <Frame>
@@ -400,8 +406,8 @@ export default function TitleDetailPage() {
           pointerEvents: 'auto',
         }}>
           {/* Botão voltar */}
-          <button aria-label="Voltar" onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)', flexShrink: 0 } as React.CSSProperties}>
-            <Icon name="chevronL" size={16} color="#fff" />
+          <button aria-label="Voltar" onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow, flexShrink: 0 } as React.CSSProperties}>
+            <Icon name="chevronL" size={16} color={headerActionIcon} />
           </button>
 
           {/* Nav title — aparece ao rolar */}
@@ -420,11 +426,11 @@ export default function TitleDetailPage() {
 
           {/* Icons direita */}
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
-            <button aria-label="Compartilhar" onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-              <Icon name="share" size={15} color="#fff" />
+            <button aria-label="Compartilhar" onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+              <Icon name="share" size={15} color={headerActionIcon} />
             </button>
-            <button aria-label={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isFav ? 'rgba(192,105,255,0.30)' : 'rgba(255,255,255,0.14)', border: `1px solid ${isFav ? 'rgba(192,105,255,0.45)' : 'rgba(255,255,255,0.22)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
-              <Icon name={isFav ? 'heart' : 'heartO'} size={15} color={isFav ? '#C069FF' : '#fff'} />
+            <button aria-label={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isDark && isFav ? 'rgba(192,105,255,0.30)' : headerActionBackground, border: `1px solid ${isDark && isFav ? 'rgba(192,105,255,0.45)' : headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+              <Icon name={isFav ? 'heart' : 'heartO'} size={15} color={isDark && isFav ? '#C069FF' : headerActionIcon} />
             </button>
           </div>
         </div>
@@ -440,14 +446,41 @@ export default function TitleDetailPage() {
               objectPosition="center 20%"
               style={{ position: 'absolute', inset: 0 }}
             />
-            {/* Gradiente escuro de baixo */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.3) 50%, transparent 80%)', pointerEvents: 'none' }} />
-            {/* Fade para cor do fundo */}
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 140, background: `linear-gradient(to bottom, transparent 0%, ${T.bg} 100%)`, pointerEvents: 'none' }} />
+            {/* Contraste e transição da capa por tema. No light, a imagem se dissolve
+                em um edge branco progressivamente desfocado, como o scroll edge do iOS. */}
+            <div
+              data-title-hero-tint
+              style={{
+                position: 'absolute', inset: 0,
+                background: isDark
+                  ? 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.3) 50%, transparent 80%)'
+                  : 'linear-gradient(to top, var(--c-bg) 0%, color-mix(in srgb, var(--c-bg) 92%, transparent) 10%, color-mix(in srgb, var(--c-bg) 48%, transparent) 24%, transparent 42%)',
+                pointerEvents: 'none',
+              }}
+            />
+            {isDark ? (
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 140, background: `linear-gradient(to bottom, transparent 0%, ${T.bg} 100%)`, pointerEvents: 'none' }} />
+            ) : (
+              <div data-title-light-scroll-edge aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 112, opacity: 0.42, pointerEvents: 'none' }}>
+                {[
+                  { blur: 8, end: 52 },
+                  { blur: 4, end: 72 },
+                  { blur: 2, end: 92 },
+                ].map(({ blur, end }) => (
+                  <div key={blur} style={{
+                    position: 'absolute', inset: 0,
+                    backdropFilter: `blur(${blur}px)`,
+                    WebkitBackdropFilter: `blur(${blur}px)`,
+                    maskImage: `linear-gradient(to top, black 0%, transparent ${end}%)`,
+                    WebkitMaskImage: `linear-gradient(to top, black 0%, transparent ${end}%)`,
+                  } as React.CSSProperties} />
+                ))}
+              </div>
+            )}
 
             {/* Título + botões sobrepostos */}
             <div style={{ position: 'absolute', bottom: 20, left: 16, right: 16 }}>
-              <h1 style={{ margin: '0 0 14px', fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.05, letterSpacing: -1, fontFamily: "'Greed','Area',sans-serif", textShadow: '0 2px 20px rgba(0,0,0,0.6)' }}>
+              <h1 style={{ margin: '0 0 14px', fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.05, letterSpacing: -1, fontFamily: "'Greed','Area',sans-serif", textShadow: '0 2px 20px rgba(0,0,0,0.72)' }}>
                 {title}
               </h1>
               {(() => {
@@ -458,6 +491,15 @@ export default function TitleDetailPage() {
                 };
                 const meta = listStatus ? LIST_META[listStatus] : null;
                 const accent = meta?.accent ?? '#F2F2F5';
+                const heroButtonBackground = isDark
+                  ? `linear-gradient(145deg, rgba(46,45,51,0.76) 0%, rgba(25,24,29,0.84) 72%, ${accent}0D 100%)`
+                  : 'rgba(255,255,255,0.90)';
+                const heroButtonBorder = isDark ? (meta?.border ?? 'rgba(255,255,255,0.26)') : 'rgba(255,255,255,0.98)';
+                const heroButtonText = isDark ? '#fff' : '#111113';
+                const heroButtonIcon = isDark ? accent : '#111113';
+                const heroButtonShadow = isDark
+                  ? `0 8px 22px rgba(0,0,0,0.20), 0 0 12px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 ${accent}24`
+                  : '0 5px 18px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,1)';
                 return (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button type="button" onClick={() => setListSheet(true)}
@@ -466,17 +508,17 @@ export default function TitleDetailPage() {
                     minWidth: 174, minHeight: 48,
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
                     padding: '11px 16px 11px 18px', borderRadius: 24, cursor: 'pointer',
-                    background: `linear-gradient(145deg, rgba(46,45,51,0.76) 0%, rgba(25,24,29,0.84) 72%, ${accent}0D 100%)`,
-                    border: `1px solid ${meta?.border ?? 'rgba(255,255,255,0.26)'}`,
+                    background: heroButtonBackground,
+                    border: `1px solid ${heroButtonBorder}`,
                     backdropFilter: 'blur(24px) saturate(140%)',
                     WebkitBackdropFilter: 'blur(24px) saturate(140%)',
-                    boxShadow: `0 8px 22px rgba(0,0,0,0.20), 0 0 12px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 ${accent}24`,
+                    boxShadow: heroButtonShadow,
                     transition: 'transform 0.2s ease, box-shadow 0.2s ease',
                   } as React.CSSProperties}>
                   <span aria-hidden style={{
                     position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none',
                     background: `radial-gradient(120% 160% at 100% -20%, ${accent}38 0%, ${accent}12 34%, transparent 68%)`,
-                    opacity: 0.56,
+                    opacity: isDark ? 0.56 : 0,
                   }} />
                   <span aria-hidden style={{
                     position: 'absolute', top: 0, left: '12%', right: '5%', height: 1, pointerEvents: 'none',
@@ -484,35 +526,35 @@ export default function TitleDetailPage() {
                     filter: 'blur(0.2px)',
                   }} />
                   <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    <Icon name={meta ? meta.icon : 'plus'} size={15} color={accent} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: "'Area','Inter',sans-serif", whiteSpace: 'nowrap' }}>
+                    <Icon name={meta ? meta.icon : 'plus'} size={15} color={heroButtonIcon} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: heroButtonText, fontFamily: "'Area','Inter',sans-serif", whiteSpace: 'nowrap' }}>
                       {meta ? meta.label : t('addToList')}
                     </span>
                   </span>
-                  <Icon name="chevronR" size={12} color="rgba(255,255,255,0.68)" />
+                  <Icon name="chevronR" size={12} color={isDark ? 'rgba(255,255,255,0.68)' : 'rgba(0,0,0,0.54)'} />
                 </button>
                 <button type="button" aria-label="Mais opções" onClick={() => setMaisSheet(true)}
                   style={{
                     position: 'relative', isolation: 'isolate', overflow: 'hidden',
                     width: 48, height: 48, borderRadius: 24, flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'linear-gradient(145deg, rgba(46,45,51,0.76) 0%, rgba(25,24,29,0.84) 74%, rgba(242,242,245,0.05) 100%)',
-                    border: '1px solid rgba(255,255,255,0.26)',
+                    background: isDark ? 'linear-gradient(145deg, rgba(46,45,51,0.76) 0%, rgba(25,24,29,0.84) 74%, rgba(242,242,245,0.05) 100%)' : 'rgba(255,255,255,0.90)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.26)' : 'rgba(255,255,255,0.98)'}`,
                     cursor: 'pointer',
                     backdropFilter: 'blur(24px) saturate(140%)',
                     WebkitBackdropFilter: 'blur(24px) saturate(140%)',
-                    boxShadow: '0 8px 22px rgba(0,0,0,0.20), 0 0 12px rgba(242,242,245,0.08), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(242,242,245,0.14)',
+                    boxShadow: isDark ? '0 8px 22px rgba(0,0,0,0.20), 0 0 12px rgba(242,242,245,0.08), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(242,242,245,0.14)' : '0 5px 18px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,1)',
                     transition: 'transform 0.2s ease, box-shadow 0.2s ease',
                   } as React.CSSProperties}>
                   <span aria-hidden style={{
                     position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none',
-                    background: 'radial-gradient(120% 150% at 100% -15%, rgba(255,255,255,0.24) 0%, rgba(242,242,245,0.08) 36%, transparent 70%)',
+                    background: isDark ? 'radial-gradient(120% 150% at 100% -15%, rgba(255,255,255,0.24) 0%, rgba(242,242,245,0.08) 36%, transparent 70%)' : 'none',
                   }} />
                   <span aria-hidden style={{
                     position: 'absolute', top: 0, left: '22%', right: '10%', height: 1, pointerEvents: 'none',
                     background: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.42))',
                   }} />
-                  <Icon name="plusPlain" size={18} color="#F2F2F5" />
+                  <Icon name="plusPlain" size={18} color={isDark ? '#F2F2F5' : '#111113'} />
                 </button>
               </div>
                 );

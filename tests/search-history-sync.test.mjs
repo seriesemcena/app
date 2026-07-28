@@ -27,3 +27,12 @@ test('recent thumbnails keep a skeleton until the definitive poster is resolved'
     /const src = textlessPosters\[item\.id\] \?\? tmdbImg/,
   );
 });
+
+test('search header controls use readable theme-aware colors', () => {
+  assert.match(page, /useTheme/);
+  assert.match(page, /const isDark = theme === 'dark'/);
+  assert.match(page, /className="search-primary-input"/);
+  assert.match(page, /background: isDark \? 'rgba\(255,255,255,0\.12\)' : 'rgba\(15,15,20,0\.06\)'/);
+  assert.match(page, /color: isDark \? '#fff' : T\.t1/);
+  assert.match(page, /color=\{isDark \? 'rgba\(255,255,255,0\.90\)' : T\.t1\}/);
+});

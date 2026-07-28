@@ -8,10 +8,15 @@ test('profile statistics and streaming summaries use stacked full-width rows', a
   const source = await readFile(new URL('src/app/user/[username]/page.tsx', projectRoot), 'utf8');
 
   assert.match(source, /display: 'flex', flexDirection: 'column', gap: 12/);
-  assert.equal((source.match(/width: '100%', background: 'linear-gradient\(145deg/g) ?? []).length, 2);
+  assert.match(source, /const summaryBackground = isDark[\s\S]*linear-gradient\(145deg, #1c1c1e 0%, #111113 100%\)[\s\S]*: T\.card/);
+  assert.equal((source.match(/width: '100%', background: summaryBackground/g) ?? []).length, 2);
+  assert.match(source, /const summaryText = isDark \? '#fff' : T\.t1/);
   assert.match(source, /activeSubs\.slice\(0, 5\)/);
   assert.match(source, /data-streaming-logos/);
   assert.match(source, /justifyContent: 'flex-start', gap: 4/);
+  assert.match(source, /const streamingLogoBackground = isDark \? summaryPanel : '#3A3A3C'/);
+  assert.match(source, /const monthlyExpenseText = isDark \? summaryFaint : 'rgba\(0,0,0,0\.46\)'/);
+  assert.equal((source.match(/color=\{monthlyExpenseText\}/g) ?? []).length, 2);
   assert.equal((source.match(/data-summary-layout="stacked"/g) ?? []).length, 2);
 });
 

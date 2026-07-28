@@ -724,15 +724,28 @@ function UserProfileInner() {
             const userPlatforms = activeSubs.slice(0, 5);
             const monthlyStreamingTotal = activeSubs.reduce((total, subscription) => total + (Number(subscription.price) || 0), 0);
             const totalItems = (realStats?.moviesCount ?? 0) + (realStats?.tvCount ?? 0);
+            const summaryBackground = isDark
+              ? 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)'
+              : T.card;
+            const summaryBorder = isDark ? 'rgba(255,255,255,0.08)' : T.border;
+            const summaryPanel = isDark ? 'rgba(255,255,255,0.035)' : T.surface2;
+            const summaryPanelBorder = isDark ? 'rgba(255,255,255,0.06)' : T.border;
+            const summaryText = isDark ? '#fff' : T.t1;
+            const summaryMuted = isDark ? 'rgba(255,255,255,0.55)' : T.t3;
+            const summaryFaint = isDark ? 'rgba(255,255,255,0.38)' : T.t4;
+            const summaryTrack = isDark ? 'rgba(255,255,255,0.10)' : T.border;
+            const streamingLogoBackground = isDark ? summaryPanel : '#3A3A3C';
+            const streamingLogoBorder = isDark ? summaryPanelBorder : 'rgba(0,0,0,0.12)';
+            const monthlyExpenseText = isDark ? summaryFaint : 'rgba(0,0,0,0.46)';
 
             return (
               <div style={{ margin: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
                 {/* Bloco 1 — Estatísticas */}
                 <button onClick={() => router.push(withProfileOrigin('/stats'))}
-                  style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 258, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+                  style={{ width: '100%', background: summaryBackground, border: `1px solid ${summaryBorder}`, borderRadius: 20, cursor: 'pointer', padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 258, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <Txt size={16} weight={800} color="#fff">{t('stats.title')}</Txt>
+                    <Txt size={16} weight={800} color={summaryText}>{t('stats.title')}</Txt>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                       <Txt size={11} weight={700} color={T.pink}>{t('seeMore')}</Txt>
                       <Icon name="chevronR" size={11} color={T.pink} />
@@ -740,7 +753,7 @@ function UserProfileInner() {
                   </div>
 
                   <div data-summary-layout="stacked" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8, width: '100%' }}>
-                    <Txt size={11} color="rgba(255,255,255,0.38)" style={{ whiteSpace: 'nowrap' }}>
+                    <Txt size={11} color={monthlyExpenseText} style={{ whiteSpace: 'nowrap' }}>
                       {realStats ? t('stats.titlesCount', { h: realStats.totalHours, n: totalItems }) : '—'}
                     </Txt>
 
@@ -768,10 +781,10 @@ function UserProfileInner() {
                       const mostActiveDay = maxWeekdayCount > 0 ? weekdayNames[watchWeekdays.indexOf(maxWeekdayCount)] : null;
                       return (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, width: '100%', minWidth: 0 }}>
-                          <div style={{ minWidth: 0, padding: '10px 10px 11px', borderRadius: 16, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <Txt size={10} weight={800} color="rgba(255,255,255,0.48)" style={{ display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.7 }}>{t('stats.contentChart')}</Txt>
+                          <div style={{ minWidth: 0, padding: '10px 10px 11px', borderRadius: 16, background: summaryPanel, border: `1px solid ${summaryPanelBorder}`, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <Txt size={10} weight={800} color={summaryMuted} style={{ display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: 0.7 }}>{t('stats.contentChart')}</Txt>
                             <svg width={92} height={92} viewBox="0 0 92 92" style={{ flexShrink: 0 }}>
-                              <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={11} />
+                              <circle cx={cx} cy={cy} r={r} fill="none" stroke={summaryTrack} strokeWidth={11} />
                               {tv > 0 && (
                                 <circle cx={cx} cy={cy} r={r} fill="none" stroke="#C069FF" strokeWidth={11}
                                   strokeDasharray={`${tvLen} ${circ}`} strokeDashoffset={circ / 4}
@@ -782,35 +795,35 @@ function UserProfileInner() {
                                   strokeDasharray={`${mvLen} ${circ}`} strokeDashoffset={circ / 4 - tvLen}
                                   style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` } as React.CSSProperties} />
                               )}
-                              <text x={cx} y={cy + 5} textAnchor="middle" fill="#fff" fontSize={15} fontWeight={800} fontFamily="'Area','Inter',sans-serif">{tv + mv}</text>
+                              <text x={cx} y={cy + 5} textAnchor="middle" fill={summaryText} fontSize={15} fontWeight={800} fontFamily="'Area','Inter',sans-serif">{tv + mv}</text>
                             </svg>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: '100%', marginTop: 7 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                 <div style={{ width: 7, height: 7, borderRadius: 2, background: '#C069FF', flexShrink: 0 }} />
-                                <Txt size={10} color="rgba(255,255,255,0.55)">{tv} {t('stats.seriesLabel')}</Txt>
+                                <Txt size={10} color={summaryMuted}>{tv} {t('stats.seriesLabel')}</Txt>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                 <div style={{ width: 7, height: 7, borderRadius: 2, background: '#FF6B2B', flexShrink: 0 }} />
-                                <Txt size={10} color="rgba(255,255,255,0.55)">{mv} {t('stats.moviesLabel')}</Txt>
+                                <Txt size={10} color={summaryMuted}>{mv} {t('stats.moviesLabel')}</Txt>
                               </div>
                             </div>
                           </div>
 
-                          <div aria-label={t('stats.weekdayChart')} style={{ minWidth: 0, padding: '10px 10px 11px', borderRadius: 16, background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
-                            <Txt size={10} weight={800} color="rgba(255,255,255,0.48)" style={{ display: 'block', marginBottom: 9, textTransform: 'uppercase', letterSpacing: 0.7, textAlign: 'center' }}>{t('stats.weekdayChart')}</Txt>
+                          <div aria-label={t('stats.weekdayChart')} style={{ minWidth: 0, padding: '10px 10px 11px', borderRadius: 16, background: summaryPanel, border: `1px solid ${summaryPanelBorder}`, display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+                            <Txt size={10} weight={800} color={summaryMuted} style={{ display: 'block', marginBottom: 9, textTransform: 'uppercase', letterSpacing: 0.7, textAlign: 'center' }}>{t('stats.weekdayChart')}</Txt>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, width: '100%' }}>
                               {weekdayLabels.map((label, index) => (
-                                <Txt key={`weekday-${index}`} size={8} weight={800} color="rgba(255,255,255,0.38)" style={{ textAlign: 'center', lineHeight: 1 }}>{label}</Txt>
+                                <Txt key={`weekday-${index}`} size={8} weight={800} color={summaryFaint} style={{ textAlign: 'center', lineHeight: 1 }}>{label}</Txt>
                               ))}
                               {watchCalendar.map((cell) => {
                                 const alpha = cell.count > 0 ? 0.28 + (cell.count / maxCellCount) * 0.62 : 0;
                                 return (
-                                  <div key={cell.key} title={`${cell.key}: ${cell.count}`} style={{ aspectRatio: '1', borderRadius: 4, background: cell.future ? 'transparent' : cell.count > 0 ? `rgba(192,105,255,${alpha})` : 'rgba(255,255,255,0.065)', border: cell.future ? '1px solid rgba(255,255,255,0.025)' : '1px solid rgba(255,255,255,0.045)' }} />
+                                  <div key={cell.key} title={`${cell.key}: ${cell.count}`} style={{ aspectRatio: '1', borderRadius: 4, background: cell.future ? 'transparent' : cell.count > 0 ? `rgba(192,105,255,${alpha})` : summaryTrack, border: `1px solid ${summaryPanelBorder}` }} />
                                 );
                               })}
                             </div>
                             <div style={{ marginTop: 9, minHeight: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                              <Txt size={9} weight={700} color={mostActiveDay ? '#D79BFF' : 'rgba(255,255,255,0.32)'} style={{ lineHeight: 1.25 }}>
+                              <Txt size={9} weight={700} color={mostActiveDay ? T.pink : summaryFaint} style={{ lineHeight: 1.25 }}>
                                 {mostActiveDay ? t('stats.mostWatchedDay', { day: mostActiveDay }) : t('stats.noWatchActivity')}
                               </Txt>
                             </div>
@@ -823,11 +836,11 @@ function UserProfileInner() {
 
                 {/* Bloco 2 — Gastos de streaming */}
                 <button onClick={() => router.push(withProfileOrigin('/expenses'))}
-                  style={{ width: '100%', background: 'linear-gradient(145deg, #1c1c1e 0%, #111113 100%)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, cursor: 'pointer', padding: '14px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 126, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
+                  style={{ width: '100%', background: summaryBackground, border: `1px solid ${summaryBorder}`, borderRadius: 20, cursor: 'pointer', padding: '14px 16px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 10, textAlign: 'left', minHeight: 126, position: 'relative', overflow: 'hidden', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                      <Txt size={16} weight={800} color="#fff">{t('streaming')}</Txt>
-                      <Txt size={11} color="rgba(255,255,255,0.42)">
+                      <Txt size={16} weight={800} color={summaryText}>{t('streaming')}</Txt>
+                      <Txt size={11} color={monthlyExpenseText}>
                         {t('monthlyExpenses')} · {formatCurrency(monthlyStreamingTotal, 'BRL', i18n.language)}
                       </Txt>
                     </div>
@@ -845,18 +858,18 @@ function UserProfileInner() {
                             {userPlatforms.map((p) => {
                               const logo = STREAMING_LOGOS[p.streamId ?? ''] ?? STREAMING_LOGOS_BY_NAME[p.name];
                               return (
-                                <div key={p.name} aria-label={p.name} style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,0.09)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                                <div key={p.name} aria-label={p.name} style={{ width: 34, height: 34, borderRadius: 9, background: streamingLogoBackground, border: `1px solid ${streamingLogoBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                                   {logo ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={`/${logo}_logo.png`} alt="" style={{ width: '76%', height: '72%', objectFit: 'contain', display: 'block' }} />
                                   ) : (
-                                    <Txt size={11} weight={800} color="#fff">{p.name.slice(0, 1)}</Txt>
+                                    <Txt size={11} weight={800} color={summaryText}>{p.name.slice(0, 1)}</Txt>
                                   )}
                                 </div>
                               );
                             })}
                           </div>
-                          <div data-streaming-track style={{ display: 'flex', width: '100%', height: 6, marginTop: 11, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.10)' }}>
+                          <div data-streaming-track style={{ display: 'flex', width: '100%', height: 6, marginTop: 11, borderRadius: 999, overflow: 'hidden', background: summaryTrack }}>
                             {userPlatforms.map((p) => (
                               <div
                                 key={`track-${p.name}`}
@@ -870,7 +883,7 @@ function UserProfileInner() {
                           </div>
                         </>
                       ) : (
-                        <Txt size={11} color="rgba(255,255,255,0.28)">{t('noExpenses')}</Txt>
+                        <Txt size={11} color={summaryFaint}>{t('noExpenses')}</Txt>
                       )}
                     </div>
                   </div>
