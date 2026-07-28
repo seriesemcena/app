@@ -36,3 +36,12 @@ test('search header controls use readable theme-aware colors', () => {
   assert.match(page, /color: isDark \? '#fff' : T\.t1/);
   assert.match(page, /color=\{isDark \? 'rgba\(255,255,255,0\.90\)' : T\.t1\}/);
 });
+
+test('search header keeps the pill input beside notifications without a profile avatar', () => {
+  assert.match(page, /Barra de pesquisa \+ notificações/);
+  assert.match(page, /borderRadius: 999/);
+  assert.match(page, /minWidth: 0,\s*flex: 1/);
+  assert.match(page, /onClick=\{\(\) => router\.push\('\/notifications'\)\}/);
+  assert.doesNotMatch(page, /profileStore\.get\(\)/);
+  assert.doesNotMatch(page, /router\.push\(myProfileUrl\)/);
+});

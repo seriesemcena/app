@@ -7,10 +7,8 @@ import { Icon } from '@/components/Icon';
 import { ImgWithSkeleton, MasonryGrid2 } from '@/components/posters';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, useTMDB, normalize, type TMDBItem } from '@/lib/tmdb';
-import { profileStore } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { searchUsers, type UserSearchResult } from '@/lib/db';
-import { useMyProfileUrl } from '@/hooks/useMyProfileUrl';
 import { AppErrorState } from '@/components/AppStates';
 import { getDB } from '@/lib/firebase';
 import { useTranslation } from 'react-i18next';
@@ -34,7 +32,6 @@ type TrendingType = 'tv' | 'movie';
 
 export default function SearchPage() {
   const router = useRouter();
-  const myProfileUrl = useMyProfileUrl();
   const { t } = useTranslation('common');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -52,11 +49,6 @@ export default function SearchPage() {
   const requestedPosterKeys = useRef(new Set<string>());
   const [userResults, setUserResults] = useState<UserSearchResult[]>([]);
   const [userLoading, setUserLoading] = useState(false);
-
-  const profile = profileStore.get();
-  const avatarLetter = profile.avatarLetter || user?.displayName?.[0]?.toUpperCase() || 'U';
-  const avatarGradient = profile.avatarGradient || 'linear-gradient(135deg,#C069FF,#6B10A0)';
-  const avatarImage = profile.avatarImage || user?.photoURL || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -185,50 +177,43 @@ export default function SearchPage() {
               padding: 'calc(var(--safe-area-top) + 12px) calc(var(--safe-area-right) + 16px) 20px calc(var(--safe-area-left) + 16px)',
             }}>
 
-              {/* Linha 1: Avatar + Notificações */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', flexShrink: 0, cursor: 'pointer', border: isDark ? '2px solid rgba(255,255,255,0.25)' : '2px solid rgba(0,0,0,0.10)' }} onClick={() => router.push(myProfileUrl)}>
-                  {avatarImage
-                    ? <img src={avatarImage} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    : <div style={{ width: '100%', height: '100%', background: avatarGradient, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Txt size={14} weight={800} color="#fff">{avatarLetter}</Txt>
-                      </div>
-                  }
+              {/* Barra de pesquisa + notificações */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  minWidth: 0,
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  background: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,15,20,0.06)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  borderRadius: 999,
+                  padding: '11px 14px',
+                  border: isDark ? 'none' : '1px solid rgba(0,0,0,0.06)',
+                } as React.CSSProperties}>
+                  <Icon name="search" size={18} color={isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.52)'} />
+                  <input
+                    className="search-primary-input"
+                    ref={inputRef}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    placeholder={t('search.placeholder')}
+                    style={{ minWidth: 0, flex: 1, background: 'transparent', border: 'none', color: isDark ? '#fff' : T.t1, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none', '--search-placeholder-color': isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.46)' } as React.CSSProperties}
+                  />
+                  {query && (
+                    <button onClick={() => { setQuery(''); setDQ(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      <Icon name="close" size={16} color={isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.52)'} />
+                    </button>
+                  )}
                 </div>
 
                 <button
+                  aria-label={t('notifications.title')}
                   onClick={() => router.push('/notifications')}
-                  style={{ width: 36, height: 36, borderRadius: 18, background: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.07)', border: isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.10)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="bell" size={17} color={isDark ? '#fff' : 'rgba(0,0,0,0.72)'} />
+                  style={{ width: 42, height: 42, borderRadius: 21, flexShrink: 0, background: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.07)', border: isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.10)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="bell" size={18} color={isDark ? '#fff' : 'rgba(0,0,0,0.72)'} />
                 </button>
-              </div>
-
-              {/* Linha 2: Barra de pesquisa */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                background: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,15,20,0.06)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                borderRadius: T.radiusSm,
-                padding: '11px 14px',
-                border: isDark ? 'none' : '1px solid rgba(0,0,0,0.06)',
-              } as React.CSSProperties}>
-                <Icon name="search" size={18} color={isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.52)'} />
-                <input
-                  className="search-primary-input"
-                  ref={inputRef}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
-                  placeholder={t('search.placeholder')}
-                  style={{ flex: 1, background: 'transparent', border: 'none', color: isDark ? '#fff' : T.t1, fontSize: 14, fontFamily: "'Area','Inter',sans-serif", outline: 'none', '--search-placeholder-color': isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.46)' } as React.CSSProperties}
-                />
-                {query && (
-                  <button onClick={() => { setQuery(''); setDQ(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    <Icon name="close" size={16} color={isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.52)'} />
-                  </button>
-                )}
               </div>
 
               {/* Linha 3: Pesquisas recentes */}
