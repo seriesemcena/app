@@ -321,6 +321,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Landing pages follow the same publish projection as banners: drafts and
+    // author metadata stay private while published HTML is publicly readable.
+    match /public_pages/{slug} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /app_pages/{id} {
+      allow read, write: if false;
+    }
+
     // ── Maratonou Community ─────────────────────────────────
     // Published help content and discussions are publicly readable. The same
     // Firebase account used by the app is required to participate, while the

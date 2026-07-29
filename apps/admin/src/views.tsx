@@ -222,6 +222,113 @@ export function BannersView({ actor, search }: { actor: AdminActor; search: stri
   </div>;
 }
 
+type LandingPageForm = {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  status: 'draft' | 'published';
+  theme: 'dark' | 'light';
+  showHeader: boolean;
+  html: string;
+  css: string;
+};
+
+const EMPTY_LANDING_PAGE: LandingPageForm = {
+  id: '', title: '', slug: '', description: '', status: 'draft', theme: 'dark',
+  showHeader: true, html: '', css: '',
+};
+
+function pageSlug(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+}
+
+function landingPageFromItem(item: RecordItem): LandingPageForm {
+  return {
+    ...EMPTY_LANDING_PAGE,
+    id: String(item.id || ''),
+    title: String(item.title || ''),
+    slug: String(item.slug || ''),
+    description: String(item.description || ''),
+    status: item.status === 'published' ? 'published' : 'draft',
+    theme: item.theme === 'light' ? 'light' : 'dark',
+    showHeader: item.showHeader !== false,
+    html: String(item.html || ''),
+    css: String(item.css || ''),
+  };
+}
+
+function landingPagePreviewDocument(page: LandingPageForm) {
+  const background = page.theme === 'light' ? '#f5f3f7' : '#0d0d0f';
+  const color = page.theme === 'light' ? '#17151a' : '#f7f5f8';
+  const safeCss = page.css.replace(/<\/style/gi, '<\\/style');
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline'; font-src https: data:; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"><style>*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:${background};color:${color};font-family:Inter,system-ui,sans-serif}img,video{max-width:100%;height:auto}${safeCss}</style></head><body>${page.html}</body></html>`;
+}
+
+export function PagesView({ actor, search }: { actor: AdminActor; search: string }) {
+  const { items, loading, error, load } = usePagedResource('/v1/admin/pages?limit=50');
+  const [form, setForm] = useState<LandingPageForm>(EMPTY_LANDING_PAGE);
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [deleting, setDeleting] = useState<RecordItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const update = <K extends keyof LandingPageForm>(key: K, value: LandingPageForm[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const reset = () => setForm(EMPTY_LANDING_PAGE);
+  const edit = (item: RecordItem) => {
+    setForm(landingPageFromItem(item));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSaving(true); setActionError(null);
+    try {
+      await api.request(form.id ? `/v1/admin/pages/${encodeURIComponent(form.id)}` : '/v1/admin/pages', {
+        method: form.id ? 'PATCH' : 'POST', body: form,
+      });
+      reset(); await load();
+    } catch (reason) { setActionError(reason); }
+    finally { setSaving(false); }
+  };
+  const remove = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true); setActionError(null);
+    try {
+      await api.request(`/v1/admin/pages/${encodeURIComponent(String(deleting.id))}`, {
+        method: 'DELETE', body: { confirmation: 'EXCLUIR' }, idempotencyKey: crypto.randomUUID(),
+      });
+      if (form.id === deleting.id) reset();
+      setDeleting(null); await load();
+    } catch (reason) { setActionError(reason); }
+    finally { setDeleteBusy(false); }
+  };
+  const canSave = form.id ? can(actor.permissions, 'content.update') : can(actor.permissions, 'content.create');
+  const publicUrl = form.slug ? `https://maratonou.com/pages/${form.slug}` : '';
+  return <div className="stack">
+    <div className="toolbar"><div><h2>Landing pages</h2><p>Crie páginas independentes e publique-as em um endereço do Maratonou.</p></div><PageActions onRefresh={() => void load()} busy={loading}><button className="button button-quiet" onClick={reset}><Icon name="plus" size={17}/>Nova página</button></PageActions></div>
+    <div className="feedback notification-info"><span className="feedback-icon"><Icon name="content"/></span><div><strong>Publicação protegida</strong><p>Scripts, formulários e conteúdo incorporado são bloqueados. HTML e CSS passam por validação antes de chegar ao aplicativo.</p></div></div>
+    {(error || actionError) ? <ErrorBox error={error || actionError} onRetry={() => void load()}/> : null}
+    <div className="page-admin-layout">
+      <form className="panel page-form" onSubmit={(event) => void submit(event)}>
+        <div className="panel-title"><div><span className="eyebrow">{form.id ? 'Editando página' : 'Nova página'}</span><h2>{form.id ? form.title || 'Página' : 'Conteúdo e publicação'}</h2></div>{form.id && <button type="button" className="mini-button" onClick={reset}>Cancelar edição</button>}</div>
+        <label>Título<input required maxLength={140} value={form.title} onChange={(event) => update('title', event.target.value)} onBlur={() => { if (!form.slug) update('slug', pageSlug(form.title)); }} placeholder="Ex.: Conheça o Maratonou PRO"/></label>
+        <label>Endereço da página<div className="slug-field"><span>maratonou.com/pages/</span><input required maxLength={80} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={form.slug} onChange={(event) => update('slug', pageSlug(event.target.value))} placeholder="maratonou-pro"/></div></label>
+        <label>Descrição para compartilhamento<textarea maxLength={300} value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Resumo curto da página"/></label>
+        <div className="form-grid"><label>Status<select value={form.status} onChange={(event) => update('status', event.target.value as LandingPageForm['status'])}><option value="draft">Rascunho</option><option value="published">Publicado</option></select></label><label>Tema base<select value={form.theme} onChange={(event) => update('theme', event.target.value as LandingPageForm['theme'])}><option value="dark">Escuro</option><option value="light">Claro</option></select></label></div>
+        <label className="page-header-toggle"><span><strong>Cabeçalho do aplicativo</strong><small>Exibe voltar, título e compartilhar.</small></span><input type="checkbox" checked={form.showHeader} onChange={(event) => update('showHeader', event.target.checked)}/></label>
+        <label>HTML<textarea className="code-editor" required maxLength={32000} value={form.html} onChange={(event) => update('html', event.target.value)} placeholder={'<main class="hero">\n  <h1>Sua landing page</h1>\n</main>'}/><small>{form.html.length.toLocaleString('pt-BR')} / 32.000 caracteres</small></label>
+        <label>CSS opcional<textarea className="code-editor code-editor-small" maxLength={12000} value={form.css} onChange={(event) => update('css', event.target.value)} placeholder={'.hero { min-height: 100vh; padding: 48px 24px; }'}/><small>{form.css.length.toLocaleString('pt-BR')} / 12.000 caracteres</small></label>
+        {publicUrl && <div className="page-public-link"><span>URL pública</span><a href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}</a></div>}
+        {canSave && <button className="button button-primary button-wide" disabled={saving || !form.slug || !form.html.trim()}>{saving ? 'Salvando…' : form.id ? 'Salvar alterações' : 'Criar página'}</button>}
+      </form>
+      <div className="page-admin-side">
+        <section className="panel page-preview-panel"><div className="panel-title"><div><span className="eyebrow">Pré-visualização</span><h2>{form.title || 'Sua página'}</h2></div></div>{form.html ? <iframe title="Prévia da landing page" sandbox="" srcDoc={landingPagePreviewDocument(form)}/> : <EmptyState title="Adicione conteúdo HTML" message="A prévia segura aparecerá aqui enquanto você edita."/>}</section>
+        <section className="panel banner-list-panel"><div className="panel-title"><div><span className="eyebrow">Biblioteca</span><h2>Páginas cadastradas</h2></div></div>{loading && !items.length ? <LoadingTable/> : <DataTable search={search} items={items} columns={[{ key: 'title', label: 'Página' }, { key: 'slug', label: 'Endereço', render: (item) => `/pages/${String(item.slug || '')}` }, { key: 'status', label: 'Status', render: (item) => <StatusBadge value={item.status}/> }, { key: 'updatedAt', label: 'Atualizado', render: (item) => formatDate(item.updatedAt) }]} actions={(item) => <div className="row-actions"><button className="mini-button" onClick={() => edit(item)}>Editar</button>{item.status === 'published' && <a className="mini-button" href={`https://maratonou.com/pages/${String(item.slug || '')}`} target="_blank" rel="noreferrer">Abrir</a>}{can(actor.permissions, 'content.delete') && <button className="mini-button danger-text" onClick={() => setDeleting(item)}>Excluir</button>}</div>}/>}</section>
+      </div>
+    </div>
+    <ConfirmDialog open={!!deleting} title="Excluir página" message={`${String(deleting?.title || 'A página')} será removida do painel e ficará imediatamente indisponível no aplicativo.`} expected="EXCLUIR" busy={deleteBusy} onClose={() => setDeleting(null)} onConfirm={() => void remove()}/>
+  </div>;
+}
+
 export function UsersView({ actor, search }: { actor: AdminActor; search: string }) {
   const { items, cursor, loading, error, load } = usePagedResource('/v1/admin/users?limit=25');
   const [dialog, setDialog] = useState<{ item: RecordItem; action: 'suspend' | 'ban' | 'restore' } | null>(null);

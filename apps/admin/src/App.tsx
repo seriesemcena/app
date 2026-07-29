@@ -12,6 +12,7 @@ import {
   GenericResourceView,
   IntegrationsView,
   NotificationsView,
+  PagesView,
   ReportsView,
   SettingsView,
   UsersView,
@@ -54,6 +55,7 @@ function CurrentView({ section, actor, search }: { section: Section; actor: Admi
   if (section === 'integrations') return <IntegrationsView/>;
   if (section === 'admins') return <AdminsView actor={actor} search={search}/>;
   if (section === 'content') return <BannersView actor={actor} search={search}/>;
+  if (section === 'pages') return <PagesView actor={actor} search={search}/>;
   return <GenericResourceView section={section} search={search}/>;
 }
 

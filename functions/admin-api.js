@@ -349,6 +349,110 @@ async function saveBanner(id, data) {
   await batch.commit();
 }
 
+function landingPageSlug(value) {
+  const slug = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
+    throw new ApiError(422, 'INVALID_PAGE_SLUG', 'Informe um endereço válido usando letras, números e hífens.');
+  }
+  return slug;
+}
+
+function landingPageHtml(value) {
+  const raw = typeof value === 'string' ? value.replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '') : '';
+  if (!raw.trim()) throw new ApiError(422, 'PAGE_HTML_REQUIRED', 'Insira o HTML da página.');
+  if (raw.length > 32000) throw new ApiError(413, 'PAGE_HTML_TOO_LARGE', 'O HTML deve ter no máximo 32 mil caracteres.');
+  if (/<\/?(?:script|iframe|object|embed|form|base|meta|link)\b|\bon[a-z]+\s*=|javascript\s*:/i.test(raw)) {
+    throw new ApiError(422, 'UNSAFE_PAGE_HTML', 'O HTML contém scripts, formulários ou atributos não permitidos.');
+  }
+  return raw;
+}
+
+function landingPageCss(value) {
+  const raw = typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '') : '';
+  if (raw.length > 12000) throw new ApiError(413, 'PAGE_CSS_TOO_LARGE', 'O CSS deve ter no máximo 12 mil caracteres.');
+  if (/<\/style\b|@import\b|javascript\s*:|expression\s*\(|behavior\s*:|url\s*\(\s*["']?data\s*:\s*text\/html/i.test(raw)) {
+    throw new ApiError(422, 'UNSAFE_PAGE_CSS', 'O CSS contém recursos externos ou expressões não permitidas.');
+  }
+  return raw;
+}
+
+function landingPagePayload(input, actor, existing = {}) {
+  return {
+    title: cleanString(input.title, 140) || 'Página sem título',
+    slug: landingPageSlug(input.slug || input.title),
+    description: cleanString(input.description, 300),
+    status: input.status === 'published' ? 'published' : 'draft',
+    theme: input.theme === 'light' ? 'light' : 'dark',
+    showHeader: input.showHeader !== false,
+    html: landingPageHtml(input.html),
+    css: landingPageCss(input.css),
+    createdAt: existing.createdAt || FieldValue.serverTimestamp(),
+    createdBy: existing.createdBy || actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.uid,
+  };
+}
+
+function publicLandingPagePayload(id, data) {
+  return {
+    pageId: id,
+    title: data.title,
+    slug: data.slug,
+    description: data.description,
+    theme: data.theme,
+    showHeader: data.showHeader,
+    html: data.html,
+    css: data.css,
+    publishedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function landingPageDocumentData(snapshot) {
+  const data = snapshot.data() || {};
+  return {
+    id: snapshot.id,
+    title: cleanString(data.title, 140),
+    slug: cleanString(data.slug, 80),
+    description: cleanString(data.description, 300),
+    status: data.status === 'published' ? 'published' : 'draft',
+    theme: data.theme === 'light' ? 'light' : 'dark',
+    showHeader: data.showHeader !== false,
+    html: typeof data.html === 'string' ? data.html : '',
+    css: typeof data.css === 'string' ? data.css : '',
+    createdAt: toIso(data.createdAt),
+    updatedAt: toIso(data.updatedAt),
+  };
+}
+
+async function assertLandingPageSlugAvailable(slug, currentId = '') {
+  const publicPage = await db.doc(`public_pages/${slug}`).get();
+  if (publicPage.exists && publicPage.data()?.pageId !== currentId) {
+    throw new ApiError(409, 'PAGE_SLUG_EXISTS', 'Já existe uma página publicada com este endereço.');
+  }
+  const matches = await db.collection('app_pages').where('slug', '==', slug).limit(2).get();
+  if (matches.docs.some((snapshot) => snapshot.id !== currentId)) {
+    throw new ApiError(409, 'PAGE_SLUG_EXISTS', 'Já existe uma página com este endereço.');
+  }
+}
+
+async function saveLandingPage(id, data, previousSlug = '') {
+  const batch = db.batch();
+  batch.set(db.doc(`app_pages/${id}`), data, { merge: true });
+  if (previousSlug && previousSlug !== data.slug) batch.delete(db.doc(`public_pages/${previousSlug}`));
+  const publicRef = db.doc(`public_pages/${data.slug}`);
+  if (data.status === 'published') batch.set(publicRef, publicLandingPagePayload(id, data));
+  else batch.delete(publicRef);
+  await batch.commit();
+}
+
 async function dashboard() {
   const [metricSnap, rankingsSnap, auditSnap] = await Promise.all([
     db.doc('metrics/global').get(),
@@ -547,6 +651,12 @@ async function route(req, res, actor, requestIdValue, parts) {
     const snapshots = await Promise.all(page.items.map((item) => db.doc(`app_banners/${item.id}`).get()));
     return send(res, 200, requestIdValue, { ...page, items: snapshots.filter((snapshot) => snapshot.exists).map(bannerDocumentData) });
   }
+  if (resource === 'pages' && method === 'GET' && !id) {
+    requirePermission(actor, 'content.read');
+    const page = await listQuery(db.collection('app_pages'), db.collection('app_pages').orderBy('updatedAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'));
+    const snapshots = await Promise.all(page.items.map((item) => db.doc(`app_pages/${item.id}`).get()));
+    return send(res, 200, requestIdValue, { ...page, items: snapshots.filter((snapshot) => snapshot.exists).map(landingPageDocumentData) });
+  }
   if (resource === 'comments' && method === 'GET' && !id) { requirePermission(actor, 'comments.read'); return send(res, 200, requestIdValue, await listComments(url.searchParams.get('limit'))); }
   if (resource === 'reports' && method === 'GET' && !id) { requirePermission(actor, 'reports.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('reports'), db.collection('reports').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
   if (resource === 'notifications' && method === 'GET' && !id) { requirePermission(actor, 'notifications.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('notification_jobs'), db.collection('notification_jobs').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
@@ -681,6 +791,42 @@ async function route(req, res, actor, requestIdValue, parts) {
     const batch = db.batch(); batch.delete(ref); batch.delete(db.doc(`public_banners/${id}`)); await batch.commit();
     await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     await writeAudit(actor, req, requestIdValue, 'banners.delete', 'app_banners', id, { before: before.data() });
+    return send(res, 200, requestIdValue, { deleted: true });
+  }
+  if (resource === 'pages' && method === 'POST' && !id) {
+    requirePermission(actor, 'content.create');
+    if (body.status === 'published') requirePermission(actor, 'content.publish');
+    const ref = db.collection('app_pages').doc();
+    const data = landingPagePayload(body, actor);
+    await assertLandingPageSlugAvailable(data.slug);
+    await saveLandingPage(ref.id, data);
+    await writeAudit(actor, req, requestIdValue, 'pages.create', 'app_pages', ref.id, { after: data });
+    return send(res, 201, requestIdValue, landingPageDocumentData(await ref.get()));
+  }
+  if (resource === 'pages' && id && method === 'PATCH') {
+    requirePermission(actor, 'content.update');
+    if (body.status === 'published') requirePermission(actor, 'content.publish');
+    const ref = db.doc(`app_pages/${id}`);
+    const before = await ref.get();
+    if (!before.exists) throw new ApiError(404, 'NOT_FOUND', 'Página não encontrada.');
+    const data = landingPagePayload(body, actor, before.data());
+    await assertLandingPageSlugAvailable(data.slug, id);
+    await saveLandingPage(id, data, before.data()?.slug || '');
+    await writeAudit(actor, req, requestIdValue, 'pages.update', 'app_pages', id, { before: before.data(), after: data });
+    return send(res, 200, requestIdValue, landingPageDocumentData(await ref.get()));
+  }
+  if (resource === 'pages' && id && method === 'DELETE') {
+    requirePermission(actor, 'content.delete'); requireConfirmation(body, 'EXCLUIR');
+    const receipt = await claimIdempotency(actor, req, 'pages.delete');
+    const ref = db.doc(`app_pages/${id}`);
+    const before = await ref.get();
+    if (!before.exists) throw new ApiError(404, 'NOT_FOUND', 'Página não encontrada.');
+    const batch = db.batch();
+    batch.delete(ref);
+    if (before.data()?.slug) batch.delete(db.doc(`public_pages/${before.data().slug}`));
+    await batch.commit();
+    await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await writeAudit(actor, req, requestIdValue, 'pages.delete', 'app_pages', id, { before: before.data() });
     return send(res, 200, requestIdValue, { deleted: true });
   }
   if (resource === 'content' && id && method === 'PATCH') {

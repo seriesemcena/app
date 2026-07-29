@@ -255,6 +255,38 @@ html[data-modal-open="true"] .tab-bar-wrap {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Published admin-authored landing pages live outside the app tab shell. */
+.landing-page-shell {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  background: #0d0d0f;
+}
+.landing-page-shell.has-header { grid-template-rows: auto minmax(0, 1fr); }
+.landing-page-shell.landing-page-light { background: #f5f3f7; color: #17151a; }
+.landing-page-shell.landing-page-dark { color: #f7f5f8; }
+.landing-page-header {
+  min-height: calc(var(--safe-area-top) + 58px);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: end;
+  gap: 10px;
+  padding: var(--safe-area-top) max(14px, var(--safe-area-right)) 8px max(14px, var(--safe-area-left));
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  background: color-mix(in srgb, #0d0d0f 88%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+.landing-page-light .landing-page-header { background: color-mix(in srgb, #f5f3f7 88%, transparent); }
+.landing-page-header strong { overflow: hidden; align-self: center; font-size: 15px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.landing-page-header button { width: 38px; height: 38px; display: grid; place-items: center; align-self: center; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 50%; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; }
+.landing-page-frame { width: 100%; height: 100%; display: block; border: 0; background: transparent; }
+.landing-page-state { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; padding: 24px; background: var(--c-bg); color: var(--c-t3); }
+.landing-page-spinner { width: 34px; height: 34px; border: 3px solid var(--c-border); border-top-color: var(--c-t1); border-radius: 50%; animation: landing-page-spin .75s linear infinite; }
+@keyframes landing-page-spin { to { transform: rotate(360deg); } }
+
 .safe-bottom-sheet {
   max-height: calc(100% - var(--safe-area-top) - 8px) !important;
   background: var(--c-popup) !important;

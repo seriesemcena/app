@@ -2,6 +2,7 @@ export type Section =
   | 'dashboard'
   | 'users'
   | 'content'
+  | 'pages'
   | 'comments'
   | 'reports'
   | 'notifications'
@@ -47,6 +48,7 @@ export const sections: SectionDefinition[] = [
   { id: 'dashboard', label: 'Visão geral', description: 'Métricas e atividade recente', permission: 'dashboard.read', icon: 'dashboard' },
   { id: 'users', label: 'Usuários', description: 'Contas e assinaturas', permission: 'users.read', icon: 'users' },
   { id: 'content', label: 'Conteúdo', description: 'Curadoria e destaques', permission: 'content.read', icon: 'content' },
+  { id: 'pages', label: 'Páginas', description: 'Landing pages publicadas', permission: 'content.read', icon: 'content' },
   { id: 'comments', label: 'Comentários', description: 'Moderação da comunidade', permission: 'comments.read', icon: 'comments' },
   { id: 'reports', label: 'Denúncias', description: 'Fila de análise', permission: 'reports.read', icon: 'reports' },
   { id: 'notifications', label: 'Notificações', description: 'Comunicados e automações', permission: 'notifications.read', icon: 'notifications' },
