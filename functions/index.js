@@ -34,6 +34,29 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const DAYS_THRESHOLD = 3;
 const USER_SCAN_PAGE_SIZE = 100;
 
+const privateUserRef = (uid, documentId) => db.doc(`users/${uid}/private/${documentId}`);
+const systemAccountRef = (uid) => db.doc(`users/${uid}/system/account`);
+
+async function getPrivateUserValue(uid, documentId, legacyData = {}, legacyField = '') {
+  const snapshot = await privateUserRef(uid, documentId).get();
+  if (snapshot.exists) return snapshot.data()?.value ?? {};
+  return legacyField ? legacyData?.[legacyField] ?? {} : {};
+}
+
+async function getAccountStatus(uid, legacyData = null) {
+  const snapshot = await systemAccountRef(uid).get();
+  if (snapshot.exists) return snapshot.data()?.accountStatus || 'active';
+  if (legacyData) return legacyData.accountStatus || 'active';
+  const publicSnapshot = await db.doc(`users/${uid}`).get();
+  return publicSnapshot.data()?.accountStatus || 'active';
+}
+
+function boundedOptionalString(value, maxLength) {
+  if (value == null || value === '') return undefined;
+  if (typeof value !== 'string') throw new HttpsError('invalid-argument', 'Conteúdo da notificação inválido.');
+  return value.trim().slice(0, maxLength);
+}
+
 async function deleteQueryDocuments(baseQuery, pageSize = 250) {
   let deleted = 0;
   while (true) {
@@ -503,6 +526,86 @@ exports.sendTestPush = onCall({
   };
 });
 
+/** Creates a social notification with server-derived actor identity and
+ * recipient preferences. Browser clients cannot forge names, avatars, read
+ * state or delivery timestamps. */
+exports.createSocialNotification = onCall({
+  timeoutSeconds: 30,
+  memory: '256MiB',
+}, async (request) => {
+  const actorId = request.auth?.uid;
+  if (!actorId) throw new HttpsError('unauthenticated', 'Entre na sua conta para continuar.');
+  if (await getAccountStatus(actorId) !== 'active') {
+    throw new HttpsError('permission-denied', 'Esta conta não pode criar notificações.');
+  }
+
+  const recipientId = boundedOptionalString(request.data?.recipientId, 128);
+  const type = boundedOptionalString(request.data?.type, 40);
+  if (!recipientId || recipientId === actorId) {
+    throw new HttpsError('invalid-argument', 'Destinatário da notificação inválido.');
+  }
+  if (!['new_follower', 'comment_reply', 'comment_like'].includes(type)) {
+    throw new HttpsError('invalid-argument', 'Tipo de notificação inválido.');
+  }
+
+  const [actorSnapshot, recipientSnapshot] = await Promise.all([
+    db.doc(`users/${actorId}`).get(),
+    db.doc(`users/${recipientId}`).get(),
+  ]);
+  if (!actorSnapshot.exists || !recipientSnapshot.exists) {
+    throw new HttpsError('not-found', 'Conta da notificação não encontrada.');
+  }
+
+  const recipientPreferences = await getPrivateUserValue(
+    recipientId,
+    'preferences',
+    recipientSnapshot.data(),
+    'prefs',
+  );
+  const preferenceByType = {
+    new_follower: 'followers',
+    comment_reply: 'replies',
+    comment_like: 'likes',
+  };
+  if (recipientPreferences?.notifPrefs?.[preferenceByType[type]] === false) {
+    return { created: false };
+  }
+
+  const actorProfile = actorSnapshot.data()?.profile || {};
+  const link = boundedOptionalString(request.data?.link, 500);
+  if (link && !link.startsWith('/')) {
+    throw new HttpsError('invalid-argument', 'Link da notificação inválido.');
+  }
+  const optional = {
+    titleKey: boundedOptionalString(request.data?.titleKey, 160),
+    titleName: boundedOptionalString(request.data?.titleName, 200),
+    poster: boundedOptionalString(request.data?.poster, 500),
+    commentSnippet: boundedOptionalString(request.data?.commentSnippet, 500),
+    link,
+  };
+
+  await db.collection('notifications').add({
+    recipientId,
+    category: 'account',
+    type,
+    actorId,
+    actorUsername: String(actorProfile.username || ''),
+    actorName: String(actorProfile.name || request.auth.token?.name || ''),
+    actorAvatarLetter: String(actorProfile.avatarLetter || ''),
+    actorAvatarImage: String(
+      actorProfile.avatarThumbImage
+      || actorProfile.avatarImage
+      || request.auth.token?.picture
+      || '',
+    ),
+    ...Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== undefined)),
+    read: false,
+    createdAt: new Date().toISOString(),
+  });
+
+  return { created: true };
+});
+
 async function forEachUserPage(handler) {
   let cursor = null;
   let total = 0;
@@ -842,9 +945,18 @@ exports.scanAutomatedNotifications = onSchedule({
   const appSettings = (await db.doc('config/app_settings').get()).data() || {};
   let checked = 0;
   const usersChecked = await forEachUserPage(async (users) => {
-    for (const doc of users) {
+    const preferenceSnapshots = users.length
+      ? await db.getAll(...users.map((user) => privateUserRef(user.id, 'preferences')))
+      : [];
+    for (const [index, doc] of users.entries()) {
       const data = doc.data();
-      const user = { uid: doc.id, prefs: data.prefs || {}, profile: data.profile || {}, appSettings };
+      const privatePreferences = preferenceSnapshots[index];
+      const user = {
+        uid: doc.id,
+        prefs: privatePreferences?.exists ? privatePreferences.data()?.value || {} : data.prefs || {},
+        profile: data.profile || {},
+        appSettings,
+      };
       const titles = [...(data.lists_want || []), ...(data.lists_watching || [])];
       const unique = Array.from(new Map(titles.map((item) => [`${item.type}:${item.id}`, item])).values());
       for (const item of unique) {
@@ -909,13 +1021,14 @@ exports.sendSeasonPremiereReminders = onSchedule({
     }
 
     const user = (await db.doc(`users/${uid}`).get()).data() || {};
-    if (user.prefs?.notifPrefs?.reminders === false) {
+    const preferences = await getPrivateUserValue(uid, 'preferences', user, 'prefs');
+    if (preferences?.notifPrefs?.reminders === false) {
       await reminderDoc.ref.set({ enabled: false }, { merge: true });
       continue;
     }
 
     try {
-      const copy = seasonPremiereCopy(user.prefs?.locale, reminder);
+      const copy = seasonPremiereCopy(preferences?.locale, reminder);
       const result = await deliver(
         uid,
         `season-premiere-${reminder.tvId}-s${reminder.seasonNumber}`,

@@ -19,8 +19,13 @@ test('block list is mirrored to Firestore and synced back both ways', () => {
   assert.match(db, /blocked_list/);
   assert.match(db, /async block\(db: Firestore, uid: string, targetUid: string\)/);
   assert.match(db, /async unblock\(db: Firestore, uid: string, targetUid: string\)/);
-  // Synced in both the login pull and the realtime subscription.
-  assert.equal((db.match(/localStorage\.setItem\('sec_blocked'/g) ?? []).length, 2);
+  // Login pulls the private value explicitly; realtime uses the shared
+  // private-document subscription mapped to the same local cache key.
+  assert.equal((db.match(/localStorage\.setItem\('sec_blocked'/g) ?? []).length, 1);
+  assert.match(
+    db,
+    /documentId: 'blocks',[\s\S]*storageKey: 'sec_blocked',[\s\S]*accept: Array\.isArray/,
+  );
 });
 
 test('profile page offers block/unblock and unfollows on block', () => {

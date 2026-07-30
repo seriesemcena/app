@@ -3,12 +3,15 @@
    so components can swap between local and cloud storage.
 
    Firestore structure:
-     users/{uid}/profile    — Profile doc
-     users/{uid}/lists      — { want, watching, watched }
-     users/{uid}/prefs      — Prefs
-     users/{uid}/fcm_tokens — { tokens: string[] }
-     reviews/{titleKey}     — { items: Review[] }
-     config/slider          — { items: SliderItem[] }
+     users/{uid}                     — public in-app profile and social lists
+     users/{uid}/private/preferences — owner-only preferences
+     users/{uid}/private/expenses    — owner-only streaming expenses
+     users/{uid}/private/blocks      — owner-only block relationships
+     users/{uid}/private/history     — owner-only legacy episode history
+     users/{uid}/private/push        — owner-only FCM tokens
+     users/{uid}/system/account      — server-only account/moderation state
+     reviews/{titleKey}              — { items: Review[] }
+     config/slider                   — { items: SliderItem[] }
    ───────────────────────────────────────────────────────────── */
 import {
   doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, increment, writeBatch,
@@ -43,6 +46,7 @@ import {
 
 type ListType = 'want' | 'watching' | 'watched' | 'favorites';
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
+const PRIVATE_DATA_SCHEMA_VERSION = 1;
 
 // ── helpers ─────────────────────────────────────────────────
 
@@ -56,6 +60,38 @@ async function getField<T>(db: Firestore, path: string[], field: string, fallbac
 
 async function setField(db: Firestore, path: string[], field: string, value: unknown) {
   await setDoc(doc(db, ...path as [string, string, ...string[]]), { [field]: value }, { merge: true });
+}
+
+function privateDataDoc(db: Firestore, uid: string, documentId: string) {
+  return doc(db, 'users', uid, 'private', documentId);
+}
+
+async function getPrivateValue<T>(
+  db: Firestore,
+  uid: string,
+  documentId: string,
+  fallback: T,
+): Promise<{ exists: boolean; value: T }> {
+  try {
+    const snap = await getDoc(privateDataDoc(db, uid, documentId));
+    if (!snap.exists()) return { exists: false, value: fallback };
+    return { exists: true, value: (snap.data()?.value ?? fallback) as T };
+  } catch {
+    return { exists: false, value: fallback };
+  }
+}
+
+async function setPrivateValue(
+  db: Firestore,
+  uid: string,
+  documentId: string,
+  value: unknown,
+) {
+  await setDoc(privateDataDoc(db, uid, documentId), {
+    value,
+    schemaVersion: PRIVATE_DATA_SCHEMA_VERSION,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 // ── Profile ──────────────────────────────────────────────────
@@ -630,10 +666,12 @@ export const dbRatingSummaryStore = {
 
 export const dbPrefsStore = {
   async get(db: Firestore, uid: string): Promise<Prefs> {
+    const privatePrefs = await getPrivateValue<Prefs>(db, uid, 'preferences', {});
+    if (privatePrefs.exists) return privatePrefs.value;
     return getField<Prefs>(db, ['users', uid], 'prefs', {});
   },
   async set(db: Firestore, uid: string, prefs: Prefs) {
-    await setField(db, ['users', uid], 'prefs', prefs);
+    await setPrivateValue(db, uid, 'preferences', prefs);
   },
 };
 
@@ -842,7 +880,10 @@ export const dbPresenceStore = {
     const key = `maratonou:last-active-write:${uid}`;
     const previous = Number(localStorage.getItem(key) || 0);
     if (Date.now() - previous < ACTIVE_TOUCH_INTERVAL_MS) return;
-    await setDoc(doc(db, 'users', uid), { lastActiveAt: serverTimestamp() }, { merge: true });
+    await setDoc(privateDataDoc(db, uid, 'activity'), {
+      lastActiveAt: serverTimestamp(),
+      schemaVersion: PRIVATE_DATA_SCHEMA_VERSION,
+    }, { merge: true });
     localStorage.setItem(key, String(Date.now()));
   },
 };
@@ -927,21 +968,22 @@ export const dbReactionStore = {
 };
 
 // ── Streaming expenses ───────────────────────────────────────
-// Firestore: users/{uid}.expenses — the localStorage cache
+// Firestore: users/{uid}/private/expenses — the localStorage cache
 // (sec_expenses_v1) is uid-scoped-wiped on account switch, so without
 // this cloud copy every new session started from zero.
 
 export const dbExpensesStore = {
   /** null = the field was never written for this account (≠ empty list). */
   async get(db: Firestore, uid: string): Promise<unknown[] | null> {
-    try {
-      const snap = await getDoc(doc(db, 'users', uid));
-      const v = snap.data()?.expenses;
-      return Array.isArray(v) ? v : null;
-    } catch { return null; }
+    const privateExpenses = await getPrivateValue<unknown[] | null>(db, uid, 'expenses', null);
+    if (privateExpenses.exists) {
+      return Array.isArray(privateExpenses.value) ? privateExpenses.value : null;
+    }
+    const legacy = await getField<unknown[] | null>(db, ['users', uid], 'expenses', null);
+    return Array.isArray(legacy) ? legacy : null;
   },
   async set(db: Firestore, uid: string, subs: unknown[]) {
-    await setField(db, ['users', uid], 'expenses', subs);
+    await setPrivateValue(db, uid, 'expenses', subs);
   },
 };
 
@@ -1053,29 +1095,9 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
       try { localStorage.setItem(profileKey(uid), JSON.stringify(data.profile)); } catch {}
     }
 
-    // ── Prefs ──────────────────────────────────────────────
-    if (data.prefs && typeof data.prefs === 'object') {
-      try { localStorage.setItem(PREFS_KEY, JSON.stringify(data.prefs)); } catch {}
-    }
-
-    // ── Episode watched ────────────────────────────────────
-    if (data.ep_watched && typeof data.ep_watched === 'object') {
-      try { localStorage.setItem('sec_ep_watched_v1', JSON.stringify(data.ep_watched)); } catch {}
-    }
-
     // ── Following list ─────────────────────────────────────
     if (Array.isArray(data.following_list)) {
       try { localStorage.setItem('sec_following', JSON.stringify(data.following_list)); } catch {}
-    }
-
-    // ── Blocked users ──────────────────────────────────────
-    if (Array.isArray(data.blocked_list)) {
-      try { localStorage.setItem('sec_blocked', JSON.stringify(data.blocked_list)); } catch {}
-    }
-
-    // ── Streaming expenses ─────────────────────────────────
-    if (Array.isArray(data.expenses)) {
-      try { localStorage.setItem('sec_expenses_v1', JSON.stringify(data.expenses)); } catch {}
     }
 
     // Notify all listening components
@@ -1091,9 +1113,56 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
     window.dispatchEvent(new Event('maratonou:pro'));
   });
 
+  const privateSubscriptions: Array<{
+    documentId: string;
+    storageKey: string;
+    metric: string;
+    accept: (value: unknown) => boolean;
+  }> = [
+    {
+      documentId: 'preferences',
+      storageKey: PREFS_KEY,
+      metric: 'users:preferences',
+      accept: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
+    },
+    {
+      documentId: 'history',
+      storageKey: 'sec_ep_watched_v1',
+      metric: 'users:history',
+      accept: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)),
+    },
+    {
+      documentId: 'blocks',
+      storageKey: 'sec_blocked',
+      metric: 'users:blocks',
+      accept: Array.isArray,
+    },
+    {
+      documentId: 'expenses',
+      storageKey: 'sec_expenses_v1',
+      metric: 'users:expenses',
+      accept: Array.isArray,
+    },
+  ];
+  const privateStops = privateSubscriptions.map((subscription) => {
+    const stopMetric = dataCostDebug.listenerStart(subscription.metric);
+    const unsubscribe = onSnapshot(privateDataDoc(db, uid, subscription.documentId), (snap) => {
+      if (typeof window === 'undefined' || !snap.exists()) return;
+      const value = snap.data()?.value;
+      if (!subscription.accept(value)) return;
+      try { localStorage.setItem(subscription.storageKey, JSON.stringify(value)); } catch {}
+      window.dispatchEvent(new Event('maratonou:sync'));
+    });
+    return () => {
+      unsubscribe();
+      stopMetric();
+    };
+  });
+
   return () => {
     unsubscribeUser();
     unsubscribePro();
+    privateStops.forEach(stop => stop());
     stopUserMetric();
     stopProMetric();
   };
@@ -1103,7 +1172,7 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
 
 export const dbEpWatchedStore = {
   async set(db: Firestore, uid: string, data: Record<string, Record<string, number[]>>) {
-    await setField(db, ['users', uid], 'ep_watched', data);
+    await setPrivateValue(db, uid, 'history', data);
   },
 };
 
@@ -1267,21 +1336,23 @@ export const dbFollowStore = {
 };
 
 /* ── Blocked users ──
-   Unilateral, private list on the blocker's own doc (owner-only write via
-   the existing users rule). Hides the blocked user's content client-side. */
+   Unilateral, owner-only list in users/{uid}/private/blocks. Hides the
+   blocked user's content client-side without exposing the relationship. */
 export const dbBlockStore = {
   async get(db: Firestore, uid: string): Promise<string[]> {
+    const privateBlocks = await getPrivateValue<string[]>(db, uid, 'blocks', []);
+    if (privateBlocks.exists) return Array.isArray(privateBlocks.value) ? privateBlocks.value : [];
     return getField<string[]>(db, ['users', uid], 'blocked_list', []);
   },
   async block(db: Firestore, uid: string, targetUid: string): Promise<void> {
     const current = await dbBlockStore.get(db, uid);
     if (current.includes(targetUid)) return;
-    await setField(db, ['users', uid], 'blocked_list', [...current, targetUid]);
+    await setPrivateValue(db, uid, 'blocks', [...current, targetUid]);
   },
   async unblock(db: Firestore, uid: string, targetUid: string): Promise<void> {
     const current = await dbBlockStore.get(db, uid);
     if (!current.includes(targetUid)) return;
-    await setField(db, ['users', uid], 'blocked_list', current.filter(u => u !== targetUid));
+    await setPrivateValue(db, uid, 'blocks', current.filter(u => u !== targetUid));
   },
 };
 
@@ -1467,16 +1538,25 @@ export type NotificationPageCursor = QueryDocumentSnapshot<DocumentData>;
 
 export const dbNotifStore = {
   async add(db: Firestore, notif: Omit<NotifDoc, 'read'>): Promise<boolean> {
-    const prefByType: Record<NotifDoc['type'], string> = {
-      new_follower: 'followers',
-      comment_reply: 'replies',
-      comment_like: 'likes',
-    };
     try {
-      const recipientPrefs = await dbPrefsStore.get(db, notif.recipientId);
-      if (recipientPrefs.notifPrefs?.[prefByType[notif.type]] === false) return false;
-      await addDoc(collection(db, 'notifications'), { ...notif, read: false });
-      return true;
+      const [{ httpsCallable }, { getFirebaseFunctions }] = await Promise.all([
+        import('firebase/functions'),
+        import('./firebase'),
+      ]);
+      const createNotification = httpsCallable<
+        Pick<NotifDoc, 'recipientId' | 'type' | 'titleKey' | 'titleName' | 'poster' | 'commentSnippet' | 'link'>,
+        { created: boolean }
+      >(getFirebaseFunctions(), 'createSocialNotification');
+      const result = await createNotification({
+        recipientId: notif.recipientId,
+        type: notif.type,
+        titleKey: notif.titleKey,
+        titleName: notif.titleName,
+        poster: notif.poster,
+        commentSnippet: notif.commentSnippet,
+        link: notif.link,
+      });
+      return result.data?.created === true;
     } catch {
       return false;
     }
@@ -1647,8 +1727,6 @@ const privatePushDoc = (db: Firestore, uid: string) => doc(db, 'users', uid, 'pr
 export const dbTokenStore = {
   async save(db: Firestore, uid: string, token: string) {
     await setDoc(privatePushDoc(db, uid), { tokens: arrayUnion(token) }, { merge: true });
-    // Clear tokens parked on the public profile doc by older builds.
-    try { await updateDoc(doc(db, 'users', uid), { fcm_tokens: deleteField() }); } catch {}
   },
   async remove(db: Firestore, uid: string, token: string) {
     try {
@@ -1677,9 +1755,17 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
     try {
       const userSnap = await getDoc(doc(db, 'users', uid));
       const data = userSnap.data();
-      const legacyHistory = data?.ep_watched && typeof data.ep_watched === 'object'
-        ? data.ep_watched as LegacyEpisodeHistory
-        : {};
+      const privateHistory = await getPrivateValue<LegacyEpisodeHistory>(
+        db,
+        uid,
+        'history',
+        {},
+      );
+      const legacyHistory = privateHistory.exists
+        ? privateHistory.value
+        : data?.ep_watched && typeof data.ep_watched === 'object'
+          ? data.ep_watched as LegacyEpisodeHistory
+          : {};
       const canonical = await dbSeasonProgressStore.getAll(db, uid);
       const migrationSnap = await getDoc(doc(db, 'users', uid, 'private', 'migration_state'));
       const canonicalIsAuthoritative = migrationSnap.data()?.seasonProgressV1 === true;
@@ -1713,14 +1799,19 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
           ? recordsToLegacyHistory(normalizedProgress)
           : (canonicalIsAuthoritative ? {} : legacyHistory),
       ));
-      if (Array.isArray(data?.expenses)) {
-        localStorage.setItem('sec_expenses_v1', JSON.stringify(data.expenses));
-      }
+      const privateExpenses = await getPrivateValue<unknown[] | null>(db, uid, 'expenses', null);
+      const expenses = privateExpenses.exists ? privateExpenses.value : data?.expenses;
+      if (Array.isArray(expenses)) localStorage.setItem('sec_expenses_v1', JSON.stringify(expenses));
       if (Array.isArray(data?.following_list)) {
         localStorage.setItem('sec_following', JSON.stringify(data.following_list));
       }
-      if (Array.isArray(data?.blocked_list)) {
-        localStorage.setItem('sec_blocked', JSON.stringify(data.blocked_list));
+      const privateBlocks = await getPrivateValue<string[] | null>(db, uid, 'blocks', null);
+      const blocks = privateBlocks.exists ? privateBlocks.value : data?.blocked_list;
+      if (Array.isArray(blocks)) localStorage.setItem('sec_blocked', JSON.stringify(blocks));
+      const privatePrefs = await getPrivateValue<Prefs | null>(db, uid, 'preferences', null);
+      const prefs = privatePrefs.exists ? privatePrefs.value : data?.prefs;
+      if (prefs && typeof prefs === 'object') {
+        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
       }
       if (data?.profile) {
         // One-time: username becomes the slug of the Name (João Miguel → joao-miguel),
@@ -1785,7 +1876,10 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
 
     // Merge legacy episode history instead of replacing the remote map.
     const localHistory = epWatchedStore.getAll();
-    const remoteHistory = await getField<LegacyEpisodeHistory>(db, ['users', uid], 'ep_watched', {});
+    const privateHistory = await getPrivateValue<LegacyEpisodeHistory>(db, uid, 'history', {});
+    const remoteHistory = privateHistory.exists
+      ? privateHistory.value
+      : await getField<LegacyEpisodeHistory>(db, ['users', uid], 'ep_watched', {});
     const mergedHistory: LegacyEpisodeHistory = structuredClone(remoteHistory);
     for (const [seriesId, seasons] of Object.entries(localHistory)) {
       mergedHistory[seriesId] ??= {};
@@ -1797,7 +1891,7 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
       }
     }
     if (Object.keys(mergedHistory).length) {
-      await setField(db, ['users', uid], 'ep_watched', mergedHistory);
+      await setPrivateValue(db, uid, 'history', mergedHistory);
       const completedSeries = new Set(listStore.get('watched')
         .filter((item) => item.type === 'tv')
         .map((item) => item.id));
@@ -1822,7 +1916,9 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
 
     await setDoc(migrationRef, {
       seasonProgressV1: true,
+      privateDataV1: true,
       seasonProgressMigratedAt: new Date().toISOString(),
+      privateDataMigratedAt: new Date().toISOString(),
       schemaVersion: SEASON_PROGRESS_SCHEMA_VERSION,
     }, { merge: true });
     localStorage.setItem(MIGRATED_KEY, '1');

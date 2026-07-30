@@ -95,9 +95,9 @@ export const prefsStore = {
 
 /* ── Blocked users ──
    Stores the uids this account has blocked. Content authored by a blocked
-   user is hidden in the feed and comments. Cloud copy lives on the owner's
-   own doc (users/{uid}.blocked_list); this cache is uid-scoped-wiped on
-   account switch. Blocking is unilateral and private. */
+   user is hidden in the feed and comments. Cloud copy lives in the owner's
+   private document (users/{uid}/private/blocks); this cache is
+   uid-scoped-wiped on account switch. Blocking is unilateral and private. */
 const BLOCKED_KEY = 'sec_blocked';
 
 export const blockStore = {

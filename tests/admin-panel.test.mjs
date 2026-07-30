@@ -39,7 +39,8 @@ test('sensitive user and moderation operations create audit logs', () => {
 
 test('browser rules prevent users from granting themselves admin access', () => {
   const rules = read('firestore.rules');
-  assert.match(rules, /hasAny\(\['adminAccess', 'accountStatus', 'counters'\]\)/);
+  assert.match(rules, /'adminAccess', 'accountStatus', 'accountStatusReason'/);
+  assert.match(rules, /'counters', 'prefs', 'expenses', 'blocked_list'/);
   assert.match(rules, /match \/adminUsers\/\{uid\}/);
   assert.match(rules, /match \/auditLogs\/\{id\}/);
   assert.match(rules, /allow read, write: if false/);
@@ -58,6 +59,8 @@ test('metrics disclose unavailable instrumentation instead of fabricating values
   const dashboard = read('functions/admin-api.js');
   assert.match(dashboard, /metricSnap\.exists/);
   assert.match(dashboard, /unavailable/);
+  assert.match(dashboard, /collectionGroup\('private'\)[\s\S]*where\('lastActiveAt'/);
+  assert.match(dashboard, /collection\('users'\)[\s\S]*where\('lastActiveAt'/);
   assert.doesNotMatch(dashboard, /Math\.random|mock|dummy/i);
 });
 

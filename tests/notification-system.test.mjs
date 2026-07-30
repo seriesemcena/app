@@ -45,10 +45,16 @@ test('movie streaming alerts require a verified flatrate provider transition', (
   assert.match(notifier, /isSelectedProvider/);
 });
 
-test('notification preferences are enforced before social notification creation', () => {
+test('notification preferences are enforced server-side before social notification creation', () => {
   const db = read('src/lib/db.ts');
-  assert.match(db, /recipientPrefs\.notifPrefs\?\.\[prefByType\[notif\.type\]\] === false/);
-  assert.match(db, /return false/);
+  const functions = read('functions/index.js');
+  assert.match(db, /getFirebaseFunctions\(\), 'createSocialNotification'/);
+  assert.match(functions, /getPrivateUserValue\([\s\S]*'preferences'[\s\S]*'prefs'/);
+  assert.match(
+    functions,
+    /recipientPreferences\?\.notifPrefs\?\.\[preferenceByType\[type\]\] === false/,
+  );
+  assert.match(functions, /return \{ created: false \}/);
 });
 
 test('FCM registration and scheduled server workers are wired', () => {

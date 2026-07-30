@@ -20,6 +20,7 @@ if (!getApps().length) initializeApp();
 const db = getFirestore();
 const auth = getAuth();
 const appCheck = getAppCheck();
+const systemAccountRef = (uid) => db.doc(`users/${uid}/system/account`);
 const AUDIT_IP_HASH_SECRET = defineSecret('AUDIT_IP_HASH_SECRET');
 const TMDB_API_KEY = defineSecret('TMDB_API_KEY');
 const GIPHY_API_KEY = defineSecret('GIPHY_API_KEY');
@@ -699,11 +700,28 @@ async function activeUserCounts(now = Date.now()) {
     pageToken = page.pageToken;
   } while (pageToken);
 
-  const recentPresence = await db.collection('users')
-    .where('lastActiveAt', '>=', Timestamp.fromMillis(now - PERIODS.monthly))
-    .limit(10000)
-    .get();
-  recentPresence.docs.forEach((doc) => addActivity(doc.id, doc.data().lastActiveAt?.toDate?.() || doc.data().lastActiveAt));
+  const activityThreshold = Timestamp.fromMillis(now - PERIODS.monthly);
+  const [recentPresence, legacyPresence] = await Promise.all([
+    db.collectionGroup('private')
+      .where('lastActiveAt', '>=', activityThreshold)
+      .limit(10000)
+      .get(),
+    db.collection('users')
+      .where('lastActiveAt', '>=', activityThreshold)
+      .limit(10000)
+      .get(),
+  ]);
+  recentPresence.docs.forEach((document) => {
+    if (document.id !== 'activity') return;
+    const uid = document.ref.parent.parent?.id;
+    if (uid) addActivity(uid, document.data().lastActiveAt?.toDate?.() || document.data().lastActiveAt);
+  });
+  legacyPresence.docs.forEach((document) => {
+    addActivity(
+      document.id,
+      document.data().lastActiveAt?.toDate?.() || document.data().lastActiveAt,
+    );
+  });
 
   return Object.fromEntries(Object.entries(active).map(([key, users]) => [key, users.size]));
 }
@@ -767,9 +785,22 @@ async function rebuildDashboardMetrics() {
 async function listUsers(cursor, limit) {
   const result = await auth.listUsers(Math.min(Math.max(Number(limit) || 25, 1), 50), cursor || undefined);
   const refs = result.users.map((user) => db.doc(`users/${user.uid}`));
+  const accountRefs = result.users.map((user) => systemAccountRef(user.uid));
   const profiles = refs.length ? await db.getAll(...refs) : [];
+  const accounts = accountRefs.length ? await db.getAll(...accountRefs) : [];
   return {
-    items: result.users.map((user, index) => ({ uid: user.uid, email: user.email || '', displayName: user.displayName || '', disabled: user.disabled, createdAt: user.metadata.creationTime, lastSignInAt: user.metadata.lastSignInTime, accountStatus: profiles[index]?.data()?.accountStatus || 'active', proMember: profiles[index]?.data()?.profile?.proMember === true })),
+    items: result.users.map((user, index) => ({
+      uid: user.uid,
+      email: user.email || '',
+      displayName: user.displayName || '',
+      disabled: user.disabled,
+      createdAt: user.metadata.creationTime,
+      lastSignInAt: user.metadata.lastSignInTime,
+      accountStatus: accounts[index]?.data()?.accountStatus
+        || profiles[index]?.data()?.accountStatus
+        || 'active',
+      proMember: profiles[index]?.data()?.profile?.proMember === true,
+    })),
     nextCursor: result.pageToken || null,
   };
 }
@@ -787,14 +818,17 @@ async function listAdmins() {
 async function userDetail(uid) {
   const user = await auth.getUser(uid).catch(() => null);
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'Usuário não encontrado.');
-  const profile = await db.doc(`users/${uid}`).get();
+  const [profile, account] = await Promise.all([
+    db.doc(`users/${uid}`).get(),
+    systemAccountRef(uid).get(),
+  ]);
   const profileData = profile.data()?.profile || {};
   return {
     uid: user.uid, email: user.email || '', displayName: user.displayName || '',
     disabled: user.disabled, createdAt: user.metadata.creationTime,
     lastSignInAt: user.metadata.lastSignInTime,
     profile: cleanForAudit(profileData), proMember: profileData.proMember === true,
-    accountStatus: profile.data()?.accountStatus || 'active',
+    accountStatus: account.data()?.accountStatus || profile.data()?.accountStatus || 'active',
   };
 }
 
@@ -964,7 +998,13 @@ async function route(req, res, actor, requestIdValue, parts) {
     await auth.updateUser(id, { disabled: action !== 'restore' });
     await auth.revokeRefreshTokens(id);
     const accountStatus = action === 'ban' ? 'banned' : action === 'suspend' ? 'suspended' : 'active';
-    await db.doc(`users/${id}`).set({ accountStatus, accountStatusReason: cleanString(body.reason, 500), accountStatusUpdatedAt: FieldValue.serverTimestamp(), accountStatusUpdatedBy: actor.uid }, { merge: true });
+    await systemAccountRef(id).set({
+      accountStatus,
+      accountStatusReason: cleanString(body.reason, 500),
+      accountStatusUpdatedAt: FieldValue.serverTimestamp(),
+      accountStatusUpdatedBy: actor.uid,
+      schemaVersion: 1,
+    }, { merge: true });
     await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     await writeAudit(actor, req, requestIdValue, `users.${action}`, 'users', id, { before, reason: cleanString(body.reason, 500) });
     return send(res, 200, requestIdValue, { uid: id, status: accountStatus });

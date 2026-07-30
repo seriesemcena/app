@@ -2,6 +2,9 @@ node_modules
 .next
 out
 .env*.local
+.env.production
+.env.production.*
+!.env.production.example
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
@@ -16,6 +19,9 @@ ui-debug.log
 *.pem
 *.p12
 *.pfx
+*.p8
+*.cer
+*.mobileprovision
 *.jks
 *.keystore
 *service-account*.json
@@ -25,3 +31,4 @@ functions/.env
 functions/.env.*
 !functions/.env.example
 .firebase
+scripts/migrations/.private-user-data-state.json

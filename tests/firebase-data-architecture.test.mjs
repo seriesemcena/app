@@ -36,7 +36,8 @@ test('ratings, follows, metrics and activity aggregates are server-owned', () =>
   assert.match(functions, /incrementMetricsOnce/);
   assert.match(functions, /Math\.max\(0/);
   assert.match(functions, /systemEvents/);
-  assert.match(rules, /hasAny\(\['adminAccess', 'accountStatus', 'counters'\]\)/);
+  assert.match(rules, /'adminAccess', 'accountStatus', 'accountStatusReason'/);
+  assert.match(rules, /'counters', 'prefs', 'expenses', 'blocked_list'/);
   assert.match(rules, /match \/ratingSummaries\/\{titleKey\}/);
   assert.match(rules, /match \/userStats\/\{uid\}/);
   assert.match(rules, /match \/systemEvents\/\{id\}/);
@@ -74,6 +75,18 @@ test('migration is dry-run by default, bounded, resumable and idempotent', () =>
   assert.match(migration, /\{ merge: true \}/);
   assert.match(migration, /DRY-RUN: nenhum documento foi alterado/);
   assert.doesNotMatch(migration, /\.delete\(\)/);
+});
+
+test('private user-data migration is dry-run, resumable and preserves authoritative targets', () => {
+  const migration = read('scripts/migrations/migrate-private-user-data.mjs');
+  assert.match(migration, /const apply = flags\.has\('--apply'\)/);
+  assert.match(migration, /const verify = flags\.has\('--verify'\)/);
+  assert.match(migration, /orderBy\(FieldPath\.documentId\(\)\)\.limit\(batchSize\)/);
+  assert.match(migration, /state\.cursor/);
+  assert.match(migration, /if \(target\.exists\)/);
+  assert.match(migration, /batch\.create\(spec\.ref, spec\.value\)/);
+  assert.match(migration, /FieldValue\.delete\(\)/);
+  assert.match(migration, /DRY-RUN: nenhum documento foi alterado/);
 });
 
 test('automated user scans are paged instead of loading every user at once', () => {

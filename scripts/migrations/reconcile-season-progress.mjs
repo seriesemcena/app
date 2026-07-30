@@ -171,6 +171,16 @@ function legacyRecords(uid, data) {
 async function reconcileUser(userDoc) {
   const uid = userDoc.id;
   const userData = userDoc.data();
+  const privateHistorySnap = await userDoc.ref.collection('private').doc('history').get();
+  const privateHistory = privateHistorySnap.exists
+    && privateHistorySnap.data()?.value
+    && typeof privateHistorySnap.data().value === 'object'
+    ? privateHistorySnap.data().value
+    : null;
+  const progressSource = {
+    ...userData,
+    ep_watched: privateHistory || userData.ep_watched || {},
+  };
   const canonicalSnap = await userDoc.ref.collection('seasonProgress').get();
   report.canonicalRead += canonicalSnap.size;
   const existingRaw = new Map(canonicalSnap.docs.map((entry) => [
@@ -182,7 +192,7 @@ async function reconcileUser(userDoc) {
     normalizeRecord(uid, entry.data()),
   ]));
   const merged = new Map(existing);
-  for (const record of legacyRecords(uid, userData)) {
+  for (const record of legacyRecords(uid, progressSource)) {
     const id = progressId(record.seriesId, record.seasonNumber);
     merged.set(id, mergeRecords(uid, merged.get(id), record));
   }
@@ -208,7 +218,8 @@ async function reconcileUser(userDoc) {
     restoreStrategy: 'restore legacy/source and canonicalBefore/*; canonical migration never deletes source data',
   });
   await backupRef.collection('legacy').doc('source').set({
-    ep_watched: userData.ep_watched || {},
+    ep_watched: progressSource.ep_watched,
+    historySource: privateHistory ? 'users/{uid}/private/history' : 'users/{uid}.ep_watched',
     lists_watched: userData.lists_watched || [],
   });
   for (let start = 0; start < canonicalSnap.docs.length; start += batchSize) {

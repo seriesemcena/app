@@ -29,6 +29,32 @@ test('review likes can only toggle the authenticated user', () => {
   assert.match(rules, /request\.resource\.data\.likes == after\.size\(\)/);
 });
 
+test('review replies can only append one reply owned by the authenticated user', () => {
+  assert.match(rules, /function appendsOwnReviewReply\(\)/);
+  assert.match(rules, /after\.size\(\) == before\.size\(\) \+ 1/);
+  assert.match(rules, /after\.hasAll\(before\)/);
+  assert.match(rules, /reply\.get\('uid', ''\) == request\.auth\.uid/);
+  assert.match(rules, /hasAny\(\['likedBy', 'likes', 'replies'\]\)/);
+});
+
+test('social notifications are server-created and recipient-owned', () => {
+  assert.match(rules, /match \/notifications\/\{id\}/);
+  assert.match(rules, /match \/notifications\/\{id\}[\s\S]*allow create: if false/);
+  assert.match(rules, /resource\.data\.recipientId == request\.auth\.uid/);
+  assert.match(rules, /affectedKeys\(\)\.hasOnly\(\['read'\]\)/);
+});
+
+test('private user data is owner-only and system account state is server-only', () => {
+  assert.match(rules, /match \/private\/\{docId\}[\s\S]*request\.auth\.uid == uid/);
+  for (const documentId of ['preferences', 'expenses', 'blocks', 'history', 'activity', 'push']) {
+    assert.match(rules, new RegExp(`docId == '${documentId}'`));
+  }
+  assert.match(rules, /match \/system\/\{docId\}[\s\S]*allow read, write: if false/);
+  for (const field of ['prefs', 'expenses', 'blocked_list', 'ep_watched', 'fcm_tokens', 'lastActiveAt']) {
+    assert.match(rules, new RegExp(`'${field}'`));
+  }
+});
+
 test('social graph only lets an owner write following and never followers', () => {
   assert.match(rules, /match \/following\/\{targetUid\}[\s\S]*request\.auth\.uid == uid[\s\S]*targetUid != uid/);
   assert.match(rules, /match \/followers\/\{followerUid\}[\s\S]*allow write: if false/);

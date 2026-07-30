@@ -19,8 +19,17 @@ service cloud.firestore {
 
     function accountIsActive(uid) {
       return !exists(/databases/$(database)/documents/users/$(uid))
-        || !get(/databases/$(database)/documents/users/$(uid)).data.keys().hasAny(['accountStatus'])
-        || get(/databases/$(database)/documents/users/$(uid)).data.accountStatus == 'active';
+        || (
+          exists(/databases/$(database)/documents/users/$(uid)/system/account)
+            ? get(/databases/$(database)/documents/users/$(uid)/system/account)
+                .data.get('accountStatus', 'active') == 'active'
+            : (
+              !get(/databases/$(database)/documents/users/$(uid))
+                .data.keys().hasAny(['accountStatus'])
+              || get(/databases/$(database)/documents/users/$(uid))
+                .data.accountStatus == 'active'
+            )
+        );
     }
 
     function activeUser() {
@@ -50,6 +59,40 @@ service cloud.firestore {
             && after.size() == before.size() - 1
           )
         );
+    }
+
+    function appendsOwnReviewReply() {
+      let before = resource.data.get('replies', []);
+      let after = request.resource.data.get('replies', []);
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let reply = after[after.size() - 1];
+
+      return changed.hasOnly(['replies'])
+        && after.size() == before.size() + 1
+        && after.hasAll(before)
+        && reply is map
+        && reply.get('uid', '') == request.auth.uid
+        && reply.get('id', '') is string
+        && reply.get('id', '').size() > 0
+        && reply.get('user', '') is string
+        && reply.get('avatar', '') is string
+        && reply.get('text', '') is string
+        && reply.get('text', '').size() > 0
+        && reply.get('text', '').size() <= 5000
+        && reply.get('date', '') is string
+        && reply.get('photoUrl', '') is string
+        && reply.get('gifUrl', '') is string
+        && reply.get('imageUrl', '') is string
+        && reply.get('spoiler', false) is bool
+        && reply.get('likes', 0) == 0
+        && reply.get('likedBy', []).size() == 0
+        && reply.keys().hasAll([
+          'id', 'uid', 'user', 'avatar', 'text', 'date'
+        ])
+        && reply.keys().hasOnly([
+          'id', 'uid', 'user', 'avatar', 'photoUrl', 'text', 'gifUrl',
+          'imageUrl', 'spoiler', 'date', 'likes', 'likedBy'
+        ]);
     }
 
     function isProMember(data) {
@@ -84,20 +127,115 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
                     && request.auth.uid == uid
-                    && !request.resource.data.keys().hasAny(['adminAccess', 'accountStatus', 'counters'])
+                    && !request.resource.data.keys().hasAny([
+                      'adminAccess', 'accountStatus', 'accountStatusReason',
+                      'accountStatusUpdatedAt', 'accountStatusUpdatedBy',
+                      'counters', 'prefs', 'expenses', 'blocked_list',
+                      'ep_watched', 'fcm_tokens', 'lastActiveAt'
+                    ])
                     && !isProMember(request.resource.data);
       allow update: if activeUser()
                     && request.auth.uid == uid
                     && !request.resource.data.diff(resource.data).affectedKeys()
-                         .hasAny(['adminAccess', 'accountStatus', 'counters'])
+                         .hasAny([
+                           'adminAccess', 'accountStatus', 'accountStatusReason',
+                           'accountStatusUpdatedAt', 'accountStatusUpdatedBy',
+                           'counters', 'prefs', 'expenses', 'blocked_list',
+                           'ep_watched', 'fcm_tokens', 'lastActiveAt'
+                         ])
                     && isProMember(request.resource.data) == isProMember(resource.data);
       allow delete: if false;
 
-      // Owner-only data (FCM push tokens live here — they must NOT
-      // sit on the public doc above).
+      // Owner-only account data. Only known document shapes are accepted so a
+      // client cannot turn this subcollection into an unbounded private store.
       match /private/{docId} {
         allow read: if request.auth != null && request.auth.uid == uid;
-        allow write: if activeUser() && request.auth.uid == uid;
+        allow create, update: if activeUser()
+                              && request.auth.uid == uid
+                              && (
+                                (
+                                  docId == 'preferences'
+                                  && request.resource.data.value is map
+                                  && request.resource.data.schemaVersion == 1
+                                  && request.resource.data.updatedAt is timestamp
+                                  && request.resource.data.keys().hasOnly([
+                                    'value', 'schemaVersion', 'updatedAt'
+                                  ])
+                                )
+                                || (
+                                  docId == 'expenses'
+                                  && request.resource.data.value is list
+                                  && request.resource.data.schemaVersion == 1
+                                  && request.resource.data.updatedAt is timestamp
+                                  && request.resource.data.keys().hasOnly([
+                                    'value', 'schemaVersion', 'updatedAt'
+                                  ])
+                                )
+                                || (
+                                  docId == 'blocks'
+                                  && request.resource.data.value is list
+                                  && request.resource.data.value.size() <= 1000
+                                  && request.resource.data.schemaVersion == 1
+                                  && request.resource.data.updatedAt is timestamp
+                                  && request.resource.data.keys().hasOnly([
+                                    'value', 'schemaVersion', 'updatedAt'
+                                  ])
+                                )
+                                || (
+                                  docId == 'history'
+                                  && request.resource.data.value is map
+                                  && request.resource.data.schemaVersion == 1
+                                  && request.resource.data.updatedAt is timestamp
+                                  && request.resource.data.keys().hasOnly([
+                                    'value', 'schemaVersion', 'updatedAt'
+                                  ])
+                                )
+                                || (
+                                  docId == 'activity'
+                                  && request.resource.data.lastActiveAt is timestamp
+                                  && request.resource.data.schemaVersion == 1
+                                  && request.resource.data.keys().hasOnly([
+                                    'lastActiveAt', 'schemaVersion'
+                                  ])
+                                )
+                                || (
+                                  docId == 'push'
+                                  && request.resource.data.tokens is list
+                                  && request.resource.data.tokens.size() <= 20
+                                  && request.resource.data.keys().hasOnly(['tokens'])
+                                )
+                                || (
+                                  docId == 'pro_settings'
+                                  && request.resource.data.value is map
+                                  && request.resource.data.keys().hasOnly(['value'])
+                                )
+                                || (
+                                  docId == 'search_history'
+                                  && request.resource.data.items is list
+                                  && request.resource.data.items.size() <= 20
+                                  && request.resource.data.updatedAt is timestamp
+                                  && request.resource.data.keys().hasOnly([
+                                    'items', 'updatedAt'
+                                  ])
+                                )
+                                || (
+                                  docId == 'migration_state'
+                                  && request.resource.data.schemaVersion == 1
+                                  && request.resource.data.keys().hasOnly([
+                                    'seasonProgressV1', 'privateDataV1',
+                                    'seasonProgressMigratedAt',
+                                    'privateDataMigratedAt', 'schemaVersion',
+                                    'backupRef'
+                                  ])
+                                )
+                              );
+        allow delete: if activeUser() && request.auth.uid == uid;
+      }
+
+      // Moderation/account state is server-owned and is intentionally outside
+      // the public profile and the owner's client-readable private documents.
+      match /system/{docId} {
+        allow read, write: if false;
       }
 
       // Explicit reminders created from a future-season card. Cloud Functions
@@ -198,7 +336,7 @@ service cloud.firestore {
                       && resource.data.authorUid == request.auth.uid;
         // A like update may only add/remove the authenticated user's uid.
         // Authors can edit their own content, but likes remain protected.
-        // Signed-in members may append replies without changing authorship.
+        // Signed-in members may append exactly one reply owned by themselves.
         allow update: if activeUser()
                       && request.resource.data.authorUid == resource.data.authorUid
                       && (
@@ -207,10 +345,9 @@ service cloud.firestore {
                              resource.data.authorUid == request.auth.uid
                              && !request.resource.data.diff(resource.data)
                                   .affectedKeys()
-                                  .hasAny(['likedBy', 'likes'])
+                                  .hasAny(['likedBy', 'likes', 'replies'])
                            )
-                           || request.resource.data.diff(resource.data)
-                                .affectedKeys().hasOnly(['replies'])
+                           || appendsOwnReviewReply()
                          );
       }
     }
@@ -262,14 +399,12 @@ service cloud.firestore {
     }
 
     // ── Notifications ────────────────────────────────────────
-    // Anyone signed in may create (that's how "X followed you"
-    // reaches another account). Only the recipient reads them,
-    // and the only mutation allowed is flipping `read`.
+    // Creation is server-owned through createSocialNotification so clients
+    // cannot forge actor identity or bypass private recipient preferences.
     match /notifications/{id} {
       allow read:   if request.auth != null
                     && resource.data.recipientId == request.auth.uid;
-      allow create: if activeUser()
-                    && request.resource.data.recipientId is string;
+      allow create: if false;
       allow update: if activeUser()
                     && resource.data.recipientId == request.auth.uid
                     && request.resource.data.diff(resource.data)

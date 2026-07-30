@@ -105,11 +105,122 @@ test('curtida altera somente o uid do próprio usuário', async () => {
   await assertSucceeds(updateDoc(review, { likedBy: ['existing'], likes: 1 }));
 });
 
+test('resposta só pode anexar um item próprio sem reescrever as respostas existentes', async () => {
+  const originalReply = {
+    id: 'rep-original',
+    uid: 'existing',
+    user: 'Existing',
+    avatar: 'E',
+    text: 'Resposta original',
+    date: new Date().toISOString(),
+  };
+  await environment.withSecurityRulesDisabled(async (context) => setDoc(
+    doc(context.firestore(), 'reviews/tv_1/items/review-reply'),
+    {
+      authorUid: 'author',
+      text: 'teste',
+      replies: [originalReply],
+      likedBy: [],
+      likes: 0,
+    },
+  ));
+
+  const member = environment.authenticatedContext('member-a').firestore();
+  const author = environment.authenticatedContext('author').firestore();
+  const review = doc(member, 'reviews/tv_1/items/review-reply');
+  const ownReply = {
+    id: 'rep-member',
+    uid: 'member-a',
+    user: 'Member',
+    avatar: 'M',
+    text: 'Nova resposta',
+    date: new Date().toISOString(),
+  };
+
+  await assertSucceeds(updateDoc(review, { replies: [originalReply, ownReply] }));
+  await assertFails(updateDoc(review, { replies: [ownReply] }));
+  await assertFails(updateDoc(review, {
+    replies: [originalReply, { ...ownReply, id: 'rep-forged', uid: 'another-user' }],
+  }));
+  await assertFails(updateDoc(doc(author, 'reviews/tv_1/items/review-reply'), { replies: [] }));
+});
+
+test('notificação social é criada apenas pelo servidor e pertence ao destinatário', async () => {
+  const sender = environment.authenticatedContext('sender-a').firestore();
+  const recipient = environment.authenticatedContext('recipient-a').firestore();
+  const other = environment.authenticatedContext('other-a').firestore();
+  const notification = {
+    recipientId: 'recipient-a',
+    category: 'account',
+    type: 'comment_like',
+    actorId: 'sender-a',
+    actorUsername: 'sender',
+    actorName: 'Sender',
+    actorAvatarLetter: 'S',
+    actorAvatarImage: '',
+    commentSnippet: 'Comentário',
+    read: false,
+    createdAt: new Date().toISOString(),
+    link: '/comments?key=tv_1',
+  };
+
+  await assertFails(setDoc(doc(sender, 'notifications/client-create'), notification));
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'notifications/server-created'), notification);
+    await setDoc(doc(context.firestore(), 'notifications/server-created-delete'), notification);
+  });
+  await assertSucceeds(getDoc(doc(recipient, 'notifications/server-created')));
+  await assertFails(getDoc(doc(other, 'notifications/server-created')));
+  await assertSucceeds(updateDoc(doc(recipient, 'notifications/server-created'), { read: true }));
+  await assertFails(updateDoc(doc(recipient, 'notifications/server-created'), { actorId: 'forged' }));
+  await assertSucceeds(deleteDoc(doc(recipient, 'notifications/server-created-delete')));
+});
+
 test('conta suspensa perde escritas mesmo com token de cliente ainda presente', async () => {
-  await environment.withSecurityRulesDisabled(async (context) => setDoc(doc(context.firestore(), 'users/suspended'), { profile: { name: 'S' }, accountStatus: 'suspended' }));
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users/suspended'), { profile: { name: 'S' } });
+    await setDoc(doc(context.firestore(), 'users/suspended/system/account'), {
+      accountStatus: 'suspended',
+      schemaVersion: 1,
+    });
+  });
   const suspended = environment.authenticatedContext('suspended').firestore();
   await assertFails(setDoc(doc(suspended, 'reviews/tv_1/items/suspended-review'), { authorUid: 'suspended', text: 'não deve gravar' }));
   await assertFails(updateDoc(doc(suspended, 'users/suspended'), { 'profile.name': 'Tentativa' }));
+});
+
+test('dados privados pertencem apenas ao titular e campos legados não voltam ao perfil público', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => setDoc(
+    doc(context.firestore(), 'users/private-owner'),
+    { profile: { name: 'Titular' } },
+  ));
+  const owner = environment.authenticatedContext('private-owner').firestore();
+  const other = environment.authenticatedContext('private-other').firestore();
+  const preferences = {
+    value: { pushEnabled: true },
+    schemaVersion: 1,
+    updatedAt: new Date(),
+  };
+
+  await assertSucceeds(setDoc(
+    doc(owner, 'users/private-owner/private/preferences'),
+    preferences,
+  ));
+  await assertSucceeds(getDoc(doc(owner, 'users/private-owner/private/preferences')));
+  await assertFails(getDoc(doc(other, 'users/private-owner/private/preferences')));
+  await assertFails(setDoc(doc(owner, 'users/private-owner/private/unknown'), {
+    value: { arbitrary: true },
+    schemaVersion: 1,
+    updatedAt: new Date(),
+  }));
+  for (const field of ['prefs', 'expenses', 'blocked_list', 'ep_watched', 'fcm_tokens', 'lastActiveAt']) {
+    await assertFails(updateDoc(doc(owner, 'users/private-owner'), { [field]: [] }));
+  }
+  await assertFails(getDoc(doc(owner, 'users/private-owner/system/account')));
+  await assertFails(setDoc(doc(owner, 'users/private-owner/system/account'), {
+    accountStatus: 'active',
+    schemaVersion: 1,
+  }));
 });
 
 test('progresso por temporada é restaurado pelo uid e permanece privado e determinístico', async () => {
