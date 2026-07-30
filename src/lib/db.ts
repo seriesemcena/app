@@ -29,6 +29,17 @@ import { slugifyUsername, usernameFromNameOrEmail, usernameCandidate, USERNAME_F
 import { cachedRequest, invalidateCache } from './cache';
 import { CACHE_TTL, FIRESTORE_PAGE_SIZE, boundedPageSize } from './dataPolicy';
 import { dataCostDebug } from './devDataMetrics';
+import {
+  SEASON_PROGRESS_SCHEMA_VERSION,
+  calculateWatchedDuration,
+  legacyHistoryToSeasonProgress,
+  mergeSeasonProgress,
+  recordsToLegacyHistory,
+  seasonProgressId,
+  uniqueEpisodeNumbers,
+  type LegacyEpisodeHistory,
+  type SeasonProgressRecord,
+} from './seasonProgress';
 
 type ListType = 'want' | 'watching' | 'watched' | 'favorites';
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
@@ -843,6 +854,14 @@ export type ReportDoc = {
   /** comment = denúncia de comentário; profile = denúncia de perfil;
       problem = "relatar problema" de uma página de título */
   kind: 'comment' | 'profile' | 'problem';
+  /** Stable structured reference used by moderation. `kind` is kept for
+      compatibility with reports created before this field existed. */
+  contentType: 'comment' | 'reply' | 'profile' | 'movie' | 'series' | 'other';
+  contentId: string;
+  parentContentId?: string;
+  reportedUserId?: string;
+  titleId?: string;
+  titleType?: 'movie' | 'tv';
   reason: 'spoiler' | 'spam' | 'offense' | 'other' | 'problem';
   /** free text (reason 'other' / 'problem') */
   details?: string;
@@ -855,7 +874,7 @@ export type ReportDoc = {
   reportedUser?: string;
   reportedBy: string;
   reportedByName?: string;
-  status: 'open' | 'resolved' | 'dismissed';
+  status: 'open' | 'in_review' | 'resolved' | 'rejected' | 'dismissed';
   createdAt: string;
 };
 
@@ -1085,6 +1104,104 @@ export function subscribeUserDoc(db: Firestore, uid: string): Unsubscribe {
 export const dbEpWatchedStore = {
   async set(db: Firestore, uid: string, data: Record<string, Record<string, number[]>>) {
     await setField(db, ['users', uid], 'ep_watched', data);
+  },
+};
+
+// ── Canonical per-season progress ────────────────────────────
+
+const seasonProgressRef = (db: Firestore, uid: string, seriesId: string | number, seasonNumber: number) =>
+  doc(db, 'users', uid, 'seasonProgress', seasonProgressId(seriesId, seasonNumber));
+
+export const dbSeasonProgressStore = {
+  async getAll(db: Firestore, uid: string): Promise<SeasonProgressRecord[]> {
+    const snap = await getDocs(collection(db, 'users', uid, 'seasonProgress'));
+    dataCostDebug.query('season-progress:get-all', snap.size);
+    return snap.docs.map((entry) => entry.data() as SeasonProgressRecord);
+  },
+
+  async merge(db: Firestore, uid: string, incoming: Partial<SeasonProgressRecord> & {
+    seriesId: number;
+    seasonNumber: number;
+  }): Promise<SeasonProgressRecord> {
+    const ref = seasonProgressRef(db, uid, incoming.seriesId, incoming.seasonNumber);
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      const next = mergeSeasonProgress(
+        snap.exists() ? snap.data() as SeasonProgressRecord : null,
+        {
+          ...incoming,
+          uid,
+          updatedAt: new Date().toISOString(),
+          schemaVersion: SEASON_PROGRESS_SCHEMA_VERSION,
+        },
+      );
+      transaction.set(ref, next, { merge: true });
+      return next;
+    });
+  },
+
+  async setEpisode(db: Firestore, uid: string, input: {
+    seriesId: number;
+    seasonNumber: number;
+    episodeNumber: number;
+    watched: boolean;
+    runtime?: number;
+    episodeCount?: number;
+  }): Promise<SeasonProgressRecord> {
+    const ref = seasonProgressRef(db, uid, input.seriesId, input.seasonNumber);
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      const current = snap.exists() ? snap.data() as SeasonProgressRecord : null;
+      const watchedEpisodeNumbers = uniqueEpisodeNumbers(current?.watchedEpisodeNumbers);
+      const nextEpisodes = input.watched
+        ? uniqueEpisodeNumbers([...watchedEpisodeNumbers, input.episodeNumber])
+        : watchedEpisodeNumbers.filter((episode) => episode !== input.episodeNumber);
+      const episodeDurations = { ...(current?.episodeDurations ?? {}) };
+      if (input.runtime && input.runtime > 0) episodeDurations[String(input.episodeNumber)] = Math.round(input.runtime);
+      const episodeCount = Math.max(Number(current?.episodeCount) || 0, Number(input.episodeCount) || 0);
+      const completed = episodeCount > 0 && nextEpisodes.length >= episodeCount;
+      const next: SeasonProgressRecord = {
+        uid,
+        seriesId: input.seriesId,
+        seasonNumber: input.seasonNumber,
+        watchedEpisodeNumbers: nextEpisodes,
+        episodeDurations,
+        episodeCount,
+        watchedDurationMinutes: calculateWatchedDuration(nextEpisodes, episodeDurations),
+        completedAt: completed ? (current?.completedAt ?? new Date().toISOString()) : null,
+        updatedAt: new Date().toISOString(),
+        source: 'episode',
+        schemaVersion: SEASON_PROGRESS_SCHEMA_VERSION,
+      };
+      transaction.set(ref, next, { merge: true });
+      return next;
+    });
+  },
+
+  async completeSeason(db: Firestore, uid: string, input: {
+    seriesId: number;
+    seasonNumber: number;
+    episodeNumbers: number[];
+    episodeDurations?: Record<string, number>;
+    source?: SeasonProgressRecord['source'];
+  }): Promise<SeasonProgressRecord> {
+    return dbSeasonProgressStore.merge(db, uid, {
+      uid,
+      seriesId: input.seriesId,
+      seasonNumber: input.seasonNumber,
+      watchedEpisodeNumbers: uniqueEpisodeNumbers(input.episodeNumbers),
+      episodeDurations: input.episodeDurations ?? {},
+      episodeCount: uniqueEpisodeNumbers(input.episodeNumbers).length,
+      completedAt: new Date().toISOString(),
+      source: input.source ?? 'season-finish',
+    });
+  },
+
+  subscribe(db: Firestore, uid: string, callback: (records: SeasonProgressRecord[]) => void): Unsubscribe {
+    return onSnapshot(collection(db, 'users', uid, 'seasonProgress'), (snap) => {
+      dataCostDebug.query('season-progress:listener', snap.size);
+      callback(snap.docs.map((entry) => entry.data() as SeasonProgressRecord));
+    });
   },
 };
 
@@ -1560,9 +1677,42 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
     try {
       const userSnap = await getDoc(doc(db, 'users', uid));
       const data = userSnap.data();
-      if (data?.ep_watched && typeof data.ep_watched === 'object') {
-        localStorage.setItem('sec_ep_watched_v1', JSON.stringify(data.ep_watched));
+      const legacyHistory = data?.ep_watched && typeof data.ep_watched === 'object'
+        ? data.ep_watched as LegacyEpisodeHistory
+        : {};
+      const canonical = await dbSeasonProgressStore.getAll(db, uid);
+      const migrationSnap = await getDoc(doc(db, 'users', uid, 'private', 'migration_state'));
+      const canonicalIsAuthoritative = migrationSnap.data()?.seasonProgressV1 === true;
+      const canonicalById = new Map(canonical.map((record) => [
+        seasonProgressId(record.seriesId, record.seasonNumber),
+        record,
+      ]));
+
+      // Import the legacy map only before the one-time migration marker
+      // exists. Re-merging it on every login resurrected episodes that the
+      // user had deliberately unmarked on another device.
+      if (!canonicalIsAuthoritative) {
+        for (const legacyRecord of legacyHistoryToSeasonProgress(uid, legacyHistory)) {
+          const id = seasonProgressId(legacyRecord.seriesId, legacyRecord.seasonNumber);
+          const current = canonicalById.get(id);
+          const merged = mergeSeasonProgress(current, legacyRecord);
+          canonicalById.set(id, merged);
+          if (!current || merged.watchedEpisodeNumbers.length !== current.watchedEpisodeNumbers.length) {
+            try { await dbSeasonProgressStore.merge(db, uid, merged); } catch {}
+          }
+        }
       }
+
+      const normalizedProgress = Array.from(canonicalById.values());
+      const { seasonProgressStore } = await import('./store');
+      seasonProgressStore.setAll(normalizedProgress);
+      // If no canonical record exists, explicitly clear the cache. This is
+      // essential when a different signed-in account owns the browser.
+      localStorage.setItem('sec_ep_watched_v1', JSON.stringify(
+        normalizedProgress.length > 0
+          ? recordsToLegacyHistory(normalizedProgress)
+          : (canonicalIsAuthoritative ? {} : legacyHistory),
+      ));
       if (Array.isArray(data?.expenses)) {
         localStorage.setItem('sec_expenses_v1', JSON.stringify(data.expenses));
       }
@@ -1596,17 +1746,32 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
 export async function migrateLocalToFirestore(db: Firestore, uid: string) {
   if (typeof window === 'undefined') return;
   const MIGRATED_KEY = `sec_migrated_${uid}`;
-  if (localStorage.getItem(MIGRATED_KEY)) return; // already done
+  const migrationRef = doc(db, 'users', uid, 'private', 'migration_state');
+  try {
+    const migrationSnap = await getDoc(migrationRef);
+    if (migrationSnap.data()?.seasonProgressV1 === true) {
+      localStorage.setItem(MIGRATED_KEY, '1');
+      return;
+    }
+  } catch {
+    // Offline migration can still proceed idempotently; deterministic IDs and
+    // merge transactions make a retry safe.
+    if (localStorage.getItem(MIGRATED_KEY)) return;
+  }
 
   try {
-    const { listStore, revStore, profileStore, prefsStore, proSettingsStore } = await import('./store');
+    const { listStore, revStore, profileStore, prefsStore, proSettingsStore, epWatchedStore } = await import('./store');
 
     const profile = profileStore.get(uid);
     if (profile.name) await dbProfileStore.set(db, uid, profile);
 
     for (const type of ['want', 'watching', 'watched', 'favorites'] as ListType[]) {
-      const items = listStore.get(type);
-      if (items.length) await setField(db, ['users', uid], `lists_${type}`, items);
+      const localItems = listStore.get(type);
+      const remoteItems = await dbListStore.get(db, uid, type);
+      const byId = new Map(remoteItems.map((item) => [`${item.type}:${item.id}`, item]));
+      localItems.forEach((item) => byId.set(`${item.type}:${item.id}`, item));
+      const mergedItems = Array.from(byId.values());
+      if (mergedItems.length) await setField(db, ['users', uid], `lists_${type}`, mergedItems);
     }
 
     const prefs = prefsStore.get();
@@ -1618,11 +1783,31 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
       await dbProSettingsStore.set(db, uid, proSettingsStore.get(uid));
     }
 
-    // migrate episode watched data
-    const { epWatchedStore } = await import('./store');
-    const epWatched = epWatchedStore.getAll();
-    if (Object.keys(epWatched).length) {
-      await setField(db, ['users', uid], 'ep_watched', epWatched);
+    // Merge legacy episode history instead of replacing the remote map.
+    const localHistory = epWatchedStore.getAll();
+    const remoteHistory = await getField<LegacyEpisodeHistory>(db, ['users', uid], 'ep_watched', {});
+    const mergedHistory: LegacyEpisodeHistory = structuredClone(remoteHistory);
+    for (const [seriesId, seasons] of Object.entries(localHistory)) {
+      mergedHistory[seriesId] ??= {};
+      for (const [seasonNumber, episodes] of Object.entries(seasons)) {
+        mergedHistory[seriesId][seasonNumber] = uniqueEpisodeNumbers([
+          ...(mergedHistory[seriesId][seasonNumber] ?? []),
+          ...episodes,
+        ]);
+      }
+    }
+    if (Object.keys(mergedHistory).length) {
+      await setField(db, ['users', uid], 'ep_watched', mergedHistory);
+      const completedSeries = new Set(listStore.get('watched')
+        .filter((item) => item.type === 'tv')
+        .map((item) => item.id));
+      for (const record of legacyHistoryToSeasonProgress(uid, mergedHistory)) {
+        if (completedSeries.has(record.seriesId)) {
+          record.episodeCount = record.watchedEpisodeNumbers.length;
+          record.completedAt = record.updatedAt;
+        }
+        await dbSeasonProgressStore.merge(db, uid, record);
+      }
     }
 
     // migrate reviews — one doc per review; local reviews were written on
@@ -1635,6 +1820,11 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
       }
     }
 
+    await setDoc(migrationRef, {
+      seasonProgressV1: true,
+      seasonProgressMigratedAt: new Date().toISOString(),
+      schemaVersion: SEASON_PROGRESS_SCHEMA_VERSION,
+    }, { merge: true });
     localStorage.setItem(MIGRATED_KEY, '1');
     console.info('[DB] localStorage migrated to Firestore ✓');
   } catch (e) {

@@ -44,9 +44,9 @@ export const AppBar = ({
   title, left, right, transparent,
 }: { title?: string; left?: ReactNode; right?: ReactNode; transparent?: boolean }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(var(--safe-area-top) + 12px) calc(var(--safe-area-right) + 16px) 12px calc(var(--safe-area-left) + 16px)', background: transparent ? 'transparent' : T.bg, borderBottom: transparent ? 'none' : `1px solid ${T.border}`, minHeight: 'calc(52px + var(--safe-area-top))', flexShrink: 0 }}>
-    <div style={{ width: 44 }}>{left}</div>
+    <div className="app-bar-action-slot" style={{ width: 44 }}>{left}</div>
     <Txt size={16} weight={700} color={T.t1}>{title}</Txt>
-    <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
+    <div className="app-bar-action-slot" style={{ width: 44, display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
   </div>
 );
 
@@ -78,7 +78,7 @@ export function GlassHeader({
   if (!hasHeaderContent) return null;
 
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(46px + var(--safe-area-top))', overflow: 'visible' } as CSSProperties}>
+    <div style={{ position: 'sticky', top: 0, zIndex: 50, flexShrink: 0, height: 'calc(var(--app-sticky-header-row-height) + var(--safe-area-top))', overflow: 'visible' } as CSSProperties}>
       {showChrome && (
         <>
           {/* Camadas de blur progressivo — opaco no topo, some para baixo */}
@@ -111,11 +111,11 @@ export function GlassHeader({
       <div style={{
         position: 'absolute', zIndex: 2,
         top: 'var(--safe-area-top)', left: 0, right: 0,
-        height: 46,
+        height: 'var(--app-sticky-header-row-height)',
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', padding: '0 12px',
       }}>
-        <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
+        <div className="glass-header-action-slot" style={{ width: 44, display: 'flex', alignItems: 'center' }}>{left}</div>
 
         <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: contentAlign === 'start' ? 'flex-start' : 'center', alignItems: 'center' }}>
           {/* Conteúdo central — some quando navTitle ativo */}
@@ -134,7 +134,7 @@ export function GlassHeader({
               position: 'absolute', inset: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               opacity: showNavTitle ? 1 : 0,
-              transform: showNavTitle ? 'translateY(3px)' : 'translateY(8px)',
+              transform: showNavTitle ? 'translateY(0)' : 'translateY(5px)',
               transition: 'opacity 0.22s ease, transform 0.22s ease',
               pointerEvents: 'none',
             } as CSSProperties}>
@@ -146,7 +146,7 @@ export function GlassHeader({
           )}
         </div>
 
-        <div style={{ width: 44, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>{right}</div>
+        <div className="glass-header-action-slot" style={{ width: 44, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>{right}</div>
       </div>
     </div>
   );

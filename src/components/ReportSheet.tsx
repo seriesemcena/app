@@ -27,6 +27,12 @@ export type ReportTarget = {
   titleKey?: string;
   contentSnippet?: string;
   reportedUser?: string;
+  contentType: ReportDoc['contentType'];
+  contentId: string;
+  parentContentId?: string;
+  reportedUserId?: string;
+  titleId?: string;
+  titleType?: ReportDoc['titleType'];
 };
 
 const TITLES: Record<ReportDoc['kind'], string> = {
@@ -79,6 +85,12 @@ export function ReportSheet({ target, onClose }: { target: ReportTarget | null; 
       targetLabel: target.targetLabel,
       contentSnippet: target.contentSnippet,
       reportedUser: target.reportedUser,
+      contentType: target.contentType,
+      contentId: target.contentId,
+      parentContentId: target.parentContentId,
+      reportedUserId: target.reportedUserId,
+      titleId: target.titleId,
+      titleType: target.titleType,
       reportedBy: user.uid,
       reportedByName: prof.username || prof.name || user.displayName || '',
     });

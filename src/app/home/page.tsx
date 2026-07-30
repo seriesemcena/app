@@ -498,7 +498,7 @@ export default function HomePage() {
                   ))}
                   <div style={{ position: 'absolute', inset: 0, background: homeScrollChromeTint }} />
                 </div>
-                <button aria-label="Notificações" onClick={() => router.push('/notifications')}
+                <button className="ios-top-action" aria-label="Notificações" onClick={() => router.push('/notifications')}
                   style={{ position: 'absolute', zIndex: 3, top: 'calc(var(--safe-area-top) + 6px)', right: 12, width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: 'rgba(255,255,255,0.14)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3)' } as React.CSSProperties}>
                   <Icon name="bell" size={16} color="#fff" />
                 </button>

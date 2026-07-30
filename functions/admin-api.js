@@ -10,7 +10,7 @@ const { logger } = require('firebase-functions');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const {
-  ALL_PERMISSIONS, ROLE_PERMISSIONS, ApiError, cleanForAudit, cleanString, decodeCursor,
+  ROLE_PERMISSIONS, ApiError, cleanForAudit, cleanString, decodeCursor,
   encodeCursor, isAdminRole, isPermission, requireConfirmation, roleCan,
   safeHttpsUrl, stableHash, verifyCloudflareJwtWithJwks,
 } = require('./admin-security');
@@ -349,6 +349,206 @@ async function saveBanner(id, data) {
   await batch.commit();
 }
 
+const POPUP_AUDIENCES = Object.freeze(['all', 'visitors', 'registered', 'free', 'pro']);
+const POPUP_FREQUENCIES = Object.freeze(['every_visit', 'once_session', 'once_day', 'once_user', 'custom']);
+
+function popupBannerPayload(input, actor, existing = {}) {
+  const startsAt = bannerDate(input.startsAt, 'Início');
+  const endsAt = bannerDate(input.endsAt, 'Término');
+  if (startsAt && endsAt && startsAt.toMillis() >= endsAt.toMillis()) {
+    throw new ApiError(422, 'INVALID_POPUP_PERIOD', 'O término deve ser posterior ao início.');
+  }
+  const requestedAudiences = Array.isArray(input.audiences) ? input.audiences : [];
+  if (requestedAudiences.some((value) => !POPUP_AUDIENCES.includes(value))) {
+    throw new ApiError(422, 'INVALID_POPUP_AUDIENCE', 'A segmentação informada não é permitida.');
+  }
+  const audiences = [...new Set(requestedAudiences)];
+  if (!audiences.length) throw new ApiError(422, 'POPUP_AUDIENCE_REQUIRED', 'Selecione ao menos um público.');
+  const frequency = POPUP_FREQUENCIES.includes(input.frequency) ? input.frequency : 'once_session';
+  const imageDesktopUrl = safeHttpsUrl(input.imageDesktopUrl);
+  if (!imageDesktopUrl) throw new ApiError(422, 'POPUP_DESKTOP_IMAGE_REQUIRED', 'Envie a imagem para desktop.');
+  const altText = cleanString(input.altText, 240);
+  if (!altText) throw new ApiError(422, 'POPUP_ALT_REQUIRED', 'Informe um texto alternativo para a imagem.');
+  return {
+    name: cleanString(input.name, 120) || 'Campanha sem nome',
+    imageDesktopUrl,
+    imageMobileUrl: safeHttpsUrl(input.imageMobileUrl),
+    altText,
+    destinationUrl: bannerDestination(input.destinationUrl),
+    openTarget: input.openTarget === 'new' ? 'new' : 'same',
+    active: input.active === true,
+    audiences,
+    frequency,
+    frequencyHours: frequency === 'custom' ? Math.max(1, Math.min(8760, Math.round(Number(input.frequencyHours) || 24))) : 24,
+    priority: Math.max(0, Math.min(100, Math.round(Number(input.priority) || 0))),
+    startsAt,
+    endsAt,
+    metrics: existing.metrics || { views: 0, clicks: 0, closes: 0 },
+    createdAt: existing.createdAt || FieldValue.serverTimestamp(),
+    createdBy: existing.createdBy || actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.uid,
+  };
+}
+
+function publicPopupBannerPayload(data) {
+  return {
+    imageDesktopUrl: data.imageDesktopUrl,
+    imageMobileUrl: data.imageMobileUrl,
+    altText: data.altText,
+    destinationUrl: data.destinationUrl,
+    openTarget: data.openTarget,
+    active: data.active,
+    audiences: data.audiences,
+    frequency: data.frequency,
+    frequencyHours: data.frequencyHours,
+    priority: data.priority,
+    startsAt: data.startsAt,
+    endsAt: data.endsAt,
+    publishedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function popupBannerDocumentData(snapshot) {
+  const data = snapshot.data() || {};
+  return {
+    id: snapshot.id,
+    name: cleanString(data.name, 120),
+    imageDesktopUrl: typeof data.imageDesktopUrl === 'string' ? data.imageDesktopUrl : '',
+    imageMobileUrl: typeof data.imageMobileUrl === 'string' ? data.imageMobileUrl : '',
+    altText: cleanString(data.altText, 240),
+    destinationUrl: typeof data.destinationUrl === 'string' ? data.destinationUrl : '',
+    openTarget: data.openTarget === 'new' ? 'new' : 'same',
+    active: data.active === true,
+    audiences: Array.isArray(data.audiences) ? data.audiences.filter((value) => POPUP_AUDIENCES.includes(value)) : [],
+    frequency: POPUP_FREQUENCIES.includes(data.frequency) ? data.frequency : 'once_session',
+    frequencyHours: Number(data.frequencyHours || 24),
+    priority: Number(data.priority || 0),
+    metrics: {
+      views: Number(data.metrics?.views || 0),
+      clicks: Number(data.metrics?.clicks || 0),
+      closes: Number(data.metrics?.closes || 0),
+    },
+    createdAt: toIso(data.createdAt), updatedAt: toIso(data.updatedAt),
+    startsAt: toIso(data.startsAt), endsAt: toIso(data.endsAt),
+  };
+}
+
+async function savePopupBanner(id, data) {
+  const batch = db.batch();
+  batch.set(db.doc(`popup_banners/${id}`), data, { merge: true });
+  const publicRef = db.doc(`public_popup_banners/${id}`);
+  if (data.active) batch.set(publicRef, publicPopupBannerPayload(data));
+  else batch.delete(publicRef);
+  await batch.commit();
+}
+
+function reportContentType(report) {
+  if (['comment', 'reply', 'profile', 'movie', 'series', 'other'].includes(report.contentType)) return report.contentType;
+  if (report.kind === 'profile') return 'profile';
+  if (report.kind === 'comment') return 'comment';
+  if (String(report.titleType || '').toLowerCase() === 'movie') return 'movie';
+  if (String(report.titleType || '').toLowerCase() === 'tv') return 'series';
+  return 'other';
+}
+
+function safeReportedAuthor(value, fallbackId = '') {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    id: cleanString(source.uid || source.id || fallbackId, 160),
+    name: cleanString(source.user || source.name || source.displayName, 120),
+    username: cleanString(source.username, 80),
+    avatarUrl: [source.avatar, source.avatarImage, source.photoUrl, source.avatarThumbImage]
+      .find((candidate) => typeof candidate === 'string') || '',
+  };
+}
+
+async function resolveReportedContent(reportId) {
+  const reportSnapshot = await db.doc(`reports/${reportId}`).get();
+  if (!reportSnapshot.exists) throw new ApiError(404, 'NOT_FOUND', 'Denúncia não encontrada.');
+  const report = reportSnapshot.data() || {};
+  const contentType = reportContentType(report);
+  const contentId = cleanString(report.contentId || report.targetId, 300);
+  const parentContentId = cleanString(report.parentContentId, 300);
+  const titleKey = cleanString(report.titleKey || report.titleId, 300);
+  const unavailable = () => ({
+    reportId, contentType, contentId, parentContentId,
+    available: false, message: 'Conteúdo indisponível ou removido',
+  });
+
+  if (contentType === 'comment' || contentType === 'reply') {
+    if (!titleKey || !contentId) return unavailable();
+    const reviewId = contentType === 'reply' ? parentContentId : contentId;
+    if (!reviewId) return unavailable();
+    const reviewSnapshot = await db.doc(`reviews/${titleKey}/items/${reviewId}`).get();
+    if (!reviewSnapshot.exists) return unavailable();
+    const review = reviewSnapshot.data() || {};
+    if (contentType === 'reply') {
+      const reply = (Array.isArray(review.replies) ? review.replies : []).find((item) => String(item?.id || '') === contentId);
+      if (!reply) return unavailable();
+      return {
+        reportId, contentType, contentId, parentContentId: reviewId, available: true,
+        titleKey, title: cleanString(report.targetLabel || review.titleName || titleKey, 180),
+        author: safeReportedAuthor(reply, report.reportedUserId),
+        body: cleanString(reply.text || reply.body, 3000),
+        mediaUrl: typeof reply.gifUrl === 'string' ? reply.gifUrl : typeof reply.imageUrl === 'string' ? reply.imageUrl : '',
+        parent: { id: reviewId, author: safeReportedAuthor(review), body: cleanString(review.text || review.body, 1000) },
+        appUrl: `/comments?key=${encodeURIComponent(titleKey)}&commentId=${encodeURIComponent(reviewId)}`,
+      };
+    }
+    return {
+      reportId, contentType, contentId, available: true, titleKey,
+      title: cleanString(report.targetLabel || review.titleName || titleKey, 180),
+      author: safeReportedAuthor(review, report.reportedUserId),
+      body: cleanString(review.text || review.body, 3000),
+      mediaUrl: typeof review.gifUrl === 'string' ? review.gifUrl : typeof review.imageUrl === 'string' ? review.imageUrl : '',
+      replyCount: Array.isArray(review.replies) ? review.replies.length : 0,
+      appUrl: `/comments?key=${encodeURIComponent(titleKey)}&commentId=${encodeURIComponent(contentId)}`,
+    };
+  }
+
+  if (contentType === 'profile') {
+    let profileSnapshot = null;
+    const uid = cleanString(report.reportedUserId, 160);
+    if (uid) {
+      const candidate = await db.doc(`users/${uid}`).get();
+      if (candidate.exists) profileSnapshot = candidate;
+    }
+    if (!profileSnapshot && contentId) {
+      const profiles = await db.collection('users').where('profile.username', '==', contentId.replace(/^@/, '')).limit(1).get();
+      profileSnapshot = profiles.docs[0] || null;
+    }
+    if (!profileSnapshot?.exists) return unavailable();
+    const profile = profileSnapshot.data()?.profile || {};
+    const username = cleanString(profile.username || contentId, 80).replace(/^@/, '');
+    return {
+      reportId, contentType, contentId: profileSnapshot.id, available: true,
+      author: safeReportedAuthor({ ...profile, uid: profileSnapshot.id }, profileSnapshot.id),
+      body: cleanString(profile.bio, 500),
+      appUrl: username ? `/user/${encodeURIComponent(username)}` : '',
+    };
+  }
+
+  if (contentType === 'movie' || contentType === 'series') {
+    const titleId = cleanString(report.titleId || contentId, 80).replace(/^(?:movie|tv)_/, '');
+    if (!titleId) return unavailable();
+    const type = contentType === 'series' ? 'tv' : 'movie';
+    return {
+      reportId, contentType, contentId: titleId, available: true,
+      title: cleanString(report.targetLabel, 180),
+      author: null, body: cleanString(report.details || report.contentSnippet, 1000),
+      appUrl: `/title/${type}/${encodeURIComponent(titleId)}`,
+    };
+  }
+
+  if (!contentId && !report.targetLabel) return unavailable();
+  return {
+    reportId, contentType, contentId, available: true,
+    title: cleanString(report.targetLabel, 180), author: safeReportedAuthor({}, report.reportedUserId),
+    body: cleanString(report.contentSnippet || report.details, 3000), appUrl: '',
+  };
+}
+
 function landingPageSlug(value) {
   const slug = String(value || '')
     .normalize('NFD')
@@ -651,6 +851,20 @@ async function route(req, res, actor, requestIdValue, parts) {
     const snapshots = await Promise.all(page.items.map((item) => db.doc(`app_banners/${item.id}`).get()));
     return send(res, 200, requestIdValue, { ...page, items: snapshots.filter((snapshot) => snapshot.exists).map(bannerDocumentData) });
   }
+  if (resource === 'popup-banners' && method === 'GET' && !id) {
+    requirePermission(actor, 'content.read');
+    const page = await listQuery(db.collection('popup_banners'), db.collection('popup_banners').orderBy('updatedAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'));
+    const snapshots = await Promise.all(page.items.map((item) => db.doc(`popup_banners/${item.id}`).get()));
+    return send(res, 200, requestIdValue, { ...page, items: snapshots.filter((snapshot) => snapshot.exists).map(popupBannerDocumentData) });
+  }
+  if (resource === 'popup-banners' && id && action === 'metrics' && method === 'GET') {
+    requirePermission(actor, 'content.read');
+    const campaign = await db.doc(`popup_banners/${id}`).get();
+    if (!campaign.exists) throw new ApiError(404, 'NOT_FOUND', 'Campanha não encontrada.');
+    const metrics = await db.collection('popup_banner_metrics').where('bannerId', '==', id).limit(250).get();
+    const items = metrics.docs.map(documentData).sort((left, right) => String(right.date).localeCompare(String(left.date)));
+    return send(res, 200, requestIdValue, { campaign: popupBannerDocumentData(campaign), items });
+  }
   if (resource === 'pages' && method === 'GET' && !id) {
     requirePermission(actor, 'content.read');
     const page = await listQuery(db.collection('app_pages'), db.collection('app_pages').orderBy('updatedAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'));
@@ -659,6 +873,10 @@ async function route(req, res, actor, requestIdValue, parts) {
   }
   if (resource === 'comments' && method === 'GET' && !id) { requirePermission(actor, 'comments.read'); return send(res, 200, requestIdValue, await listComments(url.searchParams.get('limit'))); }
   if (resource === 'reports' && method === 'GET' && !id) { requirePermission(actor, 'reports.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('reports'), db.collection('reports').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
+  if (resource === 'reports' && id && action === 'content' && method === 'GET') {
+    requirePermission(actor, 'reports.read');
+    return send(res, 200, requestIdValue, await resolveReportedContent(id));
+  }
   if (resource === 'notifications' && method === 'GET' && !id) { requirePermission(actor, 'notifications.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('notification_jobs'), db.collection('notification_jobs').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
   if (resource === 'settings' && method === 'GET') { requirePermission(actor, 'settings.read'); const [settings, versions] = await Promise.all([db.doc('config/app_settings').get(), db.doc('config/app_versions').get()]); return send(res, 200, requestIdValue, { settings: cleanForAudit(settings.data() || {}), versions: cleanForAudit(versions.data() || {}), unavailable: [...(!settings.exists ? ['config/app_settings'] : []), ...(!versions.exists ? ['config/app_versions'] : [])] }); }
   if (resource === 'audit-logs' && method === 'GET') { requirePermission(actor, 'audit.read'); return send(res, 200, requestIdValue, await listQuery(db.collection('auditLogs'), db.collection('auditLogs').orderBy('createdAt', 'desc'), url.searchParams.get('cursor'), url.searchParams.get('limit'))); }
@@ -791,6 +1009,37 @@ async function route(req, res, actor, requestIdValue, parts) {
     const batch = db.batch(); batch.delete(ref); batch.delete(db.doc(`public_banners/${id}`)); await batch.commit();
     await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
     await writeAudit(actor, req, requestIdValue, 'banners.delete', 'app_banners', id, { before: before.data() });
+    return send(res, 200, requestIdValue, { deleted: true });
+  }
+  if (resource === 'popup-banners' && method === 'POST' && !id) {
+    requirePermission(actor, 'content.create');
+    if (body.active === true) requirePermission(actor, 'content.publish');
+    const ref = db.collection('popup_banners').doc();
+    const data = popupBannerPayload(body, actor);
+    await savePopupBanner(ref.id, data);
+    await writeAudit(actor, req, requestIdValue, 'popup_banners.create', 'popup_banners', ref.id, { after: data });
+    return send(res, 201, requestIdValue, popupBannerDocumentData(await ref.get()));
+  }
+  if (resource === 'popup-banners' && id && method === 'PATCH') {
+    requirePermission(actor, 'content.update');
+    if (body.active === true) requirePermission(actor, 'content.publish');
+    const ref = db.doc(`popup_banners/${id}`);
+    const before = await ref.get();
+    if (!before.exists) throw new ApiError(404, 'NOT_FOUND', 'Campanha não encontrada.');
+    const data = popupBannerPayload(body, actor, before.data());
+    await savePopupBanner(id, data);
+    await writeAudit(actor, req, requestIdValue, 'popup_banners.update', 'popup_banners', id, { before: before.data(), after: data });
+    return send(res, 200, requestIdValue, popupBannerDocumentData(await ref.get()));
+  }
+  if (resource === 'popup-banners' && id && method === 'DELETE') {
+    requirePermission(actor, 'content.delete'); requireConfirmation(body, 'EXCLUIR');
+    const receipt = await claimIdempotency(actor, req, 'popup_banners.delete');
+    const ref = db.doc(`popup_banners/${id}`);
+    const before = await ref.get();
+    if (!before.exists) throw new ApiError(404, 'NOT_FOUND', 'Campanha não encontrada.');
+    const batch = db.batch(); batch.delete(ref); batch.delete(db.doc(`public_popup_banners/${id}`)); await batch.commit();
+    await receipt.set({ status: 'complete', completedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await writeAudit(actor, req, requestIdValue, 'popup_banners.delete', 'popup_banners', id, { before: before.data() });
     return send(res, 200, requestIdValue, { deleted: true });
   }
   if (resource === 'pages' && method === 'POST' && !id) {

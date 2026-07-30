@@ -24,7 +24,7 @@ const ROLE_PERMISSIONS = Object.freeze({
   admin: Object.freeze([
     'dashboard.read', 'users.read', 'users.update', 'users.password.reset',
     'users.email.update', 'users.pro.manage', 'users.suspend', 'users.ban',
-    'content.read', 'content.create', 'content.update', 'content.publish',
+    'content.read', 'content.create', 'content.update', 'content.publish', 'content.delete',
     'comments.read', 'comments.moderate', 'comments.delete',
     'ratings.read', 'ratings.moderate', 'reports.read', 'reports.resolve',
     'notifications.read', 'notifications.create', 'settings.read',

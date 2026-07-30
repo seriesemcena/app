@@ -62,6 +62,7 @@
     { "collectionGroup": "users", "fieldPath": "lists_watched", "indexes": [] },
     { "collectionGroup": "users", "fieldPath": "lists_favorites", "indexes": [] },
     { "collectionGroup": "users", "fieldPath": "ep_watched", "indexes": [] },
-    { "collectionGroup": "systemEvents", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+    { "collectionGroup": "systemEvents", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "popup_banner_event_receipts", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
   ]
 }

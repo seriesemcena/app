@@ -6,13 +6,15 @@ import { Screen, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, type TMDBItem } from '@/lib/tmdb';
-import { epWatchedStore, listStore } from '@/lib/store';
+import { epWatchedStore, listStore, seasonProgressStore } from '@/lib/store';
+import { classifySeries, type SeasonCatalogEntry } from '@/lib/seasonProgress';
 import { currentAiredSeason, overdueEpisodes } from '@/lib/seriesSchedule';
 import { MasonryGrid2 } from '@/components/posters';
 import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import i18next from '@/lib/i18n';
+import { useAuthContext } from '@/context/AuthContext';
 
 type SeriesTab = 'maratonando' | 'atrasadas' | 'finalizadas';
 
@@ -26,6 +28,7 @@ type WatchingItem = {
   overdueEpisode?: number;
   overdueCount?: number;
   network?: string;
+  classification?: 'finished' | 'watching' | 'unstarted' | 'upcoming-only';
 };
 
 type DateResult = { label: string; isToday: boolean; isTomorrow: boolean };
@@ -34,6 +37,7 @@ export default function SeriesPage() {
   const router = useRouter();
   const { t } = useTranslation('home');
   const { theme } = useTheme();
+  const { loading: authLoading } = useAuthContext();
 
   function formatDate(dateStr: string): DateResult {
     const d = new Date(dateStr + 'T00:00:00');
@@ -48,35 +52,75 @@ export default function SeriesPage() {
   const [tab, setTab] = useState<SeriesTab>('maratonando');
   const [items, setItems] = useState<WatchingItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [watchedList, setWatchedList] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
+  const [finishedList, setFinishedList] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
   const [scrolled, setScrolled] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const watched = listStore.get('watched').filter((i) => i.type === 'tv');
-    const watchedIds = new Set(watched.map((i) => i.id));
-    setWatchedList(watched);
+    if (authLoading) return;
+    let active = true;
 
-    const watching = listStore.get('watching').filter((i) => i.type === 'tv' && !watchedIds.has(i.id));
-    if (watching.length === 0) { setItems([]); setLoading(false); return; }
-    setLoading(true);
-    Promise.all(
-      watching.map(async (item) => {
+    const load = async () => {
+      const watched = listStore.get('watched').filter((item) => item.type === 'tv');
+      const watching = listStore.get('watching').filter((item) => item.type === 'tv');
+      const candidates = new Map<number, typeof watched[number]>();
+      [...watched, ...watching].forEach((item) => candidates.set(item.id, item));
+      // The per-season collection is authoritative. Rebuild candidates from
+      // it as well so a restored account still shows completed series even
+      // when an old global list is missing or stale.
+      seasonProgressStore.getAll().forEach((record) => {
+        if (!candidates.has(record.seriesId)) {
+          candidates.set(record.seriesId, {
+            id: record.seriesId,
+            title: '',
+            type: 'tv',
+            poster_path: null,
+          });
+        }
+      });
+
+      if (candidates.size === 0) {
+        if (active) {
+          setItems([]);
+          setFinishedList([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      const loaded = await Promise.all(Array.from(candidates.values()).map(async (item) => {
         try {
           const detail = await tmdb.tvDetail(item.id);
+          const progress = seasonProgressStore.getSeries(item.id);
+          const catalog: SeasonCatalogEntry[] = ((detail as any)?.seasons ?? [])
+            .filter((season: any) => Number(season?.season_number) > 0)
+            .map((season: any) => ({
+              seasonNumber: Number(season.season_number),
+              episodeCount: Number(season.episode_count) || 0,
+              airDate: season.air_date ?? null,
+            }));
+          const classification = progress.length > 0
+            ? classifySeries(catalog, progress)
+            : (watched.some((entry) => entry.id === item.id) ? 'finished' : 'unstarted');
           const next = detail?.next_episode_to_air;
           const seasonNumber = currentAiredSeason(detail || {});
           let overdue: ReturnType<typeof overdueEpisodes> = [];
 
-          if (seasonNumber) {
+          if (seasonNumber && classification === 'watching') {
             const season = await tmdb.season(item.id, seasonNumber);
-            const watched = epWatchedStore.getShow(item.id)[String(seasonNumber)] ?? [];
-            overdue = overdueEpisodes(season?.episodes || [], watched);
+            const watchedEpisodes = progress.find((record) => record.seasonNumber === seasonNumber)
+              ?.watchedEpisodeNumbers
+              ?? epWatchedStore.getShow(item.id)[String(seasonNumber)]
+              ?? [];
+            overdue = overdueEpisodes(season?.episodes || [], watchedEpisodes);
           }
 
           const latestOverdue = overdue.at(-1);
           return {
-            id: item.id, title: detail?.name || item.title, type: item.type,
+            id: item.id,
+            title: detail?.name || item.title,
+            type: item.type,
             poster_path: detail?.poster_path ?? item.poster_path ?? null,
             backdrop_path: detail?.backdrop_path ?? null,
             nextSeason: next?.season_number ?? undefined,
@@ -86,23 +130,50 @@ export default function SeriesPage() {
             overdueEpisode: latestOverdue?.episode_number ?? undefined,
             overdueCount: overdue.length,
             network: (detail as any)?.networks?.[0]?.name ?? '',
+            classification,
           } as WatchingItem;
         } catch {
-          return { ...item } as WatchingItem;
+          return {
+            ...item,
+            classification: watched.some((entry) => entry.id === item.id) ? 'finished' : 'watching',
+          } as WatchingItem;
         }
-      })
-    ).then((res) => { setItems(res); setLoading(false); });
-  }, []);
+      }));
+
+      if (!active) return;
+      setItems(loaded.filter((item) => item.classification === 'watching'));
+      setFinishedList(loaded
+        .filter((item) => item.classification === 'finished')
+        .map((item) => ({
+          id: item.id,
+          title: item.title,
+          type: item.type,
+          poster_path: item.poster_path,
+        })));
+      setLoading(false);
+    };
+
+    void load();
+    const refresh = () => { void load(); };
+    window.addEventListener('maratonou:sync', refresh);
+    return () => {
+      active = false;
+      window.removeEventListener('maratonou:sync', refresh);
+    };
+  }, [authLoading]);
 
   const atrasadas = useMemo(() => items.filter((item) => (item.overdueCount ?? 0) > 0), [items]);
   const emBreve = useMemo(() =>
-    items.filter((i) => i.nextAirDate)
-      .sort((a, b) => new Date(a.nextAirDate!).getTime() - new Date(b.nextAirDate!).getTime()),
+    [...items].sort((a, b) => {
+      if (!a.nextAirDate) return 1;
+      if (!b.nextAirDate) return -1;
+      return new Date(a.nextAirDate).getTime() - new Date(b.nextAirDate).getTime();
+    }),
   [items]);
   const emBreveGroups = useMemo(() => {
     const groups = new Map<string, WatchingItem[]>();
     emBreve.forEach((item) => {
-      const date = item.nextAirDate!;
+      const date = item.nextAirDate || '__watching__';
       groups.set(date, [...(groups.get(date) || []), item]);
     });
     return Array.from(groups, ([date, groupItems]) => ({ date, items: groupItems }));
@@ -118,26 +189,25 @@ export default function SeriesPage() {
             navTitle={t('series', { ns: 'navigation' })}
             showNavTitle={scrolled}
             contentAlign="start"
-            children={
-              <Txt
-                size={26}
-                weight={900}
-                color={T.t1}
-                style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
-              >
-                {t('series', { ns: 'navigation' })}
-              </Txt>
-            }
             right={
-              <button aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.12)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.14)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}>
+              <button className="ios-top-action" aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.12)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.14)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' } as React.CSSProperties}>
                 <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.75)'} />
               </button>
             }
-          />
+          >
+            <Txt
+              size={26}
+              weight={900}
+              color={T.t1}
+              style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
+            >
+              {t('series', { ns: 'navigation' })}
+            </Txt>
+          </GlassHeader>
 
           {/* ── Tabs — sticky logo abaixo do header ── */}
           <div style={{
-            position: 'sticky', top: 'calc(46px + var(--safe-area-top))', zIndex: 48,
+            position: 'sticky', top: 'calc(var(--app-sticky-header-row-height) + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '4px 16px 10px' : '8px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',
@@ -188,7 +258,9 @@ export default function SeriesPage() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
                     {emBreveGroups.map((group) => {
-                      const groupDate = formatDate(group.date);
+                      const groupDate = group.date === '__watching__'
+                        ? { label: t('tabs.maratonando'), isToday: false, isTomorrow: false }
+                        : formatDate(group.date);
                       return (
                         <section key={group.date}>
                           <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 10 }}>
@@ -300,7 +372,7 @@ export default function SeriesPage() {
             {/* ══ TAB: Finalizadas ══ */}
             {tab === 'finalizadas' && (
               <div style={{ padding: '20px 16px' }}>
-                {watchedList.length === 0 ? (
+                {finishedList.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
                     <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(52,199,89,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name="check" size={30} color="#1a8f3a" />
@@ -309,7 +381,7 @@ export default function SeriesPage() {
                   </div>
                 ) : (
                   <MasonryGrid2
-                    items={watchedList as unknown as TMDBItem[]}
+                    items={finishedList as unknown as TMDBItem[]}
                     onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
                     padding="0"
                     getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' })}

@@ -16,18 +16,23 @@ import {
   ReCaptchaEnterpriseProvider,
   type AppCheck,
 } from 'firebase/app-check';
+import { getStorage } from 'firebase/storage';
 
+const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
+    || (projectId ? `${projectId}.firebasestorage.app` : undefined),
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-export const firebaseConfigured = Boolean(config.apiKey && config.projectId && config.appId);
+export const firebaseConfigured = Boolean(config.apiKey && projectId && config.appId);
 const app = firebaseConfigured ? initializeApp(config) : null;
 export const auth = app ? getAuth(app) : null;
+export const storage = app ? getStorage(app) : null;
 let appCheck: AppCheck | null = null;
 
 if (auth) {

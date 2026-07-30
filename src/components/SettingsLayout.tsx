@@ -26,6 +26,7 @@ export function SettingsHeader({
       <div>
         {!hideBack && (
           <button
+            className="ios-top-action"
             type="button"
             onClick={onBack}
             aria-label="Voltar"
@@ -43,7 +44,7 @@ export function SettingsHeader({
       <Txt size={17} weight={800} color={T.t1} style={{ textAlign: 'center', letterSpacing: '-0.25px' }}>
         {title}
       </Txt>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
+      <div className="app-bar-action-slot" style={{ display: 'flex', justifyContent: 'flex-end' }}>{right}</div>
     </div>
   );
 }

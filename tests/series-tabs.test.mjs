@@ -12,12 +12,15 @@ test('series tabs follow the watching, behind and finished order', async () => {
   assert.match(source, /\(\['maratonando', 'atrasadas', 'finalizadas'\] as const\)\.map/);
 });
 
-test('watching reuses the upcoming-series content and finished uses watched titles', async () => {
+test('watching and finished tabs use the season-aware reconciled collections', async () => {
   const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
 
   assert.match(source, /tab === 'maratonando'[\s\S]*?emBreveGroups\.map/);
   assert.match(source, /tab === 'atrasadas'[\s\S]*?atrasadas\.map/);
-  assert.match(source, /tab === 'finalizadas'[\s\S]*?items=\{watchedList as unknown as TMDBItem\[\]\}/);
+  assert.match(source, /classifySeries\(catalog, progress\)/);
+  assert.match(source, /seasonProgressStore\.getAll\(\)\.forEach/);
+  assert.match(source, /setFinishedList\(loaded[\s\S]*?classification === 'finished'/);
+  assert.match(source, /tab === 'finalizadas'[\s\S]*?items=\{finishedList as unknown as TMDBItem\[\]\}/);
   assert.match(
     source,
     /t\('season', \{ number: item\.nextSeason, ns: 'title' \}\)\} · \{t\('episode', \{ number: item\.nextEpisode, ns: 'title' \}\)/,
@@ -49,8 +52,9 @@ test('behind tab checks current-season episode history after the 72-hour window'
   assert.match(schedule, /airDate \+ OVERDUE_EPISODE_WINDOW_MS <= now/);
   assert.match(schedule, /watched\.has\(episodeNumber\)/);
   assert.match(page, /const season = await tmdb\.season\(item\.id, seasonNumber\)/);
+  assert.match(page, /progress\.find\(\(record\) => record\.seasonNumber === seasonNumber\)/);
   assert.match(page, /epWatchedStore\.getShow\(item\.id\)\[String\(seasonNumber\)\]/);
-  assert.match(page, /overdueEpisodes\(season\?\.episodes \|\| \[\], watched\)/);
+  assert.match(page, /overdueEpisodes\(season\?\.episodes \|\| \[\], watchedEpisodes\)/);
   assert.match(page, /items\.filter\(\(item\) => \(item\.overdueCount \?\? 0\) > 0\)/);
 });
 

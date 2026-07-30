@@ -667,12 +667,12 @@ export default function StreamingPage({ params }: { params: Promise<{ id: string
             navTitle={platform.name}
             showNavTitle={showNavTitle}
             left={
-              <button onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: btnIconBg, border: btnIconBorder, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
+              <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: btnIconBg, border: btnIconBorder, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
                 <Icon name="chevronL" size={16} color={btnIconColor} />
               </button>
             }
             right={
-              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: btnIconBg, border: btnIconBorder, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
+              <button className="ios-top-action" aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: btnIconBg, border: btnIconBorder, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)' } as React.CSSProperties}>
                 <Icon name="bell" size={16} color={btnIconColor} />
               </button>
             }

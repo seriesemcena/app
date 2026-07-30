@@ -418,6 +418,8 @@ export default function AuthPage() {
           <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'linear-gradient(to bottom, #0D0D0F 0%, rgba(13,13,15,0.15) 40%, #0D0D0F 100%)' }} />
           {/* Back button */}
           <button
+            className="ios-top-action"
+            aria-label="Voltar"
             onClick={() => { setView('landing'); clearError(); setError(''); }}
             style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 12px)', left: 20, width: 34, height: 34, borderRadius: 17, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2 }}
           >

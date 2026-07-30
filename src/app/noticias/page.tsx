@@ -184,6 +184,8 @@ export default function NoticiasPage() {
         }}>
           {/* Back */}
           <button
+            className="ios-top-action"
+            aria-label="Voltar"
             onClick={() => navigateBack(router)}
             style={{ width: 36, height: 36, borderRadius: 18, background: 'var(--c-glass-bg)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
@@ -200,6 +202,8 @@ export default function NoticiasPage() {
 
           {/* Refresh */}
           <button
+            className="ios-top-action"
+            aria-label="Atualizar"
             onClick={() => { const c = CATEGORIES.find((c) => c.id === activeCat) ?? CATEGORIES[0]; fetchNews(c); }}
             style={{ width: 36, height: 36, borderRadius: 18, background: 'var(--c-glass-bg)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >

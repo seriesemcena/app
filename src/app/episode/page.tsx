@@ -5,10 +5,15 @@ import { Frame } from '@/components/Frame';
 import { Screen, ScrollArea, Stars, StreamBadge, Toast, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
-import { revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
+import { revStore, profileStore, epWatchedStore, seasonProgressStore, type Review } from '@/lib/store';
+import {
+  calculateWatchedDuration,
+  uniqueEpisodeNumbers,
+  type SeasonProgressRecord,
+} from '@/lib/seasonProgress';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbRatingSummaryStore, dbRevStore, type RatingSummary } from '@/lib/db';
+import { dbRatingSummaryStore, dbRevStore, dbSeasonProgressStore, type RatingSummary } from '@/lib/db';
 import { useTranslation } from 'react-i18next';
 import { navigateBack } from '@/lib/navigation';
 import i18next from 'i18next';
@@ -111,7 +116,11 @@ function EpisodePageInner() {
 
     // Restore watched state — old per-key flag OR unified epWatchedStore
     const oldFlag = localStorage.getItem(`sec_watched_${storageKey}`) === 'true';
-    const inStore = epWatchedStore.isWatched(tvId, parseInt(season), parseInt(epNum));
+    const canonical = seasonProgressStore.getSeries(tvId)
+      .find((record) => record.seasonNumber === parseInt(season));
+    const inStore = canonical
+      ? canonical.watchedEpisodeNumbers.includes(parseInt(epNum))
+      : epWatchedStore.isWatched(tvId, parseInt(season), parseInt(epNum));
     if (oldFlag || inStore) setWatched(true);
 
     // Show local data immediately while Firestore loads
@@ -135,6 +144,74 @@ function EpisodePageInner() {
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(false), 2000);
+  };
+
+  const toggleWatched = async () => {
+    const seriesId = Number(tvId);
+    const seasonNumber = Number(season);
+    const episodeNumber = Number(epNum);
+    if (!Number.isFinite(seriesId) || !Number.isFinite(seasonNumber) || !Number.isFinite(episodeNumber)) return;
+
+    const nextWatched = !watched;
+    setWatched(nextWatched);
+    if (nextWatched) {
+      localStorage.setItem(`sec_watched_${storageKey}`, 'true');
+      epWatchedStore.markWatched(tvId, seasonNumber, episodeNumber);
+    } else {
+      localStorage.removeItem(`sec_watched_${storageKey}`);
+      epWatchedStore.unmarkWatched(tvId, seasonNumber, episodeNumber);
+    }
+
+    const current = seasonProgressStore.getSeries(seriesId)
+      .find((record) => record.seasonNumber === seasonNumber);
+    const watchedEpisodeNumbers = nextWatched
+      ? uniqueEpisodeNumbers([...(current?.watchedEpisodeNumbers ?? []), episodeNumber])
+      : uniqueEpisodeNumbers(current?.watchedEpisodeNumbers).filter((number) => number !== episodeNumber);
+    const episodeDurations = { ...(current?.episodeDurations ?? {}) };
+    const runtimeMinutes = Number(runtime) || 0;
+    if (runtimeMinutes > 0) episodeDurations[String(episodeNumber)] = Math.round(runtimeMinutes);
+    const episodeCount = Number(current?.episodeCount) || 0;
+    const completed = episodeCount > 0 && watchedEpisodeNumbers.length >= episodeCount;
+    const optimistic: SeasonProgressRecord = {
+      uid: user?.uid ?? 'local',
+      seriesId,
+      seasonNumber,
+      watchedEpisodeNumbers,
+      episodeDurations,
+      episodeCount,
+      watchedDurationMinutes: calculateWatchedDuration(watchedEpisodeNumbers, episodeDurations),
+      completedAt: completed ? (current?.completedAt ?? new Date().toISOString()) : null,
+      updatedAt: new Date().toISOString(),
+      source: 'episode',
+      schemaVersion: 1,
+    };
+    seasonProgressStore.replace(optimistic);
+    window.dispatchEvent(new Event('maratonou:sync'));
+
+    if (firebaseConfigured && user) {
+      try {
+        const saved = await dbSeasonProgressStore.setEpisode(getDB(), user.uid, {
+          seriesId,
+          seasonNumber,
+          episodeNumber,
+          watched: nextWatched,
+          runtime: runtimeMinutes,
+          episodeCount: episodeCount || undefined,
+        });
+        seasonProgressStore.replace(saved);
+        window.dispatchEvent(new Event('maratonou:sync'));
+      } catch {
+        showToast(t('syncError'));
+      }
+    }
+
+    if (nextWatched) {
+      const alreadyReviewed = revStore.get(storageKey).some((review) => review.user === currentUserName);
+      if (!alreadyReviewed && appSettings.reviewsEnabled) setModalOpen(true);
+      else showToast(t('markedWatched'));
+    } else {
+      showToast(t('unmarkWatched'));
+    }
   };
 
   const submitReview = async () => {
@@ -240,13 +317,13 @@ function EpisodePageInner() {
             showLogo={false}
             showChrome={isDark}
             left={
-              <button onClick={() => navigateBack(router)}
+              <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)}
                 style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
                 <Icon name="chevronL" size={16} color={headerActionIcon} />
               </button>
             }
             right={
-              <button onClick={() => router.push('/notifications')}
+              <button className="ios-top-action" aria-label="Notificações" onClick={() => router.push('/notifications')}
                 style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
                 <Icon name="bell" size={16} color={headerActionIcon} />
               </button>
@@ -362,22 +439,7 @@ function EpisodePageInner() {
 
             {/* ── Mark as watched ── */}
             <button
-              onClick={() => {
-                if (!watched) {
-                  setWatched(true);
-                  localStorage.setItem(`sec_watched_${storageKey}`, 'true');
-                  epWatchedStore.markWatched(tvId, parseInt(season), parseInt(epNum));
-                  // Only open modal if user hasn't reviewed yet
-                  const alreadyReviewed = revStore.get(storageKey).some(r => r.user === currentUserName);
-                  if (!alreadyReviewed && appSettings.reviewsEnabled) setModalOpen(true);
-                  else showToast(t('markedWatched'));
-                } else {
-                  setWatched(false);
-                  localStorage.removeItem(`sec_watched_${storageKey}`);
-                  epWatchedStore.unmarkWatched(tvId, parseInt(season), parseInt(epNum));
-                  showToast(t('unmarkWatched'));
-                }
-              }}
+              onClick={() => { void toggleWatched(); }}
               style={{ width: '100%', padding: '15px 0', borderRadius: T.radiusSm, background: watched ? T.surface2 : T.pink, border: watched ? `1px solid ${T.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 12, boxShadow: watched ? 'none' : `0 4px 16px ${T.pinkGlow}` }}>
               <Icon name={watched ? 'check' : 'eye'} size={18} color={watched ? T.t2 : T.white} />
               <Txt size={15} weight={700} color={watched ? T.t2 : T.white}>

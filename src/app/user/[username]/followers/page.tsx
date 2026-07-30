@@ -223,7 +223,7 @@ function SocialConnectionsPageInner() {
             navTitle={t('connectionsTitle')}
             showNavTitle
             left={
-              <button
+              <button className="ios-top-action"
                 type="button"
                 aria-label={t('goBack')}
                 onClick={() => navigateBack(router, `/user/${encodeURIComponent(slug)}`)}

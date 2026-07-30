@@ -17,6 +17,7 @@ import {
   SettingsView,
   UsersView,
 } from './views';
+import { PopupBannersView } from './PopupBannersView';
 
 function Login() {
   const [email, setEmail] = useState('');
@@ -56,6 +57,7 @@ function CurrentView({ section, actor, search }: { section: Section; actor: Admi
   if (section === 'admins') return <AdminsView actor={actor} search={search}/>;
   if (section === 'content') return <BannersView actor={actor} search={search}/>;
   if (section === 'pages') return <PagesView actor={actor} search={search}/>;
+  if (section === 'popup-banners') return <PopupBannersView actor={actor} search={search}/>;
   return <GenericResourceView section={section} search={search}/>;
 }
 

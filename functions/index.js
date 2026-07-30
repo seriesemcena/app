@@ -23,6 +23,9 @@ initializeApp();
 // Versioned central API. Exported from a separate module so every admin
 // endpoint shares the same authorization and audit chain.
 exports.centralApi = require('./admin-api').centralApi;
+const popupBannerFunctions = require('./popup-banners');
+exports.getEligiblePopupBanner = popupBannerFunctions.getEligiblePopupBanner;
+exports.trackPopupBannerEvent = popupBannerFunctions.trackPopupBannerEvent;
 
 const db = getFirestore();
 const auth = getAuth();

@@ -14,6 +14,22 @@ service firebase.storage {
         && request.resource.metadata.ownerUid == uid;
     }
 
+    function isMaratonouAdmin() {
+      return signedIn()
+        && request.auth.token.admin == true
+        && request.auth.token.role in [
+          'super_admin', 'admin', 'moderator', 'editor', 'support'
+        ];
+    }
+
+    function validCampaignImage(uid) {
+      return isMaratonouAdmin()
+        && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == 'image/webp'
+        && request.resource.metadata.ownerUid == uid;
+    }
+
     // Versioned WebP avatar/cover objects. Public app screens may read them;
     // only the profile owner can upload or remove their own media.
     match /users/{uid}/{kind}/{fileName} {
@@ -21,6 +37,14 @@ service firebase.storage {
       allow create, update: if kind in ['avatar', 'cover']
                             && validProfileImage(uid);
       allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Optimized campaign artwork. Public read is required by the image URLs;
+    // only authenticated administrators can upload or remove these objects.
+    match /admin/popup-banners/{uid}/{fileName} {
+      allow read: if true;
+      allow create, update: if validCampaignImage(uid);
+      allow delete: if isMaratonouAdmin();
     }
 
     match /{allPaths=**} {

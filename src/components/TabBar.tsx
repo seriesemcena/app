@@ -76,10 +76,10 @@ const TAB_STYLES = `
   .tb-pill::before {
     z-index: 1;
     background:
-      radial-gradient(120% 86% at 14% -16%, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.08) 28%, transparent 58%),
-      linear-gradient(112deg, rgba(255,255,255,0.10) 0%, transparent 31%, transparent 66%, rgba(255,255,255,0.06) 100%);
+      radial-gradient(116% 92% at 16% -12%, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.07) 31%, transparent 58%),
+      linear-gradient(145deg, rgba(255,255,255,0.10) 0%, transparent 49%, rgba(255,255,255,0.04) 100%);
     mix-blend-mode: screen;
-    opacity: 0.72;
+    opacity: 0.78;
   }
   .tb-pill::after {
     z-index: 1;
@@ -105,24 +105,49 @@ const TAB_STYLES = `
     pointer-events: none;
   }
   html[data-platform="ios"][data-capacitor="true"] .tb-pill {
-    background: rgba(20,20,22,0.50) !important;
-    border-color: rgba(255,255,255,0.22) !important;
-    backdrop-filter: blur(38px) saturate(210%) contrast(108%) !important;
-    -webkit-backdrop-filter: blur(38px) saturate(210%) contrast(108%) !important;
+    background: rgba(38,38,42,0.48) !important;
+    border-color: rgba(255,255,255,0.24) !important;
+    backdrop-filter: blur(22px) saturate(180%) contrast(106%) brightness(108%) !important;
+    -webkit-backdrop-filter: blur(22px) saturate(180%) contrast(106%) brightness(108%) !important;
     box-shadow:
-      0 18px 52px rgba(0,0,0,0.46),
-      0 4px 14px rgba(0,0,0,0.26),
-      inset 0 1px 0 rgba(255,255,255,0.24),
-      inset 0 -1px 0 rgba(0,0,0,0.28) !important;
+      0 12px 36px rgba(0,0,0,0.34),
+      0 4px 14px rgba(0,0,0,0.16),
+      inset 0 1px 0 rgba(255,255,255,0.28),
+      inset 0 -1px 0 rgba(255,255,255,0.08) !important;
   }
   html[data-platform="ios"][data-capacitor="true"][data-theme="light"] .tb-pill {
-    background: rgba(244,244,248,0.54) !important;
-    border-color: rgba(255,255,255,0.58) !important;
+    background: rgba(255,255,255,0.68) !important;
+    border-color: rgba(255,255,255,0.86) !important;
+    backdrop-filter: blur(22px) saturate(170%) contrast(104%) brightness(104%) !important;
+    -webkit-backdrop-filter: blur(22px) saturate(170%) contrast(104%) brightness(104%) !important;
     box-shadow:
-      0 16px 44px rgba(20,20,30,0.18),
-      0 3px 12px rgba(20,20,30,0.10),
-      inset 0 1px 0 rgba(255,255,255,0.86),
-      inset 0 -1px 0 rgba(0,0,0,0.08) !important;
+      0 12px 36px rgba(31,31,38,0.12),
+      0 4px 14px rgba(31,31,38,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.96),
+      inset 0 -1px 0 rgba(70,70,78,0.08) !important;
+  }
+  html[data-platform="android"] .tb-pill {
+    background: var(--c-card) !important;
+    border-color: var(--c-border) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18) !important;
+  }
+  html[data-platform="android"] .tb-pill::before,
+  html[data-platform="android"] .tb-pill::after,
+  html[data-platform="android"] .tb-capsule::after {
+    display: none !important;
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .tb-pill,
+    .tb-capsule {
+      background: var(--c-surface) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    .tb-pill::before,
+    .tb-pill::after,
+    .tb-capsule::after { display: none !important; }
   }
   @media (prefers-reduced-motion: reduce) {
     .tb-icon { transition: none !important; }
@@ -182,16 +207,16 @@ export function TabBar() {
 
   /* ── Pill tokens ────────────────────────────── */
   const pillBg = isDark
-    ? 'rgba(18, 18, 20, 0.58)'
-    : 'rgba(248, 248, 251, 0.66)';
+    ? 'rgba(38, 38, 42, 0.48)'
+    : 'rgba(255, 255, 255, 0.68)';
   const pillBorder = isDark
-    ? '1px solid rgba(255,255,255,0.18)'
-    : '1px solid rgba(255,255,255,0.72)';
+    ? '1px solid rgba(255,255,255,0.24)'
+    : '1px solid rgba(255,255,255,0.86)';
   const pillShadow = isDark
-    ? ['0 18px 56px rgba(0,0,0,0.72)', '0 4px 16px rgba(0,0,0,0.42)',
-       'inset 0 1px 0 rgba(255,255,255,0.13)', 'inset 0 -1px 0 rgba(0,0,0,0.32)'].join(', ')
-    : ['0 4px 32px rgba(0,0,0,0.13)', '0 1px 8px rgba(0,0,0,0.07)',
-       'inset 0 1.5px 0 rgba(255,255,255,1.00)', 'inset 0 -1px 0 rgba(0,0,0,0.06)'].join(', ');
+    ? ['0 12px 36px rgba(0,0,0,0.34)', '0 4px 14px rgba(0,0,0,0.16)',
+       'inset 0 1px 0 rgba(255,255,255,0.28)', 'inset 0 -1px 0 rgba(255,255,255,0.08)'].join(', ')
+    : ['0 12px 36px rgba(31,31,38,0.12)', '0 4px 14px rgba(31,31,38,0.10)',
+       'inset 0 1px 0 rgba(255,255,255,0.96)', 'inset 0 -1px 0 rgba(70,70,78,0.08)'].join(', ');
 
   /* ── Capsule tokens ─────────────────────────── */
   const activeBg = isDark
@@ -336,7 +361,7 @@ export function TabBar() {
 
       {/* Outer wrapper — 22px sides gives the pill comfortable breathing room */}
       <div className="tab-bar-safe-wrap" style={{
-        padding: '8px calc(22px + var(--safe-area-right)) calc(12px + var(--safe-area-bottom)) calc(22px + var(--safe-area-left))',
+        padding: '8px calc(22px + var(--safe-area-right)) var(--toolbar-bottom-gap) calc(22px + var(--safe-area-left))',
         background: 'transparent',
       }}>
         {/* Pill */}
@@ -350,8 +375,8 @@ export function TabBar() {
             height: 64,
             borderRadius: 9999,
             padding: '10px 8px',
-            backdropFilter: 'blur(30px) saturate(190%) contrast(105%)',
-            WebkitBackdropFilter: 'blur(30px) saturate(190%) contrast(105%)',
+            backdropFilter: 'blur(22px) saturate(180%) contrast(106%) brightness(108%)',
+            WebkitBackdropFilter: 'blur(22px) saturate(180%) contrast(106%) brightness(108%)',
             background: pillBg,
             border: pillBorder,
             boxShadow: pillShadow,

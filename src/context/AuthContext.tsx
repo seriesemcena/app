@@ -10,11 +10,18 @@ import {
 } from 'react';
 import type { User } from 'firebase/auth';
 import { firebaseConfigured, getFirebaseAuth, getDB } from '@/lib/firebase';
-import { dbPresenceStore, migrateLocalToFirestore, syncFromFirestore, subscribeUserDoc } from '@/lib/db';
+import {
+  dbPresenceStore,
+  dbSeasonProgressStore,
+  migrateLocalToFirestore,
+  syncFromFirestore,
+  subscribeUserDoc,
+} from '@/lib/db';
 import {
   switchActiveUser,
   getActiveUser,
   notifInboxStore,
+  seasonProgressStore,
   type InboxNotif,
 } from '@/lib/store';
 
@@ -47,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Holds the Firestore real-time subscription for the current user
     let unsubDoc: (() => void) | null = null;
     let unsubMessages: (() => void) | null = null;
+    let unsubSeasonProgress: (() => void) | null = null;
     let removePresenceListener: (() => void) | null = null;
     let unsubAuth = () => {};
     let active = true;
@@ -59,6 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         unsubDoc = null;
         unsubMessages?.();
         unsubMessages = null;
+        unsubSeasonProgress?.();
+        unsubSeasonProgress = null;
         removePresenceListener?.();
         removePresenceListener = null;
 
@@ -73,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {}
 
         setUser(u);
+        if (active) setLoading(true);
 
         // Firebase local persistence restores the cached account first and
         // refreshes expired ID tokens when the network is available. Do not
@@ -83,8 +94,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (navigator.onLine) console.warn('[Auth] Token refresh deferred', error);
           }
         }
-        if (active) setLoading(false);
-
         if (u) {
           const db = getDB();
 
@@ -103,12 +112,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           //    Only when the cache provably belongs to this account: an
           //    unknown owner may be leftovers from a different user, and
           //    uploading those would corrupt this account's data.
-          if (cacheOwner === u.uid) {
+          if (cacheOwner === null || cacheOwner === u.uid) {
             try { await migrateLocalToFirestore(db, u.uid); } catch {}
           }
 
           // 2. Initial pull: Firestore → localStorage (catches up any offline changes)
           try { await syncFromFirestore(db, u.uid, u.email, u.displayName); } catch {}
+
+          // Season progress has its own deterministic documents so devices do
+          // not race while replacing one large ep_watched map.
+          try {
+            unsubSeasonProgress = dbSeasonProgressStore.subscribe(db, u.uid, (records) => {
+              seasonProgressStore.setAll(records);
+              window.dispatchEvent(new Event('maratonou:sync'));
+            });
+          } catch {}
+
+          // The account is ready only after its authoritative Firestore data
+          // has hydrated the local cache. Rendering before this point was the
+          // reason completed series briefly/indefinitely disappeared.
+          if (active) setLoading(false);
 
           // 2b. Register an already-authorized browser or native installation
           // for push. Permission is never requested automatically here; the
@@ -188,6 +211,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           //    server-side update), localStorage is refreshed automatically and
           //    components listening to 'maratonou:sync' re-render.
           try { unsubDoc = subscribeUserDoc(db, u.uid); } catch {}
+        } else if (active) {
+          setLoading(false);
         }
       }, (error) => {
         console.error('[Auth] Failed to restore Firebase session', error);
@@ -209,6 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubAuth();
       unsubDoc?.();
       unsubMessages?.();
+      unsubSeasonProgress?.();
       removePresenceListener?.();
     };
   }, []);

@@ -109,7 +109,7 @@ export default function RankingPage() {
           <div style={{ minHeight: '100%', background: `radial-gradient(circle at 50% 16%, rgba(192,105,255,0.12), transparent 34%)` }}>
             <GlassHeader
               left={
-                <button
+                <button className="ios-top-action"
                   onClick={() => navigateBack(router)}
                   aria-label="Voltar"
                   style={{ width: 36, height: 36, borderRadius: 18, background: T.glassBg, border: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}
@@ -118,7 +118,7 @@ export default function RankingPage() {
                 </button>
               }
               right={
-                <button
+                <button className="ios-top-action"
                   onClick={() => router.push('/notifications')}
                   aria-label="Notificações"
                   style={{ width: 36, height: 36, borderRadius: 18, background: T.glassBg, border: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as React.CSSProperties}

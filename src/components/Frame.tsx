@@ -1,24 +1,44 @@
 'use client';
 import { ReactNode, useEffect } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { MobileFrame } from './MobileFrame';
 import { TabBar } from './TabBar';
 import { Sidebar } from './Sidebar';
+import { useTheme } from '@/context/ThemeContext';
 
 const TAB_PATHS = ['/home', '/search', '/calendar', '/lists', '/profile', '/user', '/movies', '/series', '/feed', '/trends', '/title', '/settings'];
 
 export function Frame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { theme } = useTheme();
   const searchParams = useSearchParams();
   const fromProfile = searchParams.get('from') === 'profile';
   const showTabs = fromProfile || TAB_PATHS.some((p) => pathname?.startsWith(p));
 
   useEffect(() => {
     document.documentElement.dataset.hasTabbar = String(showTabs);
+
+    const nativeHandler = (window as Window & {
+      webkit?: { messageHandlers?: Record<string, { postMessage: (value: unknown) => void }> };
+    }).webkit?.messageHandlers?.maratonouNativeChrome;
+    nativeHandler?.postMessage({ type: 'visibility', visible: showTabs });
+    nativeHandler?.postMessage({ type: 'route', path: pathname });
+    nativeHandler?.postMessage({ type: 'theme', value: theme });
+
     return () => {
       delete document.documentElement.dataset.hasTabbar;
     };
-  }, [showTabs]);
+  }, [pathname, showTabs, theme]);
+
+  useEffect(() => {
+    const handleNativeTab = (event: Event) => {
+      const href = (event as CustomEvent<{ href?: string }>).detail?.href;
+      if (href) router.push(href);
+    };
+    window.addEventListener('maratonou:native-tab-select', handleNativeTab);
+    return () => window.removeEventListener('maratonou:native-tab-select', handleNativeTab);
+  }, [router]);
 
   return (
     <MobileFrame hasTabBar={showTabs} sidebar={showTabs ? <Sidebar /> : undefined}>

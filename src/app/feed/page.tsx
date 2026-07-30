@@ -210,29 +210,28 @@ export default function FeedPage() {
             navTitle={t('activity')}
             showNavTitle={scrolled}
             contentAlign="start"
-            children={
-              <Txt
-                size={26}
-                weight={900}
-                color={T.t1}
-                style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
-              >
-                {t('activity')}
-              </Txt>
-            }
             right={
-              <button onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+              <button className="ios-top-action" aria-label="Notificações" onClick={() => router.push('/notifications')} style={{ width: 34, height: 34, borderRadius: 17, background: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(0,0,0,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                 <Icon name="bell" size={16} color={isDark ? '#fff' : 'rgba(0,0,0,0.70)'} />
                 {unreadNotifs > 0 && (
                   <div style={{ position: 'absolute', top: 5, right: 5, width: 8, height: 8, borderRadius: 4, background: T.pink, border: '1.5px solid rgba(0,0,0,0.4)' }} />
                 )}
               </button>
             }
-          />
+          >
+            <Txt
+              size={26}
+              weight={900}
+              color={T.t1}
+              style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
+            >
+              {t('activity')}
+            </Txt>
+          </GlassHeader>
 
           {/* ── Tabs — sticky abaixo do título da página ── */}
           <div style={{
-            position: 'sticky', top: 'calc(46px + var(--safe-area-top))', zIndex: 48,
+            position: 'sticky', top: 'calc(var(--app-sticky-header-row-height) + var(--safe-area-top))', zIndex: 48,
             display: 'flex', gap: 8,
             padding: scrolled ? '4px 16px 10px' : '8px 16px 12px',
             overflowX: 'auto', scrollbarWidth: 'none',
@@ -550,11 +549,15 @@ function FeedCard({ item, onDelete }: {
     setShowMenu(false);
     setReportTarget({
       kind: 'comment',
+      contentType: 'comment',
+      contentId: item.reviewId || item.id,
       targetId: item.reviewId || item.id,
       titleKey: item.reviewTitleKey || item.titleKey,
       targetLabel: displayLabel,
       contentSnippet: item.text,
       reportedUser: item.user,
+      reportedUserId: item.uid,
+      titleId: item.reviewTitleKey || item.titleKey,
     });
   };
 

@@ -13,6 +13,7 @@ import { useAppSettings } from '@/context/AppSettingsContext';
 import { initializeFirebaseAppCheck } from '@/lib/firebase';
 import { AI_CURATION_ENABLED } from '@/lib/features';
 import { PushAlert } from '@/components/PushAlert';
+import { PopupBanner } from '@/components/PopupBanner';
 import { useDeepLinks } from '@/hooks/useDeepLinks';
 
 export function AppBootstrap({ children }: { children: ReactNode }) {
@@ -62,6 +63,7 @@ export function AppBootstrap({ children }: { children: ReactNode }) {
     <>
       {children}
       <PushAlert />
+      <PopupBanner />
       {!isOnline && !isKeyboardOpen && (
         <div className="offline-banner" role="status" aria-live="polite">
           <Icon name="wifi" size={16} color={T.t2} />

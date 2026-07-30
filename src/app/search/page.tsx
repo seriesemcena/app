@@ -209,6 +209,7 @@ export default function SearchPage() {
                 </div>
 
                 <button
+                  className="ios-top-action"
                   aria-label={t('notifications.title')}
                   onClick={() => router.push('/notifications')}
                   style={{ width: 42, height: 42, borderRadius: 21, flexShrink: 0, background: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.07)', border: isDark ? '1px solid rgba(255,255,255,0.20)' : '1px solid rgba(0,0,0,0.10)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

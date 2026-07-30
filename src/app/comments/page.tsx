@@ -328,11 +328,28 @@ function CommentsPageInner() {
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const reportComment = (rev: Review) => setReportTarget({
     kind: 'comment',
+    contentType: 'comment',
+    contentId: rev.id,
     targetId: rev.id,
     titleKey: storageKey,
     targetLabel: [showName, title].filter(Boolean).join(' · ') || storageKey,
     contentSnippet: rev.text || rev.gifUrl || '',
     reportedUser: rev.user,
+    reportedUserId: rev.uid,
+    titleId: storageKey,
+  });
+  const reportReply = (rev: Review, reply: Reply) => setReportTarget({
+    kind: 'comment',
+    contentType: 'reply',
+    contentId: reply.id,
+    parentContentId: rev.id,
+    targetId: reply.id,
+    titleKey: storageKey,
+    targetLabel: [showName, title].filter(Boolean).join(' · ') || storageKey,
+    contentSnippet: reply.text || reply.gifUrl || reply.imageUrl || '',
+    reportedUser: reply.user,
+    reportedUserId: reply.uid,
+    titleId: storageKey,
   });
 
   /* Author or admin — the Firestore rules enforce the same pair server-side,
@@ -580,6 +597,7 @@ function CommentsPageInner() {
                         ? () => deleteComment(rev.id)
                         : undefined}
                       onReport={rev.uid !== user?.uid ? () => reportComment(rev) : undefined}
+                      onReportReply={(reply) => reportReply(rev, reply)}
                     />
                   </div>
                 ))}
@@ -1034,7 +1052,7 @@ function ReplyEditor({
   );
 }
 
-function ReplyItem({ reply, timeAgo }: { reply: Reply; timeAgo: (date: string) => string }) {
+function ReplyItem({ reply, timeAgo, onReport }: { reply: Reply; timeAgo: (date: string) => string; onReport?: () => void }) {
   const { t } = useTranslation('title');
   const { user } = useAuth();
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
@@ -1089,6 +1107,16 @@ function ReplyItem({ reply, timeAgo }: { reply: Reply; timeAgo: (date: string) =
         </div>
         <Txt size={14} weight={800}>{reply.user}</Txt>
         <Txt size={11} color={T.t3}>{timeAgo(reply.date)}</Txt>
+        {onReport && (
+          <button
+            type="button"
+            onClick={onReport}
+            aria-label="Denunciar resposta"
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: 'none', borderRadius: 16, background: 'transparent', cursor: 'pointer' }}
+          >
+            <Icon name="flag" size={14} color={T.t4} />
+          </button>
+        )}
       </div>
       <div style={{ position: 'relative', minHeight: spoilerHidden ? 76 : undefined, overflow: 'hidden', borderRadius: 16 }}>
         <div style={{ filter: spoilerHidden ? 'blur(11px)' : 'none', transform: spoilerHidden ? 'scale(1.025)' : 'none', pointerEvents: spoilerHidden ? 'none' : 'auto', userSelect: spoilerHidden ? 'none' : 'auto' }}>
@@ -1116,7 +1144,7 @@ function ReplyItem({ reply, timeAgo }: { reply: Reply; timeAgo: (date: string) =
 }
 
 /* ── Comment card ── */
-function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId, onToggleReply, onDelete, onReport }: {
+function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId, onToggleReply, onDelete, onReport, onReportReply }: {
   rev: Review;
   timeAgo: (d: string) => string;
   onLike: () => void;
@@ -1128,6 +1156,8 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
   onDelete?: () => void;
   /** Present for everyone except the comment's author. */
   onReport?: () => void;
+  /** Structured moderation target for a reply. */
+  onReportReply?: (reply: Reply) => void;
 }) {
   const { t }         = useTranslation('title');
   const liked         = !!currentUserId && !!rev.likedBy?.includes(currentUserId);
@@ -1232,7 +1262,12 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
           {repliesExpanded && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 16 }}>
               {rev.replies!.map(r => (
-                <ReplyItem key={r.id} reply={r} timeAgo={timeAgo} />
+                <ReplyItem
+                  key={r.id}
+                  reply={r}
+                  timeAgo={timeAgo}
+                  onReport={r.uid !== currentUserId ? () => onReportReply?.(r) : undefined}
+                />
               ))}
             </div>
           )}

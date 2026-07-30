@@ -6,6 +6,10 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "postcss": "$postcss",
+    "sharp": "$sharp"
+  },
   "engines": {
     "node": ">=22.0.0"
   },
@@ -26,6 +30,8 @@
     "firebase:emulators": "firebase emulators:start --project demo-maratonou",
     "migrate:firebase:dry": "node scripts/migrations/optimize-firestore.mjs",
     "migrate:firebase:apply": "node scripts/migrations/optimize-firestore.mjs --apply",
+    "migrate:season-progress:dry": "node scripts/migrations/reconcile-season-progress.mjs",
+    "migrate:season-progress:apply": "node scripts/migrations/reconcile-season-progress.mjs --apply",
     "build:mobile": "PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH CAPACITOR_SERVER_URL=https://maratonou.com npx cap sync",
     "cap:sync": "PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH CAPACITOR_SERVER_URL=https://maratonou.com npx cap sync",
     "cap:sync:local": "PATH=/Users/igorfreitas/.nvm/versions/node/v22.22.3/bin:$PATH CAPACITOR_SERVER_URL=http://127.0.0.1:3000 npx cap sync",
@@ -42,16 +48,16 @@
     "@capacitor/ios": "^8.3.1",
     "@types/jszip": "^3.4.0",
     "firebase": "^12.12.1",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.2.0",
     "i18next": "^26.3.6",
     "jszip": "^3.10.1",
-    "next": "^16.2.10",
+    "next": "^16.2.12",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-i18next": "^17.0.10"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.3.1",
+    "@capacitor/cli": "^8.4.2",
     "@firebase/rules-unit-testing": "^5.0.1",
     "@iconify-json/streamline-flex": "^1.2.3",
     "@types/node": "^20",
@@ -59,10 +65,10 @@
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.2.10",
+    "eslint-config-next": "^16.2.12",
     "firebase-tools": "^15.24.0",
-    "postcss": "^8.4.47",
-    "sharp": "^0.34.5",
+    "postcss": "^8.5.22",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2"
   }

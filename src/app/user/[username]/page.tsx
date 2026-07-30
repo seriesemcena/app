@@ -528,7 +528,7 @@ function UserProfileInner() {
               {/* Ações no topo */}
               <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 14px)', left: 14, right: 14, display: 'flex', alignItems: 'center', zIndex: 10 }}>
                 {!isMe && (
-                  <button onClick={() => navigateBack(router)}
+                  <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)}
                     style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <Icon name="chevronL" size={16} color="#fff" />
                   </button>
@@ -537,6 +537,7 @@ function UserProfileInner() {
                 <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
                   {!isMe && (
                     <button
+                      className="ios-top-action"
                       title="Mais opções"
                       aria-label="Mais opções"
                       onClick={() => setMenuOpen(o => !o)}
@@ -556,9 +557,12 @@ function UserProfileInner() {
                         <button
                           onClick={() => { setMenuOpen(false); setReportTarget({
                             kind: 'profile',
+                            contentType: 'profile',
+                            contentId: targetUid || targetProfile?.username || slug,
                             targetId: targetProfile?.username || slug,
                             targetLabel: `@${targetProfile?.username || slug}`,
                             reportedUser: targetProfile?.name || targetProfile?.username || slug,
+                            reportedUserId: targetUid || undefined,
                           }); }}
                           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', textAlign: 'left' }}>
                           <Icon name="flag" size={16} color={T.t2} />
@@ -576,7 +580,7 @@ function UserProfileInner() {
                     </>
                   )}
                   {isMe && (
-                    <button onClick={() => router.push(withProfileOrigin('/settings'))}
+                    <button className="ios-top-action" aria-label="Configurações" onClick={() => router.push(withProfileOrigin('/settings'))}
                       style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <Icon name="settings" size={18} color="#fff" />
                     </button>

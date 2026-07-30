@@ -105,12 +105,20 @@
   --safe-area-right: env(safe-area-inset-right, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
-  --toolbar-base-height: 84px;
-  --toolbar-height: calc(var(--toolbar-base-height) + var(--safe-area-bottom));
+  /* The floating pill sits slightly inside the iOS home-indicator region,
+     matching native tab bars instead of stacking its full height above it. */
+  --toolbar-bottom-gap: max(8px, calc(var(--safe-area-bottom) - 10px));
+  --toolbar-base-height: 72px;
+  --toolbar-height: calc(var(--toolbar-base-height) + var(--toolbar-bottom-gap));
   --tab-h: var(--safe-area-bottom);
   --content-bottom-inset: var(--safe-area-bottom);
   --interactive-safe-bottom: var(--safe-area-bottom);
   --keyboard-offset: 0px;
+  --ios-top-action-size: 40px;
+  /* Shared top navigation geometry. The native iOS overlay uses the same
+     44pt row, so titles and actions keep a single optical center everywhere. */
+  --app-sticky-header-row-height: 44px;
+  --app-sticky-header-center-offset: 22px;
   --app-height: 100vh;
   --c-bg:        #0D0D0F;
   --c-card:      #171719;
@@ -136,6 +144,95 @@
   --c-body-text: #fff;
   /* Dark: bright pink → deep purple → transparent → dark bg */
   --c-header-gradient: radial-gradient(ellipse 170% 60% at 50% -8%, #C069FF 0%, #6B10A0 44%, transparent 72%);
+}
+
+/* ── Web/PWA top and sticky actions ─────────────────────────
+   These controls remain inside the document because their behavior is owned
+   by each React route. They are an explicit web fallback, not native Liquid
+   Glass. The primary app navigation is rendered by UIKit in the iOS shell.
+   A single token keeps every header action the same accessible touch size.
+   ───────────────────────────────────────────────────────── */
+.ios-top-action,
+.glass-header-action-slot > button,
+.app-bar-action-slot > button,
+.landing-page-header > button {
+  width: var(--ios-top-action-size) !important;
+  min-width: var(--ios-top-action-size) !important;
+  height: var(--ios-top-action-size) !important;
+  min-height: var(--ios-top-action-size) !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #fff;
+  background: rgba(38, 38, 42, 0.48) !important;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(22px) saturate(180%) contrast(106%) brightness(108%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(180%) contrast(106%) brightness(108%) !important;
+  transition: transform 160ms cubic-bezier(.2,.8,.2,1), background 180ms ease, border-color 180ms ease, box-shadow 180ms ease !important;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+.ios-top-action::before,
+.glass-header-action-slot > button::before,
+.app-bar-action-slot > button::before,
+.landing-page-header > button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 28% 16%, rgba(255,255,255,.24), transparent 38%),
+    linear-gradient(145deg, rgba(255,255,255,.10), transparent 52%, rgba(255,255,255,.04));
+}
+
+.ios-top-action > *,
+.glass-header-action-slot > button > *,
+.app-bar-action-slot > button > *,
+.landing-page-header > button > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ios-top-action:active,
+.glass-header-action-slot > button:active,
+.app-bar-action-slot > button:active,
+.landing-page-header > button:active {
+  transform: scale(.94) translateZ(0);
+  background: rgba(62, 62, 68, 0.56) !important;
+  box-shadow:
+    0 2px 8px rgba(0,0,0,.14),
+    inset 0 1px 0 rgba(255,255,255,.22) !important;
+}
+
+[data-theme="light"] .ios-top-action,
+[data-theme="light"] .glass-header-action-slot > button,
+[data-theme="light"] .app-bar-action-slot > button,
+[data-theme="light"] .landing-page-header > button {
+  color: #111113;
+  background: rgba(255, 255, 255, 0.68) !important;
+  border-color: rgba(255, 255, 255, 0.86) !important;
+  box-shadow:
+    0 4px 14px rgba(31, 31, 38, 0.10),
+    inset 0 1px 0 rgba(255,255,255,.96),
+    inset 0 -1px 0 rgba(70,70,78,.08) !important;
+  backdrop-filter: blur(22px) saturate(170%) contrast(104%) brightness(104%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(170%) contrast(104%) brightness(104%) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ios-top-action,
+  .glass-header-action-slot > button,
+  .app-bar-action-slot > button,
+  .landing-page-header > button { transition: none !important; }
 }
 
 @supports (height: 100svh) {
@@ -241,6 +338,58 @@ html[data-modal-open="true"] .tab-bar-wrap {
   pointer-events: none !important;
 }
 
+/* The Capacitor iOS shell owns the primary tab bar. UIKit supplies the native
+   system material (including Liquid Glass on iOS 26), safe-area handling,
+   VoiceOver semantics and reduced-transparency behavior. */
+html[data-native-chrome="true"] {
+  --toolbar-base-height: var(--native-tabbar-base-height, 49px);
+  --toolbar-bottom-gap: var(--safe-area-bottom);
+}
+
+html[data-native-chrome="true"] .tab-bar-wrap {
+  display: none !important;
+}
+
+/* Android uses a solid Material-like fallback rather than inheriting an iOS
+   glass imitation. Browser fallback is deliberately restrained as well. */
+html[data-platform="android"] .ios-top-action,
+html[data-platform="android"] .glass-header-action-slot > button,
+html[data-platform="android"] .app-bar-action-slot > button,
+html[data-platform="android"] .landing-page-header > button,
+html[data-platform="web"] .ios-top-action,
+html[data-platform="web"] .glass-header-action-slot > button,
+html[data-platform="web"] .app-bar-action-slot > button,
+html[data-platform="web"] .landing-page-header > button {
+  background: var(--c-surface2) !important;
+  border-color: var(--c-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .ios-top-action,
+  .glass-header-action-slot > button,
+  .app-bar-action-slot > button,
+  .landing-page-header > button,
+  .tb-pill,
+  .tb-capsule,
+  .safe-bottom-sheet {
+    background: var(--c-surface) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .ios-top-action,
+  .glass-header-action-slot > button,
+  .app-bar-action-slot > button,
+  .landing-page-header > button {
+    border-color: currentColor !important;
+  }
+}
+
 .keyboard-aware-bottom {
   bottom: var(--keyboard-offset) !important;
 }
@@ -344,11 +493,11 @@ html[data-modal-open="true"] .tab-bar-wrap {
        there is no collapsing browser chrome, so 100vh is the stable full
        screen measurement. */
     --app-height: 100vh;
-    --toolbar-height: calc(72px + max(6px, var(--safe-area-bottom)));
+    --toolbar-height: calc(var(--toolbar-base-height) + var(--toolbar-bottom-gap));
   }
 
   .tab-bar-safe-wrap {
-    padding-bottom: max(6px, var(--safe-area-bottom)) !important;
+    padding-bottom: var(--toolbar-bottom-gap) !important;
   }
 
   .tmdb-grid-card-media,
@@ -639,4 +788,79 @@ h3, h4, h5, h6, p {
   .home-icon-btn svg { width: 20px !important; height: 20px !important; }
   .home-filter-btn { padding: 10px 26px !important; font-size: 14px !important; }
   .home-logo img { height: 26px !important; }
+}
+
+/* Campaign pop-up: isolated from page layout and loaded after the app is ready. */
+.app-popup-backdrop {
+  position: fixed;
+  z-index: 2200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    max(18px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
+  background: rgba(4, 4, 7, .68);
+  backdrop-filter: blur(15px) saturate(115%);
+  -webkit-backdrop-filter: blur(15px) saturate(115%);
+  animation: popup-backdrop-in .2s ease-out both;
+}
+.app-popup-dialog {
+  overflow: hidden;
+  position: relative;
+  width: min(920px, 100%);
+  max-height: calc(100dvh - max(36px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 26px;
+  background: #0d0d10;
+  box-shadow: 0 30px 100px rgba(0,0,0,.55);
+  animation: popup-dialog-in .32s cubic-bezier(.2,.8,.2,1) both;
+}
+.app-popup-media {
+  width: 100%;
+  display: block;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+.app-popup-media[aria-label] { cursor: pointer; }
+.app-popup-media picture, .app-popup-media img {
+  width: 100%;
+  max-height: calc(100dvh - max(36px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+  display: block;
+}
+.app-popup-media img { object-fit: contain; }
+.app-popup-close {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 50%;
+  padding: 0;
+  background: rgba(18,18,22,.72);
+  color: #fff;
+  font: 500 27px/1 Arial, sans-serif;
+  cursor: pointer;
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+}
+.app-popup-close:focus-visible, .app-popup-media:focus-visible { outline: 3px solid #c764ff; outline-offset: -3px; }
+@keyframes popup-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes popup-dialog-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 680px) {
+  .app-popup-backdrop { padding-inline: max(12px, env(safe-area-inset-left)); }
+  .app-popup-dialog { width: min(430px, 100%); border-radius: 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-popup-backdrop, .app-popup-dialog { animation: none; }
 }

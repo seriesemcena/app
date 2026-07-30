@@ -1,6 +1,12 @@
 'use client';
 
 import { notificationTemplateStore, renderNotificationTemplate } from './notificationTemplates';
+import {
+  mergeSeasonProgress,
+  recordsToLegacyHistory,
+  seasonProgressId,
+  type SeasonProgressRecord,
+} from './seasonProgress';
 
 export type Prefs = { genres?: string[]; streams?: string[]; notifications?: string[]; locale?: string; country?: string; notifPrefs?: Record<string, boolean> };
 
@@ -27,6 +33,7 @@ const USER_SCOPED_KEYS = [
   'sec_lists_v1',        // want / watching / watched / favorites
   'sec_reviews_v1',      // reviews + replies
   'sec_ep_watched_v1',   // watched episodes
+  'sec_season_progress_v1', // canonical per-season progress cache
   'sec_prefs',           // genres / streamings / notifications
   'sec_following',       // following usernames
   'sec_blocked',         // blocked user uids
@@ -262,6 +269,66 @@ export const epWatchedStore = {
     const all = epWatchedStore.getAll();
     all[String(tvId)] = data;
     try { localStorage.setItem(EP_KEY, JSON.stringify(all)); } catch {}
+  },
+};
+
+/* ─── Canonical per-season progress cache ───────────────────
+   Firestore is authoritative for signed-in accounts. This local copy only
+   keeps rendering/offline behavior fast and mirrors back to the legacy
+   episode map while older screens are being phased out. */
+const SEASON_PROGRESS_KEY = 'sec_season_progress_v1';
+
+export const seasonProgressStore = {
+  getAll(): SeasonProgressRecord[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const value = JSON.parse(localStorage.getItem(SEASON_PROGRESS_KEY) || '[]');
+      return Array.isArray(value) ? value : [];
+    } catch { return []; }
+  },
+  setAll(records: SeasonProgressRecord[]) {
+    if (typeof window === 'undefined') return;
+    const byId = new Map<string, SeasonProgressRecord>();
+    records.forEach((record) => {
+      const id = seasonProgressId(record.seriesId, record.seasonNumber);
+      byId.set(id, mergeSeasonProgress(byId.get(id), record));
+    });
+    const normalized = Array.from(byId.values());
+    try {
+      localStorage.setItem(SEASON_PROGRESS_KEY, JSON.stringify(normalized));
+      localStorage.setItem(EP_KEY, JSON.stringify(recordsToLegacyHistory(normalized)));
+    } catch {}
+  },
+  getSeries(seriesId: string | number): SeasonProgressRecord[] {
+    return seasonProgressStore.getAll().filter((record) => record.seriesId === Number(seriesId));
+  },
+  upsert(record: SeasonProgressRecord): SeasonProgressRecord {
+    const all = seasonProgressStore.getAll();
+    const index = all.findIndex((item) => (
+      item.seriesId === record.seriesId && item.seasonNumber === record.seasonNumber
+    ));
+    const merged = mergeSeasonProgress(index >= 0 ? all[index] : null, record);
+    if (index >= 0) all[index] = merged;
+    else all.push(merged);
+    seasonProgressStore.setAll(all);
+    return merged;
+  },
+  /** Replace is used for live episode toggles, where removing an episode
+      must not be undone by the migration-oriented union merge. */
+  replace(record: SeasonProgressRecord): SeasonProgressRecord {
+    const all = seasonProgressStore.getAll();
+    const index = all.findIndex((item) => (
+      item.seriesId === record.seriesId && item.seasonNumber === record.seasonNumber
+    ));
+    if (index >= 0) all[index] = record;
+    else all.push(record);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(SEASON_PROGRESS_KEY, JSON.stringify(all));
+        localStorage.setItem(EP_KEY, JSON.stringify(recordsToLegacyHistory(all)));
+      } catch {}
+    }
+    return record;
   },
 };
 

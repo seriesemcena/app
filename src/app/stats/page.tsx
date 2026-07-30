@@ -6,9 +6,14 @@ import { Screen, ScrollArea, Txt, GlassHeader } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
-import { listStore, revStore, prefsStore, epWatchedStore, profileStore } from '@/lib/store';
+import { listStore, revStore, prefsStore, epWatchedStore, profileStore, seasonProgressStore } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRatingStore, dbUserStatsStore } from '@/lib/db';
+import {
+  calculateWatchedDuration,
+  legacyHistoryToSeasonProgress,
+  uniqueEpisodeNumbers,
+} from '@/lib/seasonProgress';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
 import { useTranslation } from 'react-i18next';
@@ -293,6 +298,8 @@ function MonthlyLineChart({ data, isDark = true }: { data: Array<{ label: string
 /* ── Types ───────────────────────────────────────────────────── */
 type SplitStats = {
   hoursTotal: number; minutesTotal: number;
+  completedMinutes: number; watchingMinutes: number;
+  completedSeasonCount: number; watchingSeasonCount: number;
   watchedCount: number; watchingCount: number; wantCount: number;
   genres: Array<{ g: string; pct: number; color: string }>;
   platforms: string[];
@@ -311,6 +318,7 @@ export default function StatsPage() {
 
   const [tab, setTab]                 = useState<'series' | 'filmes'>('series');
   const [statsLoading, setStatsLoading] = useState(true);
+  const [syncRevision, setSyncRevision] = useState(0);
   const [showNavTitle, setShowNavTitle] = useState(false);
   const titleRef = useRef<HTMLDivElement>(null);
 
@@ -335,6 +343,12 @@ export default function StatsPage() {
     setRatingCounts({ series: series.count, filmes: filmes.count });
   };
 
+  useEffect(() => {
+    const refresh = () => setSyncRevision((revision) => revision + 1);
+    window.addEventListener('maratonou:sync', refresh);
+    return () => window.removeEventListener('maratonou:sync', refresh);
+  }, []);
+
   /* ── Stats calculation ── */
   useEffect(() => {
     if (loading) return;
@@ -352,12 +366,22 @@ export default function StatsPage() {
     const mvWant       = want.filter(w => w.type === 'movie');
 
     const epAll = epWatchedStore.getAll();
+    const canonicalProgress = seasonProgressStore.getAll();
     const epCountMap: Record<string, number> = {};
-    let totalEpisodes = 0;
+    let totalEpisodes = canonicalProgress.reduce(
+      (sum, record) => sum + uniqueEpisodeNumbers(record.watchedEpisodeNumbers).length,
+      0,
+    );
+    const canonicalSeriesIds = new Set(canonicalProgress.map((record) => String(record.seriesId)));
     for (const [showId, seasons] of Object.entries(epAll)) {
-      const cnt = Object.values(seasons).reduce((s, eps) => s + eps.length, 0);
+      const cnt = Object.values(seasons).reduce(
+        (sum, episodes) => sum + uniqueEpisodeNumbers(episodes).length,
+        0,
+      );
       epCountMap[showId] = cnt;
-      totalEpisodes += cnt;
+      // Canonical progress mirrors into this legacy cache. Only count the
+      // legacy value when no canonical record exists for the series.
+      if (!canonicalSeriesIds.has(showId)) totalEpisodes += cnt;
     }
 
     const marathons = tvWatched
@@ -376,12 +400,19 @@ export default function StatsPage() {
       .filter((review) => review.rating > 0)
       .map((review) => ({ titleId: review.itemKey, rating: review.rating })));
 
-    const allTracked = [...tvWatched, ...tvWatching, ...movieWatched, ...mvWatching];
-    const tvWatchedIds  = new Set(tvWatched.map(w => w.id));
+    const allTracked = Array.from(new Map(
+      [...tvWatched, ...tvWatching, ...movieWatched, ...mvWatching]
+        .map((item) => [`${item.type}_${item.id}`, item]),
+    ).values());
     const mvWatchedIds  = new Set(movieWatched.map(w => w.id));
 
     if (allTracked.length === 0) {
-      const empty: SplitStats = { hoursTotal:0,minutesTotal:0,watchedCount:0,watchingCount:0,wantCount:0,genres:[],platforms:streams,reviewsCount:0,likesReceived:0,marathons:[],totalEpisodes:0 };
+      const empty: SplitStats = {
+        hoursTotal:0, minutesTotal:0, completedMinutes:0, watchingMinutes:0,
+        completedSeasonCount:0, watchingSeasonCount:0,
+        watchedCount:0, watchingCount:0, wantCount:0, genres:[], platforms:streams,
+        reviewsCount:0, likesReceived:0, marathons:[], totalEpisodes:0,
+      };
       setSeriesStats({ ...empty, watchedCount:tvWatched.length, watchingCount:tvWatching.length, wantCount:tvWant.length, reviewsCount:tvRevs.length, likesReceived:tvLikes, marathons, totalEpisodes });
       setFilmesStats({ ...empty, watchedCount:movieWatched.length, watchingCount:mvWatching.length, wantCount:mvWant.length, reviewsCount:mvRevs.length, likesReceived:mvLikes });
       setStatsLoading(false);
@@ -395,6 +426,8 @@ export default function StatsPage() {
       } catch { return null; }
     })).then(results => {
       let tvMins = 0; let mvMins = 0;
+      let completedTvMins = 0; let watchingTvMins = 0;
+      let completedSeasonCount = 0; let watchingSeasonCount = 0;
       const tvGenre: Record<string,number> = {}; const mvGenre: Record<string,number> = {};
 
       results.forEach(r => {
@@ -407,9 +440,42 @@ export default function StatsPage() {
         if (item.type === 'movie') {
           if (mvWatchedIds.has(item.id)) mvMins += d.runtime || 110;
         } else {
-          const epRuntime = d.episode_run_time?.[0] || 45;
-          if (tvWatchedIds.has(item.id)) tvMins += epRuntime * Math.min(d.number_of_episodes || 10, 24);
-          else { const last = (d.seasons||[]).filter((s:any)=>s.season_number>0).at(-1); tvMins += epRuntime*(last?.episode_count ?? Math.min(d.number_of_episodes||6,12)); }
+          const epRuntime = Number(d.episode_run_time?.[0]) || 45;
+          const storedRecords = canonicalProgress.filter(
+            (record) => record.seriesId === Number(item.id),
+          );
+          const records = storedRecords.length > 0
+            ? storedRecords
+            : legacyHistoryToSeasonProgress(
+                user?.uid ?? 'local',
+                { [String(item.id)]: epAll[String(item.id)] ?? {} },
+              );
+
+          records.forEach((record) => {
+            const seasonMeta = (d.seasons ?? []).find(
+              (season: { season_number?: number }) => Number(season.season_number) === record.seasonNumber,
+            );
+            const watchedEpisodes = uniqueEpisodeNumbers(record.watchedEpisodeNumbers);
+            const episodeCount = Math.max(
+              Number(record.episodeCount) || 0,
+              Number(seasonMeta?.episode_count) || 0,
+            );
+            const minutes = calculateWatchedDuration(
+              watchedEpisodes,
+              record.episodeDurations,
+              epRuntime,
+            );
+            const completed = Boolean(record.completedAt)
+              || (episodeCount > 0 && watchedEpisodes.length >= episodeCount);
+            tvMins += minutes;
+            if (completed) {
+              completedTvMins += minutes;
+              completedSeasonCount += 1;
+            } else if (watchedEpisodes.length > 0) {
+              watchingTvMins += minutes;
+              watchingSeasonCount += 1;
+            }
+          });
         }
         const idx = marathons.findIndex(m => m.id === String(item.id));
         if (idx >= 0 && d.poster_path) marathons[idx].poster = tmdbImg(d.poster_path, 'w92') ?? undefined;
@@ -420,12 +486,26 @@ export default function StatsPage() {
         return Object.entries(map).sort(([,a],[,b])=>b-a).slice(0,5).map(([name,count]) => ({ g:name, pct:Math.round(count/total*100), color:GENRE_COLORS[name]||'#6b7280' }));
       };
 
-      setSeriesStats({ hoursTotal:Math.round(tvMins/60), minutesTotal:tvMins, watchedCount:tvWatched.length, watchingCount:tvWatching.length, wantCount:tvWant.length, genres:toGenreList(tvGenre), platforms:streams, reviewsCount:tvRevs.length, likesReceived:tvLikes, marathons, totalEpisodes });
-      setFilmesStats({ hoursTotal:Math.round(mvMins/60), minutesTotal:mvMins, watchedCount:movieWatched.length, watchingCount:mvWatching.length, wantCount:mvWant.length, genres:toGenreList(mvGenre), platforms:streams, reviewsCount:mvRevs.length, likesReceived:mvLikes, marathons:[], totalEpisodes:0 });
+      setSeriesStats({
+        hoursTotal:Math.round(tvMins/60), minutesTotal:tvMins,
+        completedMinutes:completedTvMins, watchingMinutes:watchingTvMins,
+        completedSeasonCount, watchingSeasonCount,
+        watchedCount:tvWatched.length, watchingCount:tvWatching.length, wantCount:tvWant.length,
+        genres:toGenreList(tvGenre), platforms:streams, reviewsCount:tvRevs.length,
+        likesReceived:tvLikes, marathons, totalEpisodes,
+      });
+      setFilmesStats({
+        hoursTotal:Math.round(mvMins/60), minutesTotal:mvMins,
+        completedMinutes:mvMins, watchingMinutes:0,
+        completedSeasonCount:0, watchingSeasonCount:0,
+        watchedCount:movieWatched.length, watchingCount:mvWatching.length, wantCount:mvWant.length,
+        genres:toGenreList(mvGenre), platforms:streams, reviewsCount:mvRevs.length,
+        likesReceived:mvLikes, marathons:[], totalEpisodes:0,
+      });
       setStatsLoading(false);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, user]);
+  }, [loading, user, syncRevision]);
 
   /* Firestore ratings are account-wide and therefore include evaluations
      created on mobile, PWA and desktop. Local records remain the offline and
@@ -512,12 +592,12 @@ export default function StatsPage() {
   const btnStyle: React.CSSProperties = { width:34,height:34,borderRadius:17, background: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)', border: isDark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(0,0,0,0.12)', cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' };
   const btnIcon = isDark ? '#fff' : 'rgba(0,0,0,0.70)';
   const backBtn = (
-    <button onClick={() => navigateBack(router)} style={btnStyle}>
+    <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)} style={btnStyle}>
       <Icon name="chevronL" size={16} color={btnIcon} />
     </button>
   );
   const bellBtn = (
-    <button onClick={() => router.push('/notifications')} style={btnStyle}>
+    <button className="ios-top-action" aria-label="Notificações" onClick={() => router.push('/notifications')} style={btnStyle}>
       <Icon name="bell" size={16} color={btnIcon} />
     </button>
   );
@@ -601,6 +681,32 @@ export default function StatsPage() {
               <Txt size={10} weight={700} color={statLabelColor} style={{ textTransform:'uppercase', letterSpacing:1, display:'block', marginBottom:14 }}>
                 {t('statsPage.last7dHours', { count: hours7d })}
               </Txt>
+            )}
+            {tab === 'series' && (
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, margin:'12px 0 14px' }}>
+                <div style={{ padding:'10px 12px', borderRadius:12, background:isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.045)' }}>
+                  <Txt size={10} weight={700} color={statLabelColor} style={{ display:'block', textTransform:'uppercase', letterSpacing:0.7 }}>
+                    {t('statsPage.completedSeasons')}
+                  </Txt>
+                  <Txt size={14} weight={800} color={T.t1} style={{ display:'block', marginTop:3 }}>
+                    {t('statsPage.seasonTime', {
+                      count: active?.completedSeasonCount ?? 0,
+                      hours: Math.round((active?.completedMinutes ?? 0) / 60 * 10) / 10,
+                    })}
+                  </Txt>
+                </div>
+                <div style={{ padding:'10px 12px', borderRadius:12, background:isDark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.045)' }}>
+                  <Txt size={10} weight={700} color={statLabelColor} style={{ display:'block', textTransform:'uppercase', letterSpacing:0.7 }}>
+                    {t('statsPage.watchingSeasons')}
+                  </Txt>
+                  <Txt size={14} weight={800} color={T.t1} style={{ display:'block', marginTop:3 }}>
+                    {t('statsPage.seasonTime', {
+                      count: active?.watchingSeasonCount ?? 0,
+                      hours: Math.round((active?.watchingMinutes ?? 0) / 60 * 10) / 10,
+                    })}
+                  </Txt>
+                </div>
+              </div>
             )}
             {tab === 'series' && (
               <DayBarChart data={weekHoursData} labels={dateLabels} unit={t('statsPage.hours')} barColor="#22c55e" todayColor={T.pink} isDark={isDark} />

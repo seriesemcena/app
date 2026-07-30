@@ -54,14 +54,15 @@ test('profile media is WebP in Storage and no longer generated as base64', () =>
   assert.match(storageRules, /request\.resource\.contentType == 'image\/webp'/);
 });
 
-test('Storage stays opt-in while the Firebase project remains on Spark', () => {
+test('Storage is configured and remains gated by an explicit public environment flag', () => {
   const firebase = read('src/lib/firebase.ts');
   const defaultConfig = read('firebase.json');
-  const futureConfig = read('firebase.storage.json');
   const editor = read('src/app/settings/edit-profile/page.tsx');
+  const storageRules = read('storage.rules');
   assert.match(firebase, /NEXT_PUBLIC_FIREBASE_STORAGE_ENABLED === 'true'/);
-  assert.equal(Object.hasOwn(JSON.parse(defaultConfig), 'storage'), false);
-  assert.match(futureConfig, /"storage"/);
+  assert.equal(JSON.parse(defaultConfig).storage?.rules, 'storage.rules');
+  assert.match(storageRules, /match \/users\/\{uid\}\/\{kind\}\/\{fileName\}/);
+  assert.match(storageRules, /match \/admin\/popup-banners\/\{uid\}\/\{fileName\}/);
   assert.match(editor, /editProfile\.storagePending/);
 });
 

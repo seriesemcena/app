@@ -104,6 +104,8 @@
   "seasonTimeRemaining": "{{time}} para finalizar",
   "finishSeason": "Finalizar temporada",
   "seasonCompleted": "Temporada finalizada",
+  "seasonInProgress": "Em andamento",
+  "seasonNotStarted": "Não iniciada",
   "seasonFinishedToast": "Temporada {{number}} finalizada ✓",
   "seasonPremiere": "Estreia da temporada",
   "premieresIn": "Estreia em",

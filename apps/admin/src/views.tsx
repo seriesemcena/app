@@ -448,12 +448,28 @@ export function CommentsView({ actor, search }: { actor: AdminActor; search: str
 
 export function ReportsView({ actor, search }: { actor: AdminActor; search: string }) {
   const { items, cursor, loading, error, load } = usePagedResource('/v1/admin/reports?limit=30');
+  const [content, setContent] = useState<RecordItem | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentError, setContentError] = useState<unknown>(null);
   const update = async (id: unknown, status: string) => { await api.request(`/v1/admin/reports/${encodeURIComponent(String(id))}`, { method: 'PATCH', body: { status, note: `Status alterado para ${status} no painel.` } }); await load(); };
+  const openContent = async (item: RecordItem) => {
+    setContentLoading(true); setContentError(null); setContent({ reportId: item.id });
+    try { setContent(await api.request<RecordItem>(`/v1/admin/reports/${encodeURIComponent(String(item.id))}/content`)); }
+    catch (reason) { setContentError(reason); }
+    finally { setContentLoading(false); }
+  };
+  const contentAuthor = content?.author && typeof content.author === 'object' ? content.author as RecordItem : null;
+  const parent = content?.parent && typeof content.parent === 'object' ? content.parent as RecordItem : null;
   return <div className="stack"><div className="toolbar"><div><h2>Fila de denúncias</h2><p>Analise ocorrências e acompanhe o estado de resolução.</p></div><PageActions onRefresh={() => void load()} busy={loading}/></div>{Boolean(error) && <ErrorBox error={error} onRetry={() => void load()}/>}<section className="panel">{loading && !items.length ? <LoadingTable/> : <DataTable search={search} items={items} columns={[
-    { key: 'type', label: 'Tipo' }, { key: 'reason', label: 'Motivo' }, { key: 'targetId', label: 'Alvo' },
+    { key: 'contentType', label: 'Tipo', render: (item) => humanize(String(item.contentType || item.kind || 'other')) },
+    { key: 'reportedUser', label: 'Autor', render: (item) => <div><strong>{stringValue(item.reportedUser || item.targetLabel)}</strong><small>{stringValue(item.reportedUserId)}</small></div> },
+    { key: 'reason', label: 'Motivo' },
+    { key: 'contentId', label: 'ID do conteúdo', render: (item) => <code>{stringValue(item.contentId || item.targetId)}</code> },
     { key: 'status', label: 'Status', render: (item) => <StatusBadge value={item.status || 'open'}/> },
     { key: 'createdAt', label: 'Recebida', render: (item) => formatDate(item.createdAt) },
-  ]} actions={can(actor.permissions, 'reports.resolve') ? (item) => <select className="status-select" aria-label="Alterar status" value={String(item.status || 'open')} onChange={(event) => void update(item.id, event.target.value)}><option value="open">Aberta</option><option value="in_review">Em análise</option><option value="resolved">Resolvida</option><option value="rejected">Rejeitada</option></select> : undefined}/>} {cursor && <div className="load-more"><button className="button button-quiet" onClick={() => void load(cursor, true)}>Carregar mais</button></div>}</section></div>;
+  ]} actions={(item) => <div className="row-actions"><button className="mini-button" onClick={() => void openContent(item)}>Ver conteúdo denunciado</button>{can(actor.permissions, 'reports.resolve') && <select className="status-select" aria-label="Alterar status" value={String(item.status || 'open')} onChange={(event) => void update(item.id, event.target.value)}><option value="open">Aberta</option><option value="in_review">Em análise</option><option value="resolved">Resolvida</option><option value="rejected">Rejeitada</option></select>}</div>}/>} {cursor && <div className="load-more"><button className="button button-quiet" onClick={() => void load(cursor, true)}>Carregar mais</button></div>}</section>
+    {content && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setContent(null); }}><section className="modal report-content-modal" role="dialog" aria-modal="true" aria-labelledby="report-content-title"><div className="modal-title"><div><span className="eyebrow">Visualização administrativa</span><h2 id="report-content-title">Conteúdo denunciado</h2></div><button className="icon-button" aria-label="Fechar" onClick={() => setContent(null)}><Icon name="close"/></button></div>{contentLoading ? <LoadingTable/> : contentError ? <ErrorBox error={contentError}/> : content.available === false ? <EmptyState title="Conteúdo indisponível ou removido" message="O conteúdo pode ter sido excluído depois que a denúncia foi registrada."/> : <div className="report-content-preview"><div className="report-reference"><StatusBadge value={content.contentType}/><code>{stringValue(content.contentId)}</code></div>{Boolean(content.title) && <h3>{stringValue(content.title)}</h3>}{contentAuthor && <div className="report-author">{Boolean(contentAuthor.avatarUrl) ? <img src={String(contentAuthor.avatarUrl)} alt=""/> : <span>{String(contentAuthor.name || contentAuthor.username || '?').slice(0, 1).toUpperCase()}</span>}<div><strong>{stringValue(contentAuthor.name || contentAuthor.username)}</strong><small>{Boolean(contentAuthor.username) ? `@${String(contentAuthor.username)}` : stringValue(contentAuthor.id)}</small></div></div>}{parent && <aside><strong>Comentário principal</strong><p>{stringValue(parent.body)}</p></aside>}{Boolean(content.body) && <p className="report-body">{stringValue(content.body)}</p>}{Boolean(content.mediaUrl) && <img className="report-media" src={String(content.mediaUrl)} alt="Mídia anexada ao conteúdo denunciado"/>}{Boolean(content.appUrl) && <a className="button button-primary" href={String(content.appUrl)} target="_blank" rel="noreferrer">Abrir contexto no app</a>}</div>}</section></div>}
+  </div>;
 }
 
 export function NotificationsView({ actor, search }: { actor: AdminActor; search: string }) {

@@ -6,31 +6,69 @@ const tabBar = await readFile(
   new URL('../src/components/TabBar.tsx', import.meta.url),
   'utf8',
 );
+const frame = await readFile(
+  new URL('../src/components/Frame.tsx', import.meta.url),
+  'utf8',
+);
+const appDelegate = await readFile(
+  new URL('../ios/App/App/AppDelegate.swift', import.meta.url),
+  'utf8',
+);
+const globals = await readFile(
+  new URL('../src/app/globals.css', import.meta.url),
+  'utf8',
+);
+const primitives = await readFile(
+  new URL('../src/components/primitives.tsx', import.meta.url),
+  'utf8',
+);
+const titleDetail = await readFile(
+  new URL('../src/app/title/[type]/[id]/page.tsx', import.meta.url),
+  'utf8',
+);
 
-test('shared mobile toolbar renders the liquid glass treatment', () => {
+test('web and Android retain the shared fallback toolbar', () => {
   assert.match(tabBar, /className="tb-pill"/);
-  assert.match(tabBar, /blur\(30px\) saturate\(190%\) contrast\(105%\)/);
-  assert.match(tabBar, /\.tb-pill::before/);
-  assert.match(tabBar, /\.tb-capsule::after/);
+  assert.match(tabBar, /data-platform="android"/);
+  assert.match(tabBar, /prefers-reduced-transparency/);
 });
 
-test('native iOS gets the stronger system-like glass material', () => {
-  assert.match(
-    tabBar,
-    /html\[data-platform="ios"\]\[data-capacitor="true"\] \.tb-pill/,
-  );
-  assert.match(tabBar, /blur\(38px\) saturate\(210%\) contrast\(108%\)/);
+test('Capacitor iOS uses a real UIKit tab bar and route bridge', () => {
+  assert.match(appDelegate, /UITabBarDelegate/);
+  assert.match(appDelegate, /UITabBarAppearance/);
+  assert.match(appDelegate, /maratonouNativeChrome/);
+  assert.match(frame, /maratonou:native-tab-select/);
+  assert.match(globals, /html\[data-native-chrome="true"\] \.tab-bar-wrap/);
 });
 
-test('light toolbar keeps the selected capsule white with dark content', () => {
-  assert.match(tabBar, /: 'rgba\(255, 255, 255, 0\.98\)'/);
-  assert.match(tabBar, /const activeColor\s+=\s+'#0B0B0D'/);
+test('native appearance delegates Liquid Glass to iOS 26', () => {
+  assert.match(appDelegate, /#unavailable\(iOS 26\.0\)/);
+  assert.match(appDelegate, /systemUltraThinMaterial/);
+  assert.match(appDelegate, /isReduceTransparencyEnabled/);
 });
 
-test('selection uses the SwiftUI segmented-control spring animation', () => {
-  assert.match(tabBar, /const SPRING\s+=\s+'cubic-bezier\(0\.22, 1\.28, 0\.36, 1\)'/);
-  assert.match(tabBar, /@keyframes tb-segment-content-in/);
-  assert.match(tabBar, /@keyframes tb-segment-label-in/);
-  assert.match(tabBar, /scaleY\(0\.91\)/);
-  assert.match(tabBar, /will-change: left, right, transform/);
+test('native chrome owns themed active toolbar colors', () => {
+  assert.match(appDelegate, /selectedColor: UIColor = nativeChromeIsDark \? \.white : \.black/);
+});
+
+test('header actions remain web controls inside the iOS shell', () => {
+  assert.doesNotMatch(appDelegate, /UIHostingController<AnyView>/);
+  assert.doesNotMatch(appDelegate, /type: 'topControls'/);
+  assert.doesNotMatch(appDelegate, /maratonou:native-top-controls-ready/);
+  assert.doesNotMatch(globals, /html\[data-native-chrome="true"\] button\.ios-top-action/);
+  assert.match(globals, /\.ios-top-action,/);
+});
+
+test('native toolbar honors system accessibility preferences', () => {
+  assert.match(appDelegate, /isReduceMotionEnabled/);
+  assert.match(appDelegate, /reduceTransparencyStatusDidChangeNotification/);
+  assert.match(frame, /type: 'theme'/);
+});
+
+test('sticky headers share the native 44pt navigation row', () => {
+  assert.match(globals, /--app-sticky-header-row-height:\s*44px/);
+  assert.match(globals, /--app-sticky-header-center-offset:\s*22px/);
+  assert.match(primitives, /var\(--app-sticky-header-row-height\)/);
+  assert.match(titleDetail, /var\(--app-sticky-header-center-offset\)/);
+  assert.doesNotMatch(titleDetail, /safe-area-top\) \+ 32px/);
 });

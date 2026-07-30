@@ -115,6 +115,48 @@ service cloud.firestore {
         allow delete: if activeUser() && request.auth.uid == uid;
       }
 
+      // Authoritative progress is one deterministic document per
+      // series/season: {seriesId}_s{seasonNumber}. LocalStorage is only a
+      // cache; signed-in clients read and write their own canonical records.
+      match /seasonProgress/{progressId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if activeUser()
+                              && request.auth.uid == uid
+                              && request.resource.data.uid == uid
+                              && request.resource.data.seriesId is int
+                              && request.resource.data.seriesId > 0
+                              && request.resource.data.seasonNumber is int
+                              && request.resource.data.seasonNumber > 0
+                              && progressId == string(request.resource.data.seriesId)
+                                + '_s' + string(request.resource.data.seasonNumber)
+                              && request.resource.data.watchedEpisodeNumbers is list
+                              && request.resource.data.episodeDurations is map
+                              && request.resource.data.episodeCount is int
+                              && request.resource.data.episodeCount >= 0
+                              && request.resource.data.watchedDurationMinutes is int
+                              && request.resource.data.watchedDurationMinutes >= 0
+                              && request.resource.data.updatedAt is string
+                              && request.resource.data.schemaVersion == 1
+                              && request.resource.data.source in [
+                                'episode', 'season-finish', 'series-finish',
+                                'migration', 'reconciliation'
+                              ]
+                              && request.resource.data.keys().hasOnly([
+                                'uid', 'seriesId', 'seasonNumber',
+                                'watchedEpisodeNumbers', 'episodeDurations',
+                                'episodeCount', 'watchedDurationMinutes',
+                                'completedAt', 'updatedAt', 'source',
+                                'schemaVersion'
+                              ]);
+        allow delete: if activeUser() && request.auth.uid == uid;
+      }
+
+      // Frequency state is written only by the trusted banner callable so a
+      // client cannot reset its own cap or inspect campaign delivery history.
+      match /popupBannerState/{bannerId} {
+        allow read, write: if false;
+      }
+
       // Canonical social graph. The owner controls only who they follow.
       // Cloud Functions mirror this edge under the target's followers path.
       match /following/{targetUid} {
@@ -283,7 +325,26 @@ service cloud.firestore {
     // Any signed-in user files reports (comment/profile/problem);
     // only the admin reads and manages them (/admin → Moderação).
     match /reports/{id} {
-      allow create: if activeUser();
+      allow create: if activeUser()
+                    && request.resource.data.reportedBy == request.auth.uid
+                    && request.resource.data.status == 'open'
+                    && request.resource.data.contentType in [
+                      'comment', 'reply', 'profile', 'movie', 'series', 'other'
+                    ]
+                    && request.resource.data.contentId is string
+                    && request.resource.data.contentId.size() > 0
+                    && request.resource.data.contentId.size() <= 500
+                    && request.resource.data.get('parentContentId', '') is string
+                    && request.resource.data.get('reportedUserId', '') is string
+                    && request.resource.data.get('titleId', '') is string
+                    && request.resource.data.get('titleType', '') in ['', 'movie', 'tv']
+                    && request.resource.data.keys().hasOnly([
+                      'kind', 'reason', 'details', 'targetId', 'titleKey',
+                      'targetLabel', 'contentSnippet', 'reportedUser',
+                      'contentType', 'contentId', 'parentContentId',
+                      'reportedUserId', 'titleId', 'titleType', 'reportedBy',
+                      'reportedByName', 'status', 'createdAt'
+                    ]);
       allow read, update, delete: if false;
     }
 
@@ -318,6 +379,24 @@ service cloud.firestore {
     }
 
     match /app_banners/{id} {
+      allow read, write: if false;
+    }
+
+    // Pop-up campaigns are selected by a callable backend that enforces
+    // schedule, audience and frequency before returning a minimal projection.
+    match /public_popup_banners/{id} {
+      allow read, write: if false;
+    }
+
+    match /popup_banners/{id} {
+      allow read, write: if false;
+    }
+
+    match /popup_banner_metrics/{id} {
+      allow read, write: if false;
+    }
+
+    match /popup_banner_event_receipts/{id} {
       allow read, write: if false;
     }
 

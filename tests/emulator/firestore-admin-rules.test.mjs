@@ -23,6 +23,60 @@ test('clientes nunca leem nem escrevem autoridade, auditoria ou controles intern
   }
 });
 
+test('denúncias estruturadas aceitam apenas referências válidas do autor autenticado', async () => {
+  const user = environment.authenticatedContext('reporter-a').firestore();
+  const validReport = {
+    kind: 'comment',
+    reason: 'spam',
+    details: 'Conteúdo repetido',
+    targetId: 'review-a',
+    titleKey: 'tv_1',
+    targetLabel: 'Comentário em Série',
+    contentSnippet: 'Trecho público do comentário',
+    reportedUser: 'Autor denunciado',
+    contentType: 'reply',
+    contentId: 'reply-a',
+    parentContentId: 'review-a',
+    reportedUserId: 'reported-a',
+    titleId: '1',
+    titleType: 'tv',
+    reportedBy: 'reporter-a',
+    reportedByName: 'Pessoa denunciante',
+    status: 'open',
+    createdAt: new Date(),
+  };
+
+  await assertSucceeds(setDoc(doc(user, 'reports/report-valid'), validReport));
+  await assertFails(setDoc(doc(user, 'reports/report-invalid-type'), {
+    ...validReport,
+    contentType: 'private_message',
+  }));
+  await assertFails(setDoc(doc(user, 'reports/report-forged-author'), {
+    ...validReport,
+    reportedBy: 'another-user',
+  }));
+  await assertFails(setDoc(
+    doc(environment.unauthenticatedContext().firestore(), 'reports/report-anonymous'),
+    validReport,
+  ));
+});
+
+test('campanhas pop-up, métricas e estado de frequência nunca ficam expostos ao cliente', async () => {
+  const user = environment.authenticatedContext('user-a').firestore();
+  const protectedPaths = [
+    'popup_banners/banner-a',
+    'public_popup_banners/banner-a',
+    'popup_banner_metrics/banner-a_2026-07-29_ios',
+    'popup_banner_event_receipts/receipt-a',
+    'users/user-a/popupBannerState/banner-a',
+  ];
+
+  for (const path of protectedPaths) {
+    await assertFails(getDoc(doc(user, path)));
+    await assertFails(setDoc(doc(user, path), { status: 'active', views: 999 }));
+  }
+});
+
 test('usuário não eleva privilégio nem altera contadores do próprio perfil', async () => {
   await environment.withSecurityRulesDisabled(async (context) => setDoc(doc(context.firestore(), 'users/user-a'), { profile: { name: 'A' }, counters: { reviewsCount: 1 } }));
   const user = environment.authenticatedContext('user-a').firestore();
@@ -56,6 +110,38 @@ test('conta suspensa perde escritas mesmo com token de cliente ainda presente', 
   const suspended = environment.authenticatedContext('suspended').firestore();
   await assertFails(setDoc(doc(suspended, 'reviews/tv_1/items/suspended-review'), { authorUid: 'suspended', text: 'não deve gravar' }));
   await assertFails(updateDoc(doc(suspended, 'users/suspended'), { 'profile.name': 'Tentativa' }));
+});
+
+test('progresso por temporada é restaurado pelo uid e permanece privado e determinístico', async () => {
+  const owner = environment.authenticatedContext('season-owner').firestore();
+  const restoredOwner = environment.authenticatedContext('season-owner').firestore();
+  const other = environment.authenticatedContext('season-other').firestore();
+  const valid = {
+    uid: 'season-owner',
+    seriesId: 306956,
+    seasonNumber: 1,
+    watchedEpisodeNumbers: [1, 2],
+    episodeDurations: { 1: 50, 2: 48 },
+    episodeCount: 66,
+    watchedDurationMinutes: 98,
+    completedAt: null,
+    updatedAt: new Date().toISOString(),
+    source: 'episode',
+    schemaVersion: 1,
+  };
+
+  await assertSucceeds(setDoc(doc(owner, 'users/season-owner/seasonProgress/306956_s1'), valid));
+  await assertSucceeds(getDoc(doc(owner, 'users/season-owner/seasonProgress/306956_s1')));
+  const restored = await assertSucceeds(
+    getDoc(doc(restoredOwner, 'users/season-owner/seasonProgress/306956_s1')),
+  );
+  assert.deepEqual(restored.data()?.watchedEpisodeNumbers, [1, 2]);
+  await assertFails(getDoc(doc(other, 'users/season-owner/seasonProgress/306956_s1')));
+  await assertFails(setDoc(doc(other, 'users/season-owner/seasonProgress/306956_s1'), {
+    ...valid,
+    uid: 'season-other',
+  }));
+  await assertFails(setDoc(doc(owner, 'users/season-owner/seasonProgress/forged-id'), valid));
 });
 
 test('community publica ajuda para todos e restringe rascunhos aos editores', async () => {

@@ -13,7 +13,12 @@ import { tmdb, tmdbImg, useTMDB } from '@/lib/tmdb';
 import { navigateBack, navigateTo } from '@/lib/navigation';
 import { selectTitleTrailer, titleVideoUrl, type TMDBTitleVideo } from '@/lib/titleVideos';
 import { AppErrorState } from '@/components/AppStates';
-import { listStore, revStore, profileStore, epWatchedStore, prefsStore, type Review } from '@/lib/store';
+import { listStore, revStore, profileStore, epWatchedStore, prefsStore, seasonProgressStore, type Review } from '@/lib/store';
+import {
+  mergeSeasonProgress,
+  uniqueEpisodeNumbers,
+  type SeasonProgressRecord,
+} from '@/lib/seasonProgress';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { initFCM, requestPushPermission } from '@/lib/fcm';
@@ -21,7 +26,7 @@ import {
   dbRevStore,
   dbListStore,
   dbActivityStore,
-  dbEpWatchedStore,
+  dbSeasonProgressStore,
   dbPrefsStore,
   dbRatingSummaryStore,
   dbSeasonPremiereReminderStore,
@@ -284,9 +289,13 @@ export default function TitleDetailPage() {
     setShowEmoji(false);
     setReportTarget({
       kind: 'problem',
+      contentType: isTV ? 'series' : 'movie',
+      contentId: String(detail.id),
       targetId: itemKey,
       titleKey: itemKey,
       targetLabel: title,
+      titleId: String(detail.id),
+      titleType: isTV ? 'tv' : 'movie',
     });
   };
 
@@ -406,18 +415,18 @@ export default function TitleDetailPage() {
           pointerEvents: 'auto',
         }}>
           {/* Botão voltar */}
-          <button aria-label="Voltar" onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow, flexShrink: 0 } as React.CSSProperties}>
+          <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow, flexShrink: 0 } as React.CSSProperties}>
             <Icon name="chevronL" size={16} color={headerActionIcon} />
           </button>
 
           {/* Nav title — aparece ao rolar */}
           <div style={{
-            position: 'absolute', left: '50%', top: '50%',
+            position: 'absolute', left: '50%', top: 'calc(var(--safe-area-top) + var(--app-sticky-header-center-offset))',
             width: 'calc(100% - 180px)',
             display: 'flex', justifyContent: 'center', alignItems: 'center',
             overflow: 'hidden',
             opacity: showNavTitle ? 1 : 0,
-            transform: showNavTitle ? 'translate(-50%, calc(-50% + 3px))' : 'translate(-50%, calc(-50% + 8px))',
+            transform: showNavTitle ? 'translate(-50%, -50%)' : 'translate(-50%, calc(-50% + 5px))',
             transition: 'opacity 0.22s ease, transform 0.22s ease',
             pointerEvents: 'none',
           } as React.CSSProperties}>
@@ -426,10 +435,10 @@ export default function TitleDetailPage() {
 
           {/* Icons direita */}
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
-            <button aria-label="Compartilhar" onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+            <button className="ios-top-action" aria-label="Compartilhar" onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
               <Icon name="share" size={15} color={headerActionIcon} />
             </button>
-            <button aria-label={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isDark && isFav ? 'rgba(192,105,255,0.30)' : headerActionBackground, border: `1px solid ${isDark && isFav ? 'rgba(192,105,255,0.45)' : headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+            <button className="ios-top-action" aria-label={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isDark && isFav ? 'rgba(192,105,255,0.30)' : headerActionBackground, border: `1px solid ${isDark && isFav ? 'rgba(192,105,255,0.45)' : headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
               <Icon name={isFav ? 'heart' : 'heartO'} size={15} color={isDark && isFav ? '#C069FF' : headerActionIcon} />
             </button>
           </div>
@@ -884,14 +893,53 @@ export default function TitleDetailPage() {
               setListStatus(key);
               setListSheet(false);
               showToast(`${label} ✓`);
-              // Mark all episodes as watched when setting as Finalizado
+              // Finalizing a series completes only seasons with a confirmed
+              // premiere date in the past. Future or undated metadata must
+              // never erase the completed status of older seasons.
+              const completedSeasonRecords: SeasonProgressRecord[] = [];
               if (key === 'watched' && isTV) {
-                const seasonData: Record<string, number[]> = {};
-                (detail.seasons || []).forEach((s: any) => {
-                  if (s.season_number > 0 && s.episode_count > 0) {
-                    seasonData[String(s.season_number)] = Array.from({ length: s.episode_count }, (_, i) => i + 1);
-                  }
+                const now = new Date();
+                const releasedSeasons = (detail.seasons || []).filter((season: any) => {
+                  if (!(season.season_number > 0 && season.episode_count > 0 && season.air_date)) return false;
+                  const premiere = new Date(`${season.air_date}T00:00:00`);
+                  return !Number.isNaN(premiere.getTime()) && premiere.getTime() <= now.getTime();
                 });
+                const resolved = await Promise.all(releasedSeasons.map(async (season: any) => {
+                  try {
+                    const seasonDetail = await tmdb.season(detail.id, season.season_number);
+                    const episodes = (seasonDetail?.episodes || []).filter((episode: any) => episode.episode_number > 0);
+                    if (episodes.length === 0) return null;
+                    const episodeDurations = Object.fromEntries(episodes
+                      .filter((episode: any) => Number(episode.runtime) > 0)
+                      .map((episode: any) => [String(episode.episode_number), Math.round(Number(episode.runtime))]));
+                    return mergeSeasonProgress(
+                      seasonProgressStore.getSeries(detail.id)
+                        .find((record) => record.seasonNumber === season.season_number),
+                      {
+                        uid: user?.uid ?? 'local',
+                        seriesId: Number(detail.id),
+                        seasonNumber: Number(season.season_number),
+                        watchedEpisodeNumbers: episodes.map((episode: any) => episode.episode_number),
+                        episodeDurations,
+                        episodeCount: episodes.length,
+                        completedAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        source: 'series-finish',
+                      },
+                    );
+                  } catch {
+                    return null;
+                  }
+                }));
+                completedSeasonRecords.push(...resolved.filter((record): record is SeasonProgressRecord => Boolean(record)));
+                completedSeasonRecords.forEach((record) => seasonProgressStore.upsert(record));
+                const seasonData = {
+                  ...epWatchedStore.getShow(detail.id),
+                  ...Object.fromEntries(completedSeasonRecords.map((record) => [
+                    String(record.seasonNumber),
+                    record.watchedEpisodeNumbers,
+                  ])),
+                };
                 epWatchedStore.setShow(detail.id, seasonData);
                 setEpWatchedRefresh(v => v + 1);
               }
@@ -901,7 +949,15 @@ export default function TitleDetailPage() {
                   await Promise.all(others.map((l) => dbListStore.remove(db, user.uid, l, detail.id)));
                   await dbListStore.add(db, user.uid, key, item);
                   if (key === 'watched' && isTV) {
-                    await dbEpWatchedStore.set(db, user.uid, epWatchedStore.getAll());
+                    await Promise.all(completedSeasonRecords.map((record) => (
+                      dbSeasonProgressStore.completeSeason(db, user.uid, {
+                        seriesId: record.seriesId,
+                        seasonNumber: record.seasonNumber,
+                        episodeNumbers: record.watchedEpisodeNumbers,
+                        episodeDurations: record.episodeDurations,
+                        source: 'series-finish',
+                      }).then((saved) => seasonProgressStore.replace(saved))
+                    )));
                   }
                   const prof2        = profileStore.get(user.uid);
                   const displayName  = prof2.username || prof2.name || user.displayName || user.email?.split('@')[0] || 'Usuário';
@@ -1304,12 +1360,18 @@ function SeasonProgressPanel({
   const { data, loading } = useTMDB(() => tmdb.season(tvId, seasonNum), [tvId, seasonNum]);
   const episodes: any[] = data?.episodes || [];
   const [watchedMap, setWatchedMap] = useState<Record<string, number[]>>({});
+  const [canonicalProgress, setCanonicalProgress] = useState<SeasonProgressRecord | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderSaving, setReminderSaving] = useState(false);
 
   useEffect(() => {
     setWatchedMap(epWatchedStore.getShow(tvId));
+    setCanonicalProgress(
+      seasonProgressStore.getSeries(tvId)
+        .find((record) => record.seasonNumber === seasonNum)
+        ?? null,
+    );
   }, [tvId, seasonNum, refreshKey]);
 
   const premiereDate = getSeasonPremiereDate(data);
@@ -1341,11 +1403,16 @@ function SeasonProgressPanel({
     return () => { cancelled = true; };
   }, [user, tvId, seasonNum, premiereDate]);
 
-  const watchedNumbers = new Set(watchedMap[String(seasonNum)] ?? []);
+  const watchedNumbers = new Set(
+    canonicalProgress?.watchedEpisodeNumbers
+    ?? watchedMap[String(seasonNum)]
+    ?? [],
+  );
   const watchedCount = episodes.filter((episode) => watchedNumbers.has(episode.episode_number)).length;
   const totalCount = episodes.length;
   const percentage = totalCount > 0 ? Math.round((watchedCount / totalCount) * 100) : 0;
-  const completed = totalCount > 0 && watchedCount === totalCount;
+  const completed = Boolean(canonicalProgress?.completedAt)
+    || (totalCount > 0 && watchedCount === totalCount);
   const remainingMinutes = episodes.reduce((total, episode) => {
     if (watchedNumbers.has(episode.episode_number)) return total;
     const runtime = Number(episode.runtime) || fallbackRuntime;
@@ -1420,9 +1487,26 @@ function SeasonProgressPanel({
 
   const finishSeason = async () => {
     if (totalCount === 0 || completed) return;
+    const episodeNumbers = uniqueEpisodeNumbers(episodes.map((episode) => episode.episode_number));
+    const episodeDurations = Object.fromEntries(episodes
+      .filter((episode) => Number(episode.runtime) > 0)
+      .map((episode) => [String(episode.episode_number), Math.round(Number(episode.runtime))]));
+    const optimistic = mergeSeasonProgress(canonicalProgress, {
+      uid: user?.uid ?? 'local',
+      seriesId: Number(tvId),
+      seasonNumber: seasonNum,
+      watchedEpisodeNumbers: episodeNumbers,
+      episodeDurations,
+      episodeCount: episodeNumbers.length,
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: 'season-finish',
+    });
+    seasonProgressStore.upsert(optimistic);
+    setCanonicalProgress(optimistic);
     const nextShow = {
       ...epWatchedStore.getShow(tvId),
-      [String(seasonNum)]: episodes.map((episode) => episode.episode_number),
+      [String(seasonNum)]: episodeNumbers,
     };
     epWatchedStore.setShow(tvId, nextShow);
     setWatchedMap(nextShow);
@@ -1431,7 +1515,15 @@ function SeasonProgressPanel({
 
     if (firebaseConfigured && user) {
       try {
-        await dbEpWatchedStore.set(getDB(), user.uid, epWatchedStore.getAll());
+        const saved = await dbSeasonProgressStore.completeSeason(getDB(), user.uid, {
+          seriesId: Number(tvId),
+          seasonNumber: seasonNum,
+          episodeNumbers,
+          episodeDurations,
+          source: 'season-finish',
+        });
+        seasonProgressStore.replace(saved);
+        setCanonicalProgress(saved);
       } catch {}
     }
   };
@@ -1619,11 +1711,18 @@ function SeasonProgressPanel({
           <Txt size={12} weight={600} color={T.t2} style={{ display: 'block', marginBottom: 3 }}>
             {t('seasonProgressEpisodes', { watched: watchedCount, total: totalCount })}
           </Txt>
-          <Txt size={11} color={completed ? '#7BE35A' : T.t3} style={{ display: 'block' }}>
+          <Txt size={11} weight={700} color={completed ? '#7BE35A' : T.t2} style={{ display: 'block' }}>
             {completed
               ? t('seasonCompleted')
-              : t('seasonTimeRemaining', { time: formatSeasonTime(remainingMinutes) })}
+              : watchedCount > 0
+                ? t('seasonInProgress')
+                : t('seasonNotStarted')}
           </Txt>
+          {!completed && (
+            <Txt size={10} color={T.t3} style={{ display: 'block', marginTop: 2 }}>
+              {t('seasonTimeRemaining', { time: formatSeasonTime(remainingMinutes) })}
+            </Txt>
+          )}
         </div>
       </div>
 
