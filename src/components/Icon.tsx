@@ -59,7 +59,7 @@ const ICONS: Record<IconName, string> = {
   chevronRight: 'control-chevron-right',
   bookmark: 'bookmark-solid',
   award: 'trophy-solid',
-  clock: 'stopwatch-solid',
+  clock: 'fa7-regular-clock',
   menuDots: 'control-menu-dots',
   moon: 'dark-dislay-mode-solid',
   logout: 'logout-1-solid',

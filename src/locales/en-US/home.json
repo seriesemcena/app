@@ -29,6 +29,7 @@
     "novidades": "New",
     "maratonando": "Watching",
     "atrasadas": "Behind",
+    "emProgresso": "In progress",
     "finalizadas": "Finished"
   },
   "tags": {
@@ -80,6 +81,9 @@
   "noUpcoming": "No scheduled episodes",
   "noUpcomingDetail": "When your series have confirmed new episodes, they'll appear here",
   "newEpisode": "New episode",
+  "inProgress": "In progress",
+  "emptyInProgress": "No series in progress",
+  "seasonsCompleted": "{{completed}} of {{total}} seasons finished",
   "seasonNumber": "Season {{number}}",
   "behindDetail": "Current-season episodes left unwatched for at least 72 hours",
   "upToDate": "You're all caught up!",

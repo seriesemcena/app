@@ -38,7 +38,7 @@ test('feed shows its localized page title above the audience tabs', async () => 
 
   assert.match(feed, /useTranslation\('navigation'\)/);
   assert.match(feed, /navTitle=\{t\('activity'\)\}/);
-  assert.match(feed, /contentAlign="start"[\s\S]*?right=\{[\s\S]*?>\s*<Txt[\s\S]*?size=\{26\}[\s\S]*?\{t\('activity'\)\}/);
+  assert.match(feed, /contentAlign="start"[\s\S]*?right=\{[\s\S]*?>\s*<Txt[\s\S]*?size=\{30\}[\s\S]*?\{t\('activity'\)\}/);
   assert.doesNotMatch(feed, /padding: '6px 16px 2px'/);
 });
 
@@ -49,7 +49,7 @@ test('series and movies share the large left-aligned page title header', async (
   ]);
 
   for (const source of [series, movies]) {
-    assert.match(source, /<GlassHeader[\s\S]*?contentAlign="start"[\s\S]*?right=\{[\s\S]*?>\s*<Txt[\s\S]*?size=\{26\}[\s\S]*?weight=\{900\}/);
+    assert.match(source, /<GlassHeader[\s\S]*?contentAlign="start"[\s\S]*?right=\{[\s\S]*?>\s*<Txt[\s\S]*?size=\{30\}[\s\S]*?weight=\{900\}/);
   }
 });
 

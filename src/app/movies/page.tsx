@@ -91,10 +91,11 @@ export default function MoviesPage() {
             }
           >
             <Txt
-              size={26}
+              size={30}
               weight={900}
               color={T.t1}
-              style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
+              lineH={1}
+              style={{ display: 'block', letterSpacing: '-0.7px', whiteSpace: 'nowrap' }}
             >
               {t('movies', { ns: 'navigation' })}
             </Txt>

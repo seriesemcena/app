@@ -7,7 +7,11 @@ import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, type TMDBItem } from '@/lib/tmdb';
 import { epWatchedStore, listStore, seasonProgressStore } from '@/lib/store';
-import { classifySeries, type SeasonCatalogEntry } from '@/lib/seasonProgress';
+import {
+  classifySeries,
+  summarizeSeriesCompletion,
+  type SeasonCatalogEntry,
+} from '@/lib/seasonProgress';
 import { currentAiredSeason, overdueEpisodes } from '@/lib/seriesSchedule';
 import { MasonryGrid2 } from '@/components/posters';
 import { useTheme } from '@/context/ThemeContext';
@@ -16,7 +20,7 @@ import '@/lib/i18n';
 import i18next from '@/lib/i18n';
 import { useAuthContext } from '@/context/AuthContext';
 
-type SeriesTab = 'maratonando' | 'atrasadas' | 'finalizadas';
+type SeriesTab = 'maratonando' | 'atrasadas' | 'emProgresso' | 'finalizadas';
 
 type WatchingItem = {
   id: number; title: string; type: string;
@@ -29,6 +33,20 @@ type WatchingItem = {
   overdueCount?: number;
   network?: string;
   classification?: 'finished' | 'watching' | 'unstarted' | 'upcoming-only';
+  completedSeasons?: number;
+  releasedSeasons?: number;
+  completionPercentage?: number;
+  hasCompletedSeason?: boolean;
+};
+
+type FinishedItem = Pick<
+  WatchingItem,
+  'id' | 'title' | 'type' | 'poster_path' | 'backdrop_path'
+> & {
+  status: 'finished' | 'in-progress';
+  completedSeasons: number;
+  releasedSeasons: number;
+  completionPercentage: number;
 };
 
 type DateResult = { label: string; isToday: boolean; isTomorrow: boolean };
@@ -52,7 +70,7 @@ export default function SeriesPage() {
   const [tab, setTab] = useState<SeriesTab>('maratonando');
   const [items, setItems] = useState<WatchingItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [finishedList, setFinishedList] = useState<Array<{ id: number; title: string; type: string; poster_path?: string | null }>>([]);
+  const [finishedList, setFinishedList] = useState<FinishedItem[]>([]);
   const [scrolled, setScrolled] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -103,6 +121,7 @@ export default function SeriesPage() {
           const classification = progress.length > 0
             ? classifySeries(catalog, progress)
             : (watched.some((entry) => entry.id === item.id) ? 'finished' : 'unstarted');
+          const completion = summarizeSeriesCompletion(catalog, progress);
           const next = detail?.next_episode_to_air;
           const seasonNumber = currentAiredSeason(detail || {});
           let overdue: ReturnType<typeof overdueEpisodes> = [];
@@ -131,6 +150,10 @@ export default function SeriesPage() {
             overdueCount: overdue.length,
             network: (detail as any)?.networks?.[0]?.name ?? '',
             classification,
+            completedSeasons: completion.completedSeasons,
+            releasedSeasons: completion.releasedSeasons,
+            completionPercentage: completion.percentage,
+            hasCompletedSeason: completion.hasCompletedSeason,
           } as WatchingItem;
         } catch {
           return {
@@ -143,12 +166,19 @@ export default function SeriesPage() {
       if (!active) return;
       setItems(loaded.filter((item) => item.classification === 'watching'));
       setFinishedList(loaded
-        .filter((item) => item.classification === 'finished')
+        .filter((item) => item.classification === 'finished' || item.hasCompletedSeason)
         .map((item) => ({
           id: item.id,
           title: item.title,
           type: item.type,
           poster_path: item.poster_path,
+          backdrop_path: item.backdrop_path,
+          status: item.classification === 'finished' ? 'finished' : 'in-progress',
+          completedSeasons: item.completedSeasons ?? 0,
+          releasedSeasons: item.releasedSeasons ?? 0,
+          completionPercentage: item.classification === 'finished'
+            ? 100
+            : (item.completionPercentage ?? 0),
         })));
       setLoading(false);
     };
@@ -164,7 +194,7 @@ export default function SeriesPage() {
 
   const atrasadas = useMemo(() => items.filter((item) => (item.overdueCount ?? 0) > 0), [items]);
   const emBreve = useMemo(() =>
-    [...items].sort((a, b) => {
+    items.filter((item) => !item.hasCompletedSeason).sort((a, b) => {
       if (!a.nextAirDate) return 1;
       if (!b.nextAirDate) return -1;
       return new Date(a.nextAirDate).getTime() - new Date(b.nextAirDate).getTime();
@@ -178,6 +208,14 @@ export default function SeriesPage() {
     });
     return Array.from(groups, ([date, groupItems]) => ({ date, items: groupItems }));
   }, [emBreve]);
+  const finishedInProgress = useMemo(
+    () => finishedList.filter((item) => item.status === 'in-progress'),
+    [finishedList],
+  );
+  const fullyFinished = useMemo(
+    () => finishedList.filter((item) => item.status === 'finished'),
+    [finishedList],
+  );
 
   return (
     <Frame>
@@ -196,10 +234,11 @@ export default function SeriesPage() {
             }
           >
             <Txt
-              size={26}
+              size={30}
               weight={900}
               color={T.t1}
-              style={{ display: 'block', letterSpacing: '-0.6px', whiteSpace: 'nowrap' }}
+              lineH={1}
+              style={{ display: 'block', letterSpacing: '-0.7px', whiteSpace: 'nowrap' }}
             >
               {t('series', { ns: 'navigation' })}
             </Txt>
@@ -214,7 +253,7 @@ export default function SeriesPage() {
             background: 'transparent',
             transition: 'padding 0.25s ease',
           } as React.CSSProperties}>
-            {(['maratonando', 'atrasadas', 'finalizadas'] as const).map((id) => (
+            {(['maratonando', 'atrasadas', 'emProgresso', 'finalizadas'] as const).map((id) => (
               <button key={id} onClick={() => setTab(id)} style={{
                 minHeight: scrolled ? 34 : 36,
                 padding: scrolled ? '6px 15px' : '8px 18px',
@@ -369,10 +408,90 @@ export default function SeriesPage() {
               </div>
             )}
 
+            {/* ══ TAB: Em progresso ══ */}
+            {tab === 'emProgresso' && (
+              <div style={{ padding: '20px 16px' }}>
+                {finishedInProgress.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 32, background: 'color-mix(in srgb, var(--c-pink) 12%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="play" size={30} color={T.pink} />
+                    </div>
+                    <Txt size={15} weight={700} color={T.t1} style={{ display: 'block' }}>{t('emptyInProgress')}</Txt>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {finishedInProgress.map((item) => {
+                      const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => router.push(`/title/${item.type}/${item.id}`)}
+                          style={{
+                            width: '100%',
+                            minHeight: 116,
+                            display: 'flex',
+                            alignItems: 'stretch',
+                            gap: 14,
+                            padding: 0,
+                            overflow: 'hidden',
+                            background: T.card,
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 16,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <div style={{ width: 148, minHeight: 116, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
+                            {thumb
+                              ? <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
+                            }
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0, padding: '13px 16px 13px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 5 }}>
+                              {item.title}
+                            </Txt>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
+                              <Txt size={11} weight={800} color={T.pink}>
+                                {t('inProgress')}
+                              </Txt>
+                              <Txt size={11} color={T.t3}>
+                                {item.completionPercentage}%
+                              </Txt>
+                            </div>
+                            <div
+                              aria-label={t('seasonsCompleted', {
+                                completed: item.completedSeasons,
+                                total: item.releasedSeasons,
+                              })}
+                              style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: T.surface2, marginBottom: 7 }}
+                            >
+                              <div style={{
+                                width: `${item.completionPercentage}%`,
+                                height: '100%',
+                                borderRadius: 999,
+                                background: T.pink,
+                              }} />
+                            </div>
+                            <Txt size={11} color={T.t3} style={{ display: 'block' }}>
+                              {t('seasonsCompleted', {
+                                completed: item.completedSeasons,
+                                total: item.releasedSeasons,
+                              })}
+                            </Txt>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ══ TAB: Finalizadas ══ */}
             {tab === 'finalizadas' && (
               <div style={{ padding: '20px 16px' }}>
-                {finishedList.length === 0 ? (
+                {fullyFinished.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
                     <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(52,199,89,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Icon name="check" size={30} color="#1a8f3a" />
@@ -381,7 +500,7 @@ export default function SeriesPage() {
                   </div>
                 ) : (
                   <MasonryGrid2
-                    items={finishedList as unknown as TMDBItem[]}
+                    items={fullyFinished as unknown as TMDBItem[]}
                     onItem={(item) => router.push(`/title/${(item as any).type}/${item.id}`)}
                     padding="0"
                     getTag={() => ({ label: t('tags.concluido'), color: '#fff', bg: 'rgba(52,199,89,0.75)', icon: 'check' })}

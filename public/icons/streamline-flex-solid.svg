@@ -59,5 +59,6 @@
 <symbol id="control-close-circle" viewBox="0 0 14 14"><path fill="currentColor" fill-rule="evenodd" d="M7 14A7 7 0 1 0 7 0a7 7 0 0 0 0 14M4.47 4.47a.85.85 0 0 1 1.2 0L7 5.8l1.33-1.33a.85.85 0 1 1 1.2 1.2L8.2 7l1.33 1.33a.85.85 0 1 1-1.2 1.2L7 8.2 5.67 9.53a.85.85 0 1 1-1.2-1.2L5.8 7 4.47 5.67a.85.85 0 0 1 0-1.2" clip-rule="evenodd"/></symbol>
 <symbol id="control-eye" viewBox="0 0 14 14"><path fill="currentColor" fill-rule="evenodd" d="M.41 6.3C1.5 3.56 3.86 2 7 2s5.5 1.56 6.59 4.3a1.9 1.9 0 0 1 0 1.4C12.5 10.44 10.14 12 7 12S1.5 10.44.41 7.7a1.9 1.9 0 0 1 0-1.4M7 9.75A2.75 2.75 0 1 0 7 4.25a2.75 2.75 0 0 0 0 5.5m0-1.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5" clip-rule="evenodd"/></symbol>
 <symbol id="control-menu-dots" viewBox="0 0 14 14"><path fill="currentColor" d="M2 5.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3m5 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3m5 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3"/></symbol>
+<symbol id="fa7-regular-clock" viewBox="0 0 512 512"><path fill="currentColor" d="M464 256a208 208 0 1 1 -416 0 208 208 0 1 1 416 0zM0 256a256 256 0 1 0 512 0 256 256 0 1 0 -512 0zM232 120l0 136c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.4 33.3-6.7s4.4-25.9-6.7-33.3L280 243.2 280 120c0-13.3-10.7-24-24-24s-24 10.7-24 24z"/></symbol>
 </defs>
 </svg>

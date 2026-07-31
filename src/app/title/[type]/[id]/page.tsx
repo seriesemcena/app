@@ -595,7 +595,8 @@ export default function TitleDetailPage() {
               )}
               {runtime && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, background: T.surface2 }}>
-                  <Txt size={11} weight={600} color={T.t2}>⏱ {runtime}</Txt>
+                  <Icon name="clock" size={12} color={T.t2} />
+                  <Txt size={11} weight={600} color={T.t2}>{runtime}</Txt>
                 </span>
               )}
             </div>
@@ -1997,7 +1998,8 @@ function HeroWithGlur({
           )}
           {runtime && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 20, background: 'var(--c-t4)', border: '1px solid var(--c-t4)' }}>
-              <Txt size={11} weight={600} color={T.white}>⏱ {runtime}</Txt>
+              <Icon name="clock" size={12} color={T.white} />
+              <Txt size={11} weight={600} color={T.white}>{runtime}</Txt>
             </div>
           )}
         </div>

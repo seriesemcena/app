@@ -20,6 +20,7 @@ const {
   seasonProgressId,
   seasonState,
   splitSeasonMinutes,
+  summarizeSeriesCompletion,
   uniqueEpisodeNumbers,
 } = progress;
 
@@ -79,6 +80,33 @@ test('progresso parcial da nova temporada permanece maratonando', () => {
     watchedDurationMinutes: 100,
   };
   assert.equal(classifySeries(seasons, [completed(1), partial], NOW), 'watching');
+  assert.deepEqual(summarizeSeriesCompletion(seasons, [completed(1), partial], NOW), {
+    completedSeasons: 1,
+    releasedSeasons: 2,
+    percentage: 50,
+    hasCompletedSeason: true,
+    isFullyCompleted: false,
+  });
+});
+
+test('série sem temporada concluída não entra no progresso de finalizadas', () => {
+  const seasons = [
+    { seasonNumber: 1, episodeCount: 8, airDate: '2026-07-01' },
+  ];
+  const partial = {
+    ...completed(1),
+    watchedEpisodeNumbers: [1, 2],
+    completedAt: null,
+    watchedDurationMinutes: 100,
+  };
+
+  assert.deepEqual(summarizeSeriesCompletion(seasons, [partial], NOW), {
+    completedSeasons: 0,
+    releasedSeasons: 1,
+    percentage: 0,
+    hasCompletedSeason: false,
+    isFullyCompleted: false,
+  });
 });
 
 test('temporada sem data e sem consumo não reabre série concluída', () => {

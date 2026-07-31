@@ -26,6 +26,14 @@ export type SeasonCatalogEntry = {
 
 export type SeriesSeasonState = 'upcoming' | 'watching' | 'completed' | 'available';
 
+export type SeriesCompletionSummary = {
+  completedSeasons: number;
+  releasedSeasons: number;
+  percentage: number;
+  hasCompletedSeason: boolean;
+  isFullyCompleted: boolean;
+};
+
 export function seasonProgressId(seriesId: string | number, seasonNumber: number): string {
   return `${String(seriesId)}_s${seasonNumber}`;
 }
@@ -186,6 +194,36 @@ export function classifySeries(
   if (states.length > 0 && states.every((state) => state === 'completed')) return 'finished';
   if (states.some((state) => state === 'watching' || state === 'completed')) return 'watching';
   return 'unstarted';
+}
+
+export function summarizeSeriesCompletion(
+  seasons: SeasonCatalogEntry[],
+  progress: SeasonProgressRecord[],
+  now = new Date(),
+): SeriesCompletionSummary {
+  const regularSeasons = seasons.filter((season) => season.seasonNumber > 0);
+  const bySeason = new Map(progress.map((record) => [record.seasonNumber, record]));
+  const released = regularSeasons.filter((season) => {
+    const record = bySeason.get(season.seasonNumber);
+    return isSeasonReleased(season, now)
+      || Boolean(record?.completedAt)
+      || uniqueEpisodeNumbers(record?.watchedEpisodeNumbers).length > 0;
+  });
+  const completedSeasons = released.filter((season) => (
+    seasonState(season, bySeason.get(season.seasonNumber), now) === 'completed'
+  )).length;
+  const releasedSeasons = released.length;
+  const percentage = releasedSeasons > 0
+    ? Math.min(100, Math.round((completedSeasons / releasedSeasons) * 100))
+    : 0;
+
+  return {
+    completedSeasons,
+    releasedSeasons,
+    percentage,
+    hasCompletedSeason: completedSeasons > 0,
+    isFullyCompleted: releasedSeasons > 0 && completedSeasons === releasedSeasons,
+  };
 }
 
 export function splitSeasonMinutes(records: SeasonProgressRecord[]) {

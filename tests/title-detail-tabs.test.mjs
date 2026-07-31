@@ -10,6 +10,14 @@ const css = fs.readFileSync(
   new URL('../src/app/globals.css', import.meta.url),
   'utf8',
 );
+const icon = fs.readFileSync(
+  new URL('../src/components/Icon.tsx', import.meta.url),
+  'utf8',
+);
+const iconSprite = fs.readFileSync(
+  new URL('../public/icons/streamline-flex-solid.svg', import.meta.url),
+  'utf8',
+);
 
 test('title detail tabs use a transparent row with content-sized solid segments', () => {
   assert.match(page, /className="title-detail-tabs-shell"/);
@@ -41,4 +49,11 @@ test('light title hero uses a short background-colored scroll-edge fade and whit
   assert.match(page, /fontSize: 34, fontWeight: 900, color: '#fff'/);
   assert.match(page, /const heroButtonBackground = isDark[\s\S]*?linear-gradient\(145deg[\s\S]*?'rgba\(255,255,255,0\.90\)'/);
   assert.match(page, /const headerActionBackground = isDark \? 'rgba\(255,255,255,0\.14\)' : 'rgba\(255,255,255,0\.92\)'/);
+});
+
+test('title runtime uses the shared clock icon instead of a platform emoji', () => {
+  assert.equal((page.match(/<Icon name="clock" size=\{12\}/g) || []).length, 2);
+  assert.doesNotMatch(page, /⏱/);
+  assert.match(icon, /clock:\s*'fa7-regular-clock'/);
+  assert.match(iconSprite, /<symbol id="fa7-regular-clock" viewBox="0 0 512 512">/);
 });

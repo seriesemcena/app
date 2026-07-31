@@ -29,6 +29,7 @@
     "novidades": "Novidades",
     "maratonando": "Maratonando",
     "atrasadas": "Atrasadas",
+    "emProgresso": "Em progresso",
     "finalizadas": "Finalizadas"
   },
   "tags": {
@@ -80,6 +81,9 @@
   "noUpcoming": "Sem episódios agendados",
   "noUpcomingDetail": "Quando suas séries tiverem novos episódios confirmados, eles aparecerão aqui",
   "newEpisode": "Novo episódio",
+  "inProgress": "Em progresso",
+  "emptyInProgress": "Nenhuma série em progresso",
+  "seasonsCompleted": "{{completed}} de {{total}} temporadas finalizadas",
   "seasonNumber": "Temporada {{number}}",
   "behindDetail": "Episódios da temporada atual não assistidos há pelo menos 72 horas",
   "upToDate": "Você está em dia!",
