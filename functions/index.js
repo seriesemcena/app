@@ -34,6 +34,13 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const DAYS_THRESHOLD = 3;
 const USER_SCAN_PAGE_SIZE = 100;
 
+/** Device tokens are credentials: logs keep only enough to tell them apart. */
+const maskToken = (token) => (
+  typeof token === 'string' && token.length > 16
+    ? `${token.slice(0, 8)}…${token.slice(-4)}`
+    : 'invalid'
+);
+
 const privateUserRef = (uid, documentId) => db.doc(`users/${uid}/private/${documentId}`);
 const systemAccountRef = (uid) => db.doc(`users/${uid}/system/account`);
 
@@ -396,16 +403,30 @@ async function deliver(uid, eventKey, notification) {
       tokens,
       notification: { title: notification.title, body: notification.body },
       data: { url: pushUrl, eventKey, type: notification.type || 'general' },
+      // Without an explicit apns block FCM delivers at the default priority,
+      // which iOS may defer or drop entirely (Low Power Mode, Scheduled
+      // Summary). sendTestPush already carried this; automated notifications
+      // — new episodes, premiere reminders, admin jobs — did not.
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: { aps: { sound: 'default' } },
+      },
       webpush: { fcmOptions: { link: pushUrl } },
     });
     const invalid = [];
+    const failures = [];
     pushSuccess = response.successCount;
     pushFailure = response.failureCount;
     response.responses.forEach((result, index) => {
-      if (!result.success && ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(result.error?.code)) {
+      if (result.success) return;
+      failures.push({ code: result.error?.code || 'unknown', token: maskToken(tokens[index]) });
+      if (['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(result.error?.code)) {
         invalid.push(tokens[index]);
       }
     });
+    if (failures.length) {
+      logger.warn('Push delivery partially rejected by FCM', { uid, eventKey, failures });
+    }
     if (invalid.length) {
       await tokenSnap.ref.set({ tokens: tokens.filter((token) => !invalid.includes(token)) }, { merge: true });
     }
@@ -491,14 +512,23 @@ exports.sendTestPush = onCall({
   });
 
   const invalid = [];
+  const failures = [];
   response.responses.forEach((result, index) => {
-    if (!result.success && [
+    if (result.success) return;
+    // Record WHY each device failed. Counting failures without their code made
+    // an APNs delivery problem indistinguishable from a stale token, so the
+    // partial success ("2 of 3") looked like a healthy send.
+    failures.push({ code: result.error?.code || 'unknown', token: maskToken(tokens[index]) });
+    if ([
       'messaging/registration-token-not-registered',
       'messaging/invalid-registration-token',
     ].includes(result.error?.code)) {
       invalid.push(tokens[index]);
     }
   });
+  if (failures.length) {
+    logger.warn('Push test partially rejected by FCM', { uid, failures });
+  }
   if (invalid.length) {
     await tokenRef.set({
       tokens: (tokenSnap.data()?.tokens || []).filter((token) => !invalid.includes(token)),

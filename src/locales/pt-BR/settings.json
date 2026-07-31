@@ -295,6 +295,7 @@
     "episodes": "Novos episódios",
     "episodesSub": "Quando sair episódio de séries que você acompanha",
     "reminders": "Lembretes PRO",
-    "remindersSub": "Avisos das datas definidas nas suas listas personalizadas"
+    "remindersSub": "Avisos das datas definidas nas suas listas personalizadas",
+    "testPartial": "Envio aceito em {{count}} de {{total}} dispositivo(s). Algum aparelho recusou o envio."
   }
 }

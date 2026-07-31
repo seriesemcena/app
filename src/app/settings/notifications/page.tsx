@@ -130,7 +130,12 @@ export default function NotificationPrefsPage() {
       setRegistration('registered');
       const result = await sendPushTest(document.documentElement.lang || 'pt-BR');
       setTestState('success');
-      setTestMessage(t('notifPrefs.testAccepted', { count: result.pushSuccess }));
+      // Report the partial result honestly: a send accepted for the browser
+      // but rejected for the phone previously showed a plain success, hiding
+      // exactly the device the user was testing.
+      setTestMessage(result.pushFailure > 0
+        ? t('notifPrefs.testPartial', { count: result.pushSuccess, total: result.devices })
+        : t('notifPrefs.testAccepted', { count: result.pushSuccess }));
     } catch (error) {
       const code = typeof error === 'object' && error && 'code' in error
         ? String((error as { code?: unknown }).code)

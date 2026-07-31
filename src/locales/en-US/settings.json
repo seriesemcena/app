@@ -295,6 +295,7 @@
     "episodes": "New episodes",
     "episodesSub": "When shows you follow release an episode",
     "reminders": "PRO reminders",
-    "remindersSub": "Alerts for dates in your custom lists"
+    "remindersSub": "Alerts for dates in your custom lists",
+    "testPartial": "Delivered to {{count}} of {{total}} device(s). Some devices rejected the message."
   }
 }
