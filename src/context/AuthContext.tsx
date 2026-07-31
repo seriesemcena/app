@@ -82,8 +82,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           switchActiveUser(u?.uid ?? null);
         } catch {}
 
+        // A returning native/PWA session already has an account-scoped local
+        // cache. Let React render that cache as soon as Firebase confirms the
+        // same uid, while token refresh and Firestore reconciliation continue
+        // below. Blocking the whole app on those network requests kept iOS on
+        // "Restaurando sua sessão" for several seconds on a cold launch.
+        //
+        // New logins and account switches still wait for the authoritative
+        // pull, because their local cache is absent or has just been cleared.
+        const canRenderCachedSession = !!u && cacheOwner === u.uid;
         setUser(u);
-        if (active) setLoading(true);
+        if (active) setLoading(!canRenderCachedSession);
 
         // Firebase local persistence restores the cached account first and
         // refreshes expired ID tokens when the network is available. Do not
@@ -128,9 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
           } catch {}
 
-          // The account is ready only after its authoritative Firestore data
-          // has hydrated the local cache. Rendering before this point was the
-          // reason completed series briefly/indefinitely disappeared.
+          // Fresh logins/account switches become ready only after the
+          // authoritative Firestore data has hydrated the local cache.
+          // Returning sessions may already be visible from their safe,
+          // uid-scoped cache; this also closes the loading state idempotently.
           if (active) setLoading(false);
 
           // 2b. Register an already-authorized browser or native installation
