@@ -82,4 +82,7 @@ test('content overrides affect the real TMDB proxy without exposing credentials'
   assert.match(tmdb, /content_overrides/);
   assert.match(tmdb, /visibility !== 'hidden'/);
   assert.match(tmdb, /localOverview/);
+  assert.doesNotMatch(tmdb, /^import .*firebaseAdmin/m);
+  assert.match(tmdb, /await import\('@\/lib\/server\/firebaseAdmin'\)/);
+  assert.match(tmdb, /returning upstream payload/);
 });

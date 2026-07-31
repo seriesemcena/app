@@ -6,10 +6,10 @@ import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { ImgWithSkeleton } from '@/components/posters';
-import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, blockStore, type ProReminder, type Profile } from '@/lib/store';
+import { DEFAULT_PRO_THEME, listStore, proSettingsStore, revStore, profileStore, blockStore, epWatchedStore, seasonProgressStore, type ProReminder, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbProfileStore, dbFollowStore, dbBlockStore, dbUserStatsStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
+import { dbProfileStore, dbFollowStore, dbBlockStore, dbUserStatsStore, dbRatingStore, getUserByUsername, dbListStore, dbNotifStore, getFollowers, type FollowerInfo } from '@/lib/db';
 import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { usernameFromNameOrEmail } from '@/lib/username';
 import { useTheme } from '@/context/ThemeContext';
@@ -20,6 +20,7 @@ import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { AppBannerSlot } from '@/components/AppBannerSlot';
 import { streamingColor } from '@/lib/streamingPlatforms';
 import { formatCurrency } from '@/lib/locale-utils';
+import { calculateWatchedDuration, legacyHistoryToSeasonProgress, uniqueEpisodeNumbers } from '@/lib/seasonProgress';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
 type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
@@ -132,6 +133,7 @@ function UserProfileInner() {
   const [targetLists,   setTargetLists]   = useState<Lists>(EMPTY_LISTS);
   const [notFound,      setNotFound]      = useState(false);
   const [reviewCount,   setReviewCount]   = useState(0);
+  const [syncRevision,  setSyncRevision]  = useState(0);
   const [watchCalendar, setWatchCalendar] = useState<WatchCalendarCell[]>(() => buildWatchCalendar([]).cells);
   const [watchWeekdays, setWatchWeekdays] = useState<number[]>(Array(7).fill(0));
   const [proReminders, setProReminders] = useState<ProReminder[]>([]);
@@ -148,7 +150,13 @@ function UserProfileInner() {
     want:      listStore.get('want'),
     watched:   listStore.get('watched'),
     favorites: listStore.get('favorites'),
-  } : EMPTY_LISTS), [isMe]);
+  } : EMPTY_LISTS), [isMe, loading, syncRevision, user?.uid]);
+
+  useEffect(() => {
+    const refresh = () => setSyncRevision((revision) => revision + 1);
+    window.addEventListener('maratonou:sync', refresh);
+    return () => window.removeEventListener('maratonou:sync', refresh);
+  }, []);
 
   /* Every name this profile may be recorded under in someone's following_list:
      canonical username, old aliases, display name, and the URL slug. Legacy
@@ -193,6 +201,9 @@ function UserProfileInner() {
       setFollowingNames(list);
     } catch {}
     if (firebaseConfigured) {
+      dbRatingStore.listForUser(getDB(), user.uid)
+        .then((ratings) => setReviewCount(ratings.length))
+        .catch(() => {});
       dbProfileStore.get(getDB(), user.uid).then(cloud => {
         if (cloud && (cloud.name || cloud.username || cloud.bio)) {
           profileStore.set({ ...local, ...cloud }, user.uid);
@@ -203,7 +214,7 @@ function UserProfileInner() {
         return getFollowers(getDB(), [p.username, ...(p.aliases ?? []), p.name, slug], user.uid);
       }).then(f => { if (f) setFollowers(f); }).catch(() => {});
     }
-  }, [isMe, user, loading, slug]);
+  }, [isMe, user, loading, slug, syncRevision]);
 
   useEffect(() => {
     if (!isMe || !user) return;
@@ -267,24 +278,54 @@ function UserProfileInner() {
     return () => { alive = false; };
   }, [slug, isMe, user, loading]);
 
-  /* ── Real stats from the watched list (works for any profile) ── */
+  /* ── Real stats from watched episodes/movies ── */
   const [realStats, setRealStats] = useState<{
     totalHours: number; moviesCount: number; tvCount: number;
   } | null>(null);
 
   useEffect(() => {
-    const watched = concluidos;
-    if (watched.length === 0) {
+    const watchedMovies = concluidos.filter((item) => item.type === 'movie');
+    const completedSeries = concluidos.filter((item) => item.type === 'tv');
+    const watchingSeries = assistindo.filter((item) => item.type === 'tv');
+    const legacyHistory = isMe ? epWatchedStore.getAll() : {};
+    const canonicalProgress = isMe ? seasonProgressStore.getAll() : [];
+    const canonicalSeriesIds = new Set(canonicalProgress.map((record) => String(record.seriesId)));
+    const legacyProgress = isMe
+      ? legacyHistoryToSeasonProgress(
+          user?.uid ?? 'local',
+          Object.fromEntries(
+            Object.entries(legacyHistory).filter(([seriesId]) => !canonicalSeriesIds.has(seriesId)),
+          ),
+        )
+      : [];
+    const progress = [...canonicalProgress, ...legacyProgress].filter(
+      (record) => uniqueEpisodeNumbers(record.watchedEpisodeNumbers).length > 0,
+    );
+    const progressedSeriesIds = new Set(progress.map((record) => record.seriesId));
+    const completedSeriesIds = new Set(completedSeries.map((item) => item.id));
+    const seriesById = new Map<number, ListItem>();
+
+    [...completedSeries, ...watchingSeries].forEach((item) => seriesById.set(item.id, item));
+    progressedSeriesIds.forEach((id) => {
+      if (!seriesById.has(id)) seriesById.set(id, { id, title: '', type: 'tv' });
+    });
+
+    // Other profiles expose only their public completed list. The owner view
+    // additionally uses the canonical per-season progress hydrated from
+    // Firestore, which keeps iOS, PWA and desktop totals consistent.
+    const series = isMe ? Array.from(seriesById.values()) : completedSeries;
+    const tracked = [...watchedMovies, ...series];
+    if (tracked.length === 0) {
       setRealStats({ totalHours: 0, moviesCount: 0, tvCount: 0 });
       return;
     }
     let alive = true;
-    const toFetch = watched.slice(0, 20);
     Promise.all(
-      toFetch.map(async (item) => {
+      tracked.slice(0, 60).map(async (item) => {
         try {
           const ep = item.type === 'movie' ? `/movie/${item.id}` : `/tv/${item.id}`;
-          return await fetch(`/api/tmdb?endpoint=${ep}`).then(r => r.json());
+          const response = await fetch(`/api/tmdb?endpoint=${ep}`);
+          return response.ok ? await response.json() : null;
         } catch { return null; }
       })
     ).then((results) => {
@@ -292,14 +333,28 @@ function UserProfileInner() {
       let totalMinutes = 0, moviesCount = 0, tvCount = 0;
       results.forEach((d, i) => {
         if (!d) return;
-        const item = toFetch[i];
+        const item = tracked[i];
         if (item.type === 'movie') { moviesCount++; totalMinutes += d.runtime || 110; }
-        else { tvCount++; totalMinutes += (d.episode_run_time?.[0] || 45) * Math.min(d.number_of_episodes || 10, 24); }
+        else {
+          tvCount++;
+          const runtime = Number(d.episode_run_time?.[0]) || 45;
+          const records = progress.filter((record) => record.seriesId === item.id);
+          if (records.length > 0) {
+            totalMinutes += records.reduce((sum, record) => sum + calculateWatchedDuration(
+              record.watchedEpisodeNumbers,
+              record.episodeDurations,
+              runtime,
+            ), 0);
+          } else if (completedSeriesIds.has(item.id)) {
+            // Legacy completed titles may predate episode-level tracking.
+            totalMinutes += runtime * (Number(d.number_of_episodes) || 0);
+          }
+        }
       });
       setRealStats({ totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount });
     });
     return () => { alive = false; };
-  }, [concluidos]);
+  }, [assistindo, concluidos, isMe, syncRevision, user?.uid]);
 
   /* ── Activity calendar: last four weeks, Monday → Sunday ── */
   useEffect(() => {

@@ -28,8 +28,17 @@ type WatchingItem = {
   backdrop_path?: string | null;
   nextSeason?: number; nextEpisode?: number;
   nextAirDate?: string | null;
+  nextEpisodeName?: string;
+  nextEpisodeRuntime?: number;
+  nextEpisodeOverview?: string;
+  nextEpisodeStill?: string | null;
   overdueSeason?: number;
   overdueEpisode?: number;
+  overdueEpisodeName?: string;
+  overdueEpisodeRuntime?: number;
+  overdueEpisodeOverview?: string;
+  overdueEpisodeStill?: string | null;
+  overdueAirDate?: string | null;
   overdueCount?: number;
   network?: string;
   classification?: 'finished' | 'watching' | 'unstarted' | 'upcoming-only';
@@ -50,6 +59,26 @@ type FinishedItem = Pick<
 };
 
 type DateResult = { label: string; isToday: boolean; isTomorrow: boolean };
+
+function episodeHref(item: WatchingItem, source: 'next' | 'overdue' = 'next') {
+  const season = source === 'next' ? item.nextSeason : item.overdueSeason;
+  const episode = source === 'next' ? item.nextEpisode : item.overdueEpisode;
+  if (!season || !episode) return `/title/${item.type}/${item.id}`;
+
+  const params = new URLSearchParams({
+    tvId: String(item.id),
+    season: String(season),
+    epNum: String(episode),
+    name: source === 'next' ? (item.nextEpisodeName || '') : (item.overdueEpisodeName || ''),
+    showName: item.title,
+    runtime: String(source === 'next' ? (item.nextEpisodeRuntime || '') : (item.overdueEpisodeRuntime || '')),
+    overview: source === 'next' ? (item.nextEpisodeOverview || '') : (item.overdueEpisodeOverview || ''),
+    still: source === 'next' ? (item.nextEpisodeStill || '') : (item.overdueEpisodeStill || ''),
+    network: item.network || '',
+    airDate: source === 'next' ? (item.nextAirDate || '') : (item.overdueAirDate || ''),
+  });
+  return `/episode?${params.toString()}`;
+}
 
 export default function SeriesPage() {
   const router = useRouter();
@@ -122,7 +151,7 @@ export default function SeriesPage() {
             ? classifySeries(catalog, progress)
             : (watched.some((entry) => entry.id === item.id) ? 'finished' : 'unstarted');
           const completion = summarizeSeriesCompletion(catalog, progress);
-          const next = detail?.next_episode_to_air;
+          const next = detail?.next_episode_to_air as any;
           const seasonNumber = currentAiredSeason(detail || {});
           let overdue: ReturnType<typeof overdueEpisodes> = [];
 
@@ -135,7 +164,7 @@ export default function SeriesPage() {
             overdue = overdueEpisodes(season?.episodes || [], watchedEpisodes);
           }
 
-          const latestOverdue = overdue.at(-1);
+          const latestOverdue = overdue.at(-1) as any;
           return {
             id: item.id,
             title: detail?.name || item.title,
@@ -145,8 +174,17 @@ export default function SeriesPage() {
             nextSeason: next?.season_number ?? undefined,
             nextEpisode: next?.episode_number ?? undefined,
             nextAirDate: next?.air_date ?? null,
+            nextEpisodeName: next?.name ?? '',
+            nextEpisodeRuntime: Number(next?.runtime) || undefined,
+            nextEpisodeOverview: next?.overview ?? '',
+            nextEpisodeStill: next?.still_path ?? null,
             overdueSeason: latestOverdue?.season_number ?? seasonNumber ?? undefined,
             overdueEpisode: latestOverdue?.episode_number ?? undefined,
+            overdueEpisodeName: latestOverdue?.name ?? '',
+            overdueEpisodeRuntime: Number(latestOverdue?.runtime) || undefined,
+            overdueEpisodeOverview: latestOverdue?.overview ?? '',
+            overdueEpisodeStill: latestOverdue?.still_path ?? null,
+            overdueAirDate: latestOverdue?.air_date ?? null,
             overdueCount: overdue.length,
             network: (detail as any)?.networks?.[0]?.name ?? '',
             classification,
@@ -193,21 +231,21 @@ export default function SeriesPage() {
   }, [authLoading]);
 
   const atrasadas = useMemo(() => items.filter((item) => (item.overdueCount ?? 0) > 0), [items]);
-  const emBreve = useMemo(() =>
-    items.filter((item) => !item.hasCompletedSeason).sort((a, b) => {
-      if (!a.nextAirDate) return 1;
-      if (!b.nextAirDate) return -1;
-      return new Date(a.nextAirDate).getTime() - new Date(b.nextAirDate).getTime();
-    }),
+  const maratonandoItems = useMemo(() =>
+    items
+      .filter((item) => Boolean(item.nextAirDate && item.nextSeason && item.nextEpisode))
+      .sort((a, b) =>
+        new Date(a.nextAirDate as string).getTime() - new Date(b.nextAirDate as string).getTime(),
+      ),
   [items]);
-  const emBreveGroups = useMemo(() => {
+  const maratonandoGroups = useMemo(() => {
     const groups = new Map<string, WatchingItem[]>();
-    emBreve.forEach((item) => {
-      const date = item.nextAirDate || '__watching__';
+    maratonandoItems.forEach((item) => {
+      const date = item.nextAirDate as string;
       groups.set(date, [...(groups.get(date) || []), item]);
     });
     return Array.from(groups, ([date, groupItems]) => ({ date, items: groupItems }));
-  }, [emBreve]);
+  }, [maratonandoItems]);
   const finishedInProgress = useMemo(
     () => finishedList.filter((item) => item.status === 'in-progress'),
     [finishedList],
@@ -286,7 +324,7 @@ export default function SeriesPage() {
                       <div key={i} style={{ height: 112, borderRadius: 16, background: T.surface2 }} />
                     ))}
                   </div>
-                ) : emBreve.length === 0 ? (
+                ) : maratonandoItems.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '48px 0', textAlign: 'center' }}>
                     <Icon name="calendar" size={40} color={T.t4} />
                     <Txt size={15} weight={700} color={T.t2} style={{ display: 'block' }}>{t('noUpcoming')}</Txt>
@@ -296,10 +334,8 @@ export default function SeriesPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-                    {emBreveGroups.map((group) => {
-                      const groupDate = group.date === '__watching__'
-                        ? { label: t('tabs.maratonando'), isToday: false, isTomorrow: false }
-                        : formatDate(group.date);
+                    {maratonandoGroups.map((group) => {
+                      const groupDate = formatDate(group.date);
                       return (
                         <section key={group.date}>
                           <Txt size={20} weight={900} style={{ display: 'block', marginBottom: 10 }}>
@@ -312,7 +348,7 @@ export default function SeriesPage() {
                                 <button
                                   key={item.id}
                                   className={groupDate.isToday ? 'series-episode-card-today' : undefined}
-                                  onClick={() => router.push(`/title/${item.type}/${item.id}`)}
+                                  onClick={() => router.push(episodeHref(item))}
                                   style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
                                   <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
                                     {thumb
@@ -325,9 +361,7 @@ export default function SeriesPage() {
                                       {item.title}
                                     </Txt>
                                     <Txt size={12} color={T.t3}>
-                                      {item.nextSeason && item.nextEpisode
-                                        ? <>{t('season', { number: item.nextSeason, ns: 'title' })} · {t('episode', { number: item.nextEpisode, ns: 'title' })}</>
-                                        : t('newEpisode')}
+                                      {t('season', { number: item.nextSeason, ns: 'title' })} · {t('episode', { number: item.nextEpisode, ns: 'title' })}
                                     </Txt>
                                   </div>
                                 </button>
@@ -371,7 +405,7 @@ export default function SeriesPage() {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => router.push(`/title/${item.type}/${item.id}`)}
+                          onClick={() => router.push(episodeHref(item, 'overdue'))}
                           style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
                           {/* Thumbnail */}
                           <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2, position: 'relative' }}>

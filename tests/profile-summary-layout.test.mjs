@@ -32,6 +32,11 @@ test('profile summary uses real watch activity and compact streaming tracks', as
   const source = await readFile(new URL('src/app/user/[username]/page.tsx', projectRoot), 'utf8');
 
   assert.match(source, /dbUserStatsStore\.get\(getDB\(\), user\.uid\)/);
+  assert.match(source, /seasonProgressStore\.getAll\(\)/);
+  assert.match(source, /epWatchedStore\.getAll\(\)/);
+  assert.match(source, /calculateWatchedDuration\(/);
+  assert.match(source, /legacyHistoryToSeasonProgress\(/);
+  assert.doesNotMatch(source, /Math\.min\(d\.number_of_episodes \|\| 10, 24\)/);
   assert.match(source, /buildWatchCalendar\(dates\)/);
   assert.match(source, /gridTemplateColumns: 'repeat\(7, minmax\(0, 1fr\)\)'/);
   assert.match(source, /data-streaming-chart="compact"/);

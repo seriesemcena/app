@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/serverAuth';
-import { getAdminDB, hasAdminCredentials } from '@/lib/server/firebaseAdmin';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 
@@ -14,6 +13,14 @@ const TMDB_BASE = 'https://api.themoviedb.org/3';
 const ENDPOINT_OK = /^(?:\/(?:movie|tv|search|discover|person|trending)(?:\/[A-Za-z0-9_-]+)+|\/find\/tt\d+)$/;
 
 type TmdbPayload = Record<string, any>;
+
+function hasAdminCredentials() {
+  return Boolean(
+    process.env.FIREBASE_ADMIN_PROJECT_ID
+    && process.env.FIREBASE_ADMIN_CLIENT_EMAIL
+    && process.env.FIREBASE_ADMIN_PRIVATE_KEY,
+  );
+}
 
 function mediaType(endpoint: string, item: TmdbPayload): 'movie' | 'tv' | null {
   if (item.media_type === 'movie' || item.media_type === 'tv') return item.media_type;
@@ -35,6 +42,10 @@ function mergeOverride(item: TmdbPayload, override: TmdbPayload, type: 'movie' |
 async function applyContentOverrides(endpoint: string, payload: TmdbPayload) {
   if (!hasAdminCredentials()) return payload;
   try {
+    // Content overrides are optional enrichment. Keep the Admin SDK out of
+    // this route's startup path so an SDK/transitive dependency regression
+    // can never take the public TMDB catalogue down with it.
+    const { getAdminDB } = await import('@/lib/server/firebaseAdmin');
     const database = getAdminDB();
     if (Array.isArray(payload.results)) {
       const keyed = payload.results
@@ -60,7 +71,8 @@ async function applyContentOverrides(endpoint: string, payload: TmdbPayload) {
     const override = (await database.collection('content_overrides').doc(`${type}_${payload.id}`).get()).data();
     if (override?.visibility === 'hidden') return { success: false, status_code: 34, status_message: 'Conteúdo indisponível.' };
     return override ? mergeOverride(payload, override, type) : payload;
-  } catch {
+  } catch (error) {
+    console.error('TMDB content overrides unavailable; returning upstream payload.', error);
     return payload;
   }
 }

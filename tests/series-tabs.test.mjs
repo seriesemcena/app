@@ -15,13 +15,15 @@ test('series tabs separate season progress from fully finished shows', async () 
 test('watching and finished tabs use the season-aware reconciled collections', async () => {
   const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
 
-  assert.match(source, /tab === 'maratonando'[\s\S]*?emBreveGroups\.map/);
+  assert.match(source, /tab === 'maratonando'[\s\S]*?maratonandoGroups\.map/);
   assert.match(source, /tab === 'atrasadas'[\s\S]*?atrasadas\.map/);
   assert.match(source, /classifySeries\(catalog, progress\)/);
   assert.match(source, /summarizeSeriesCompletion\(catalog, progress\)/);
   assert.match(source, /seasonProgressStore\.getAll\(\)\.forEach/);
   assert.match(source, /setFinishedList\(loaded[\s\S]*?classification === 'finished' \|\| item\.hasCompletedSeason/);
-  assert.match(source, /items\.filter\(\(item\) => !item\.hasCompletedSeason\)/);
+  assert.match(source, /const maratonandoItems = useMemo\(\(\) =>[\s\S]*?items[\s\S]*?\.filter[\s\S]*?\.sort/);
+  assert.match(source, /filter\(\(item\) => Boolean\(item\.nextAirDate && item\.nextSeason && item\.nextEpisode\)\)/);
+  assert.doesNotMatch(source, /items\.filter\(\(item\) => !item\.hasCompletedSeason\)/);
   assert.match(source, /tab === 'emProgresso'[\s\S]*?finishedInProgress\.map/);
   assert.match(source, /tab === 'finalizadas'[\s\S]*?items=\{fullyFinished as unknown as TMDBItem\[\]\}/);
   assert.doesNotMatch(
@@ -35,6 +37,21 @@ test('watching and finished tabs use the season-aware reconciled collections', a
     /t\('season', \{ number: item\.nextSeason, ns: 'title' \}\)\} · \{t\('episode', \{ number: item\.nextEpisode, ns: 'title' \}\)/,
   );
   assert.doesNotMatch(source, /`T\$\{item\.nextSeason\} · Ep \$\{item\.nextEpisode\}`/);
+});
+
+test('scheduled series cards only show real TMDB episodes and open the episode detail page', async () => {
+  const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
+  const watchingSection = source.match(
+    /\{\/\* ══ TAB: Maratonando ══ \*\/\}([\s\S]*?)\{\/\* ══ TAB: Atrasadas ══ \*\/\}/,
+  )?.[1] || '';
+
+  assert.match(source, /function episodeHref\(item: WatchingItem, source: 'next' \| 'overdue' = 'next'\)/);
+  assert.ok(source.includes('return `/episode?${params.toString()}`;'));
+  assert.match(source, /nextEpisodeName: next\?\.name/);
+  assert.match(source, /nextEpisodeStill: next\?\.still_path/);
+  assert.match(watchingSection, /router\.push\(episodeHref\(item\)\)/);
+  assert.doesNotMatch(watchingSection, /t\('newEpisode'\)/);
+  assert.ok(!watchingSection.includes('router.push(`/title/${item.type}/${item.id}`)'));
 });
 
 test('today episode cards use the animated gradient border with reduced-motion support', async () => {
