@@ -68,6 +68,14 @@ test('web header buttons remain visible and are not mirrored by UIKit', () => {
   assert.match(globals, /\.ios-top-action/);
 });
 
+test('web disables duplicated header controls left by older installed iOS builds', () => {
+  assert.match(frame, /dataset\.nativeControls === 'true'/);
+  assert.match(frame, /removeAttribute\('data-maratonou-icon-id'\)/);
+  assert.match(frame, /type: 'controls'/);
+  assert.match(frame, /controls: \[\]/);
+  assert.match(frame, /delete document\.documentElement\.dataset\.nativeControls/);
+});
+
 test('web action sheets are preserved and temporarily hide the native toolbar', () => {
   assert.doesNotMatch(appDelegate, /UIAlertController/);
   assert.doesNotMatch(appDelegate, /NativeActionSheetViewController/);

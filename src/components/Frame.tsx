@@ -19,9 +19,11 @@ export function Frame({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.hasTabbar = String(showTabs);
 
-    const nativeHandler = (window as Window & {
+    const nativeWindow = window as Window & {
       webkit?: { messageHandlers?: Record<string, { postMessage: (value: unknown) => void }> };
-    }).webkit?.messageHandlers?.maratonouNativeChrome;
+      __MARATONOU_NATIVE_UI__?: unknown;
+    };
+    const nativeHandler = nativeWindow.webkit?.messageHandlers?.maratonouNativeChrome;
     nativeHandler?.postMessage({ type: 'visibility', visible: showTabs });
     nativeHandler?.postMessage({ type: 'route', path: pathname });
     nativeHandler?.postMessage({ type: 'theme', value: theme });
@@ -30,6 +32,73 @@ export function Frame({ children }: { children: ReactNode }) {
       delete document.documentElement.dataset.hasTabbar;
     };
   }, [pathname, showTabs, theme]);
+
+  useEffect(() => {
+    // Builds published before 3cd179d mirrored every web header action with a
+    // UIKit button. A Vercel update cannot replace that installed native code,
+    // so neutralize its scanner until the user installs the next iOS build.
+    // Removing this metadata does not affect the SVG rendered by React.
+    const nativeWindow = window as Window & {
+      webkit?: { messageHandlers?: Record<string, { postMessage: (value: unknown) => void }> };
+      __MARATONOU_NATIVE_UI__?: unknown;
+    };
+    const isLegacyNativeHeader = document.documentElement.dataset.nativeControls === 'true'
+      || Boolean(nativeWindow.__MARATONOU_NATIVE_UI__);
+    if (!isLegacyNativeHeader) return;
+
+    const selectors = [
+      '.ios-top-action',
+      '.glass-header-action-slot > button',
+      '.app-bar-action-slot > button',
+      '.landing-page-header > button',
+    ].join(',');
+    const nativeHandler = nativeWindow.webkit?.messageHandlers?.maratonouNativeChrome;
+    let frame = 0;
+    let firstRun = true;
+
+    const disableLegacyHeaderControls = () => {
+      frame = 0;
+      let changed = false;
+      document.querySelectorAll<HTMLElement>(selectors).forEach((button) => {
+        if (button.hasAttribute('data-native-control-ready')) {
+          button.removeAttribute('data-native-control-ready');
+          changed = true;
+        }
+        button.querySelectorAll<HTMLElement>('[data-maratonou-icon-id]').forEach((icon) => {
+          icon.removeAttribute('data-maratonou-icon-id');
+          changed = true;
+        });
+      });
+      if (firstRun || changed) {
+        firstRun = false;
+        nativeHandler?.postMessage({
+          type: 'controls',
+          route: `${location.pathname}${location.search}`,
+          controls: [],
+        });
+        window.dispatchEvent(new CustomEvent('maratonou:native-chrome-sync'));
+      }
+    };
+    const scheduleDisable = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(disableLegacyHeaderControls);
+    };
+
+    delete document.documentElement.dataset.nativeControls;
+    scheduleDisable();
+    const observer = new MutationObserver(scheduleDisable);
+    observer.observe(document.documentElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-maratonou-icon-id', 'data-native-control-ready'],
+    });
+
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
 
   useEffect(() => {
     const handleNativeTab = (event: Event) => {
