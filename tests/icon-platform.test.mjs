@@ -8,25 +8,19 @@ async function readProjectFile(path) {
   return readFile(new URL(path, projectRoot), 'utf8');
 }
 
-function objectKeys(source, constantName) {
-  const object = source.match(new RegExp(`const ${constantName}[^=]*= \\{([\\s\\S]*?)\\n\\};`));
-  assert.ok(object, `${constantName} should exist`);
-  return [...object[1].matchAll(/^\s{2}([A-Za-z0-9_]+):/gm)]
-    .map((match) => match[1])
-    .sort();
-}
-
-test('every Streamline Flex fallback has a native SF Symbols equivalent', async () => {
-  const [iconSource, spriteSource, packageJson] = await Promise.all([
+test('every platform keeps the original Maratonou SVG icon language', async () => {
+  const [iconSource, spriteSource, packageJson, generatorSource] = await Promise.all([
     readProjectFile('src/components/Icon.tsx'),
     readProjectFile('public/icons/streamline-flex-solid.svg'),
     readProjectFile('package.json'),
+    readProjectFile('scripts/generate-ios-native-icons.mjs'),
   ]);
 
-  assert.deepEqual(objectKeys(iconSource, 'SF_SYMBOLS'), objectKeys(iconSource, 'ICONS'));
-  assert.match(iconSource, /registerPlugin<SFSymbolsNativePlugin>\('SFSymbols'\)/);
-  assert.match(iconSource, /Capacitor\.getPlatform\(\) === 'ios'/);
   assert.match(iconSource, /streamline-flex-solid\.svg#\$\{iconId\}/);
+  assert.match(iconSource, /data-maratonou-icon-name=\{name\}/);
+  assert.match(iconSource, /data-maratonou-icon-id=\{iconId\}/);
+  assert.doesNotMatch(iconSource, /registerPlugin/);
+  assert.doesNotMatch(iconSource, /systemName/);
   assert.match(spriteSource, /Streamline Flex solid icons by Streamline \(CC BY 4\.0\)/);
   assert.match(spriteSource, /id="home-2-solid"/);
   assert.match(spriteSource, /id="fa7-solid-check-circle"/);
@@ -48,20 +42,28 @@ test('every Streamline Flex fallback has a native SF Symbols equivalent', async 
   assert.match(iconSource, /message: 'uis-comment-dots'/);
   assert.match(iconSource, /close: 'ep-close-bold'/);
   assert.match(iconSource, /playlist: 'playlist-solid'/);
-  assert.match(iconSource, /SVG_ICON_OVERRIDES = new Set<IconName>\(\['star', 'starO', 'check', 'bell', 'film', 'tv', 'message', 'playlist', 'close'\]\)/);
-  assert.match(iconSource, /!nativeIOS \|\| SVG_ICON_OVERRIDES\.has\(name\)/);
+  assert.match(generatorSource, /streamline-flex-solid\.svg/);
+  assert.match(generatorSource, /NativeTabHome: 'home-2-solid'/);
+  assert.match(generatorSource, /NativeTabSeries: 'icon-park-solid-play'/);
+  assert.match(generatorSource, /NativeTabMovies: 'film-slate-solid'/);
+  assert.match(generatorSource, /NativeTabActivity: 'uis-comment-dots'/);
+  assert.match(generatorSource, /template-rendering-intent/);
+  assert.match(packageJson, /"icons:ios-native": "node scripts\/generate-ios-native-icons\.mjs"/);
   assert.match(packageJson, /"@iconify-json\/streamline-flex"/);
   assert.doesNotMatch(packageJson, /"@solar-icons\/react"/);
 });
 
-test('the iOS bridge registers the native SF Symbols plugin', async () => {
+test('the iOS bridge renders original app artwork without an SF Symbols plugin', async () => {
   const [swiftSource, storyboard] = await Promise.all([
     readProjectFile('ios/App/App/AppDelegate.swift'),
     readProjectFile('ios/App/App/Base.lproj/Main.storyboard'),
   ]);
 
-  assert.match(swiftSource, /public let jsName = "SFSymbols"/);
-  assert.match(swiftSource, /UIImage\(systemName: symbolName/);
-  assert.match(swiftSource, /registerPluginInstance\(SFSymbolsPlugin\(\)\)/);
+  assert.match(swiftSource, /UIImage\(named: imageName\)/);
+  assert.match(swiftSource, /originalIconPNG/);
+  assert.match(swiftSource, /streamline-flex-solid\.svg/);
+  assert.match(swiftSource, /data-maratonou-icon-id/);
+  assert.doesNotMatch(swiftSource, /SFSymbolsPlugin/);
+  assert.doesNotMatch(swiftSource, /UIImage\(systemName:/);
   assert.match(storyboard, /customClass="MaratonouBridgeViewController"/);
 });

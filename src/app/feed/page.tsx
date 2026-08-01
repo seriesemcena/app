@@ -15,6 +15,7 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbReactionStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { presentNativeActionSheet } from '@/lib/nativeIOS';
 
 type FeedTab = 'para_voce' | 'seguindo';
 
@@ -594,6 +595,27 @@ function FeedCard({ item, onDelete }: {
       : []),
   ];
 
+  const openOptionsMenu = () => {
+    const request = presentNativeActionSheet({
+      title: 'Mais opções',
+      cancelTitle: 'Cancelar',
+      actions: menuOptions.map((option, index) => ({
+        id: `menu-${index}`,
+        title: option.label,
+        role: option.label.startsWith('Excluir') ? 'destructive' as const : 'default' as const,
+      })),
+    });
+    if (!request) {
+      setShowMenu(value => !value);
+      return;
+    }
+    void request.then((actionID) => {
+      if (!actionID || actionID === '__cancel__') return;
+      const index = Number(actionID.replace('menu-', ''));
+      menuOptions[index]?.action();
+    });
+  };
+
   return (
     <SocialCard dimmed={deleting} edgeToEdge onClick={() => openComments()}>
 
@@ -729,7 +751,10 @@ function FeedCard({ item, onDelete }: {
           <button
             type="button"
             aria-label={`Mais opções de ${item.user}`}
-            onClick={() => setShowMenu(v => !v)}
+            onClick={(event) => {
+              event.stopPropagation();
+              openOptionsMenu();
+            }}
             style={{ width: 28, height: 40, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="menuDots" size={18} color={T.t2} />
           </button>

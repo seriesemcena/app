@@ -13,6 +13,7 @@ import { firebaseConfigured, getFirebaseAuth, getDB } from '@/lib/firebase';
 import {
   dbPresenceStore,
   dbSeasonProgressStore,
+  migrateLocalRatingsToFirestore,
   migrateLocalToFirestore,
   syncFromFirestore,
   subscribeUserDoc,
@@ -123,6 +124,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           //    uploading those would corrupt this account's data.
           if (cacheOwner === null || cacheOwner === u.uid) {
             try { await migrateLocalToFirestore(db, u.uid); } catch {}
+            // ratingsV1 is deliberately independent from the legacy migration
+            // marker: older accounts may have completed seasonProgressV1
+            // before their cached ratings were uploaded.
+            try {
+              await migrateLocalRatingsToFirestore(db, u.uid, u.displayName, u.email);
+            } catch (error) {
+              console.warn('[Auth] ratingsV1 migration deferred', error);
+            }
           }
 
           // 2. Initial pull: Firestore → localStorage (catches up any offline changes)

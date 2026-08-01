@@ -20,6 +20,18 @@ test('rating ownership and numeric bounds are enforced', () => {
   assert.match(rules, /request\.resource\.data\.rating <= 10/);
 });
 
+test('account rating history is queryable only by its authenticated owner', () => {
+  assert.match(rules, /match \/\{ratingPath=\*\*\}\/userRatings\/\{ratingUid\}/);
+  assert.match(
+    rules,
+    /match \/\{ratingPath=\*\*\}\/userRatings\/\{ratingUid\}[\s\S]*allow list: if activeUser\(\)[\s\S]*resource\.data\.authorUid == request\.auth\.uid/,
+  );
+  assert.match(
+    rules,
+    /match \/userRatings\/\{uid\}[\s\S]*allow get: if activeUser\(\) && request\.auth\.uid == uid;[\s\S]*allow list: if false;/,
+  );
+});
+
 test('review likes can only toggle the authenticated user', () => {
   assert.match(rules, /function togglesOwnReviewLike\(\)/);
   assert.match(rules, /changed\.hasOnly\(\['likedBy', 'likes'\]\)/);
@@ -60,9 +72,15 @@ test('social graph only lets an owner write following and never followers', () =
   assert.match(rules, /match \/followers\/\{followerUid\}[\s\S]*allow write: if false/);
 });
 
-test('Storage requires ownership, WebP and bounded object size', () => {
+test('Storage enforces profile ownership, media limits and PRO-only GIF/cover uploads', () => {
   assert.match(storage, /request\.auth\.uid == uid/);
-  assert.match(storage, /request\.resource\.size < 5 \* 1024 \* 1024/);
-  assert.match(storage, /request\.resource\.contentType == 'image\/webp'/);
   assert.match(storage, /request\.resource\.metadata\.ownerUid == uid/);
+  assert.match(storage, /function validAvatar\(uid\)/);
+  assert.match(storage, /contentType in \['image\/jpeg', 'image\/webp'\]/);
+  assert.match(storage, /request\.resource\.size <= 400 \* 1024/);
+  assert.match(storage, /request\.resource\.contentType == 'image\/gif'/);
+  assert.match(storage, /request\.resource\.size <= 600 \* 1024/);
+  assert.match(storage, /function validProCover\(uid\)/);
+  assert.match(storage, /isProMember\(uid\)/);
+  assert.match(storage, /request\.resource\.size <= 5 \* 1024 \* 1024/);
 });

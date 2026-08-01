@@ -286,7 +286,7 @@ function AuthPageInner() {
             </div>
           </div>
 
-          <BottomSheet visible={regionPickerOpen} onClose={() => setRegionPickerOpen(false)} title={t('region.label')}>
+          <BottomSheet nativeActionSheet visible={regionPickerOpen} onClose={() => setRegionPickerOpen(false)} title={t('region.label')}>
             <div role="listbox" aria-label={t('region.label')} style={{ display: 'grid', gap: 6 }}>
               {REGION_OPTIONS.map((region) => {
                 const selected = region.code === country;

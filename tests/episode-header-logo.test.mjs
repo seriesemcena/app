@@ -13,7 +13,7 @@ const primitives = fs.readFileSync(
 
 test('shared app headers hide the centered logo without removing scroll titles', () => {
   assert.match(episodePage, /<GlassHeader[\s\S]*?showLogo=\{false\}/);
-  assert.match(episodePage, /showChrome=\{isDark\}/);
+  assert.match(episodePage, /showChrome=\{showNavTitle\}/);
   assert.match(episodePage, /navTitle=\{`\$\{episodeCode\}/);
   assert.match(primitives, /showLogo = false/);
   assert.match(primitives, /showChrome = true/);

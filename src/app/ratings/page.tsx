@@ -142,10 +142,18 @@ export default function RatingsPage() {
   const [records, setRecords] = useState<RatingRecord[]>([]);
   const [titles, setTitles] = useState<RatedTitle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sourceLoading, setSourceLoading] = useState(true);
+  const [syncRevision, setSyncRevision] = useState(0);
 
   useEffect(() => {
     const requestedTab = new URLSearchParams(window.location.search).get('tab');
     if (requestedTab === 'series' || requestedTab === 'filmes') setTab(requestedTab);
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setSyncRevision((revision) => revision + 1);
+    window.addEventListener('maratonou:sync', refresh);
+    return () => window.removeEventListener('maratonou:sync', refresh);
   }, []);
 
   useEffect(() => {
@@ -162,16 +170,30 @@ export default function RatingsPage() {
           updatedAt: review.date,
         })),
     );
-    setRecords(local);
-
-    if (!user || !firebaseConfigured) return () => { cancelled = true; };
+    setSourceLoading(true);
+    if (!user || !firebaseConfigured) {
+      setRecords(local);
+      setSourceLoading(false);
+      return () => { cancelled = true; };
+    }
+    // Never seed an authenticated view from device-local reviews. Firestore
+    // is the account-wide source of truth, including a valid empty result.
+    setRecords([]);
     dbRatingStore.listForUser(getDB(), user.uid).then((cloud) => {
-      if (!cancelled && cloud.length > 0) setRecords(dedupeRatings(cloud));
-    }).catch(() => {});
+      if (!cancelled) setRecords(dedupeRatings(cloud));
+    }).catch((error) => {
+      console.warn('[Ratings] Could not load authoritative ratings', error);
+    }).finally(() => {
+      if (!cancelled) setSourceLoading(false);
+    });
     return () => { cancelled = true; };
-  }, [authLoading, user]);
+  }, [authLoading, user, syncRevision]);
 
   useEffect(() => {
+    if (sourceLoading) {
+      setLoading(true);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     Promise.all(records.map(async (record) => {
@@ -190,7 +212,7 @@ export default function RatingsPage() {
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [records]);
+  }, [records, sourceLoading]);
 
   const visibleTitles = useMemo(
     () => titles.filter((title) => title.tab === tab),

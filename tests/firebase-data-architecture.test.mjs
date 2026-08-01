@@ -43,7 +43,7 @@ test('ratings, follows, metrics and activity aggregates are server-owned', () =>
   assert.match(rules, /match \/systemEvents\/\{id\}/);
 });
 
-test('profile media is WebP in Storage and no longer generated as base64', () => {
+test('profile media is optimized for Storage while PRO GIF avatars preserve animation', () => {
   const editor = read('src/app/settings/edit-profile/page.tsx');
   const pro = read('src/app/settings/pro/page.tsx');
   const images = read('src/lib/imageStorage.ts');
@@ -51,8 +51,12 @@ test('profile media is WebP in Storage and no longer generated as base64', () =>
   assert.doesNotMatch(editor, /toDataURL|readAsDataURL|compressImage/);
   assert.doesNotMatch(pro, /toDataURL|readAsDataURL|compressCover/);
   assert.match(images, /image\/webp/);
+  assert.match(images, /image\/gif/);
+  assert.match(images, /PROFILE_IMAGE_LIMITS/);
   assert.match(images, /-thumb\.webp/);
-  assert.match(storageRules, /request\.resource\.contentType == 'image\/webp'/);
+  assert.match(storageRules, /contentType in \['image\/jpeg', 'image\/webp'\]/);
+  assert.match(storageRules, /request\.resource\.contentType == 'image\/gif'/);
+  assert.match(storageRules, /isProMember\(uid\)/);
 });
 
 test('Storage is configured and remains gated by an explicit public environment flag', () => {

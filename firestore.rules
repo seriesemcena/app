@@ -358,7 +358,8 @@ service cloud.firestore {
       allow read, write: if false;
 
       match /userRatings/{uid} {
-        allow read: if request.auth != null;
+        allow get: if activeUser() && request.auth.uid == uid;
+        allow list: if false;
         allow create: if activeUser()
                       && request.auth.uid == uid
                       && request.resource.data.authorUid == uid
@@ -374,6 +375,14 @@ service cloud.firestore {
                       && request.resource.data.rating <= 10;
         allow delete: if activeUser() && request.auth.uid == uid;
       }
+    }
+
+    // Account-wide rating history is loaded through a collection-group query.
+    // Firestore requires an explicit recursive rule for this query shape. The
+    // `authorUid` predicate makes the query provably owner-only.
+    match /{ratingPath=**}/userRatings/{ratingUid} {
+      allow list: if activeUser()
+                  && resource.data.authorUid == request.auth.uid;
     }
 
     match /ratingSummaries/{titleKey} {

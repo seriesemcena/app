@@ -51,12 +51,24 @@ test('native chrome owns themed active toolbar colors', () => {
   assert.match(appDelegate, /selectedColor: UIColor = nativeChromeIsDark \? \.white : \.black/);
 });
 
-test('header actions remain web controls inside the iOS shell', () => {
+test('native iOS header actions use original app artwork and a readiness handshake', () => {
   assert.doesNotMatch(appDelegate, /UIHostingController<AnyView>/);
-  assert.doesNotMatch(appDelegate, /type: 'topControls'/);
-  assert.doesNotMatch(appDelegate, /maratonou:native-top-controls-ready/);
-  assert.doesNotMatch(globals, /html\[data-native-chrome="true"\] button\.ios-top-action/);
-  assert.match(globals, /\.ios-top-action,/);
+  assert.match(appDelegate, /NativeHeaderActionView/);
+  assert.match(appDelegate, /originalIconPNG/);
+  assert.match(appDelegate, /data-maratonou-icon-id/);
+  assert.match(appDelegate, /controlsCommitted/);
+  assert.match(appDelegate, /setReady\(ids\)/);
+  assert.match(globals, /data-native-control-ready="true"/);
+  assert.match(globals, /visibility:\s*hidden !important/);
+});
+
+test('native action sheets hide native chrome and preserve web handlers', () => {
+  assert.match(appDelegate, /UIAlertController\(/);
+  assert.match(appDelegate, /preferredStyle:\s*\.actionSheet/);
+  assert.match(appDelegate, /updateNativeModalVisibility\(true\)/);
+  assert.match(appDelegate, /maratonou:native-action-sheet-result/);
+  assert.match(primitives, /nativeActionSheet/);
+  assert.match(primitives, /button\.click\(\)/);
 });
 
 test('native toolbar honors system accessibility preferences', () => {

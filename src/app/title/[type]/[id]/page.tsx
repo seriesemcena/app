@@ -443,12 +443,16 @@ export default function TitleDetailPage() {
 
           {/* Icons direita */}
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
-            <button className="ios-top-action" aria-label="Compartilhar" onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
-              <Icon name="share" size={15} color={headerActionIcon} />
-            </button>
-            <button className="ios-top-action" aria-label={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isDark && isFav ? 'rgba(192,105,255,0.30)' : headerActionBackground, border: `1px solid ${isDark && isFav ? 'rgba(192,105,255,0.45)' : headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
-              <Icon name={isFav ? 'heart' : 'heartO'} size={15} color={isDark && isFav ? '#C069FF' : headerActionIcon} />
-            </button>
+            {!showNavTitle && (
+              <>
+                <button className="ios-top-action" aria-label="Compartilhar" onClick={() => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); }} style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+                  <Icon name="share" size={15} color={headerActionIcon} />
+                </button>
+                <button className="ios-top-action" aria-label={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'} onClick={toggleFav} style={{ width: 34, height: 34, borderRadius: 17, background: isDark && isFav ? 'rgba(192,105,255,0.30)' : headerActionBackground, border: `1px solid ${isDark && isFav ? 'rgba(192,105,255,0.45)' : headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>
+                  <Icon name={isFav ? 'heart' : 'heartO'} size={15} color={isDark && isFav ? '#C069FF' : headerActionIcon} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -887,7 +891,7 @@ export default function TitleDetailPage() {
         )}
 
         {listSheet && reportTarget === null && (
-        <BottomSheet visible onClose={() => setListSheet(false)} title={listStatus ? t('myList') : t('addToList')}>
+        <BottomSheet nativeActionSheet visible onClose={() => setListSheet(false)} title={listStatus ? t('myList') : t('addToList')}>
           {([
             { key: 'want',     label: t('wantStatus'),     icon: 'bookmark' as const, action: 'want'     as const },
             { key: 'watching', label: t('watchingStatus'), icon: 'eye'      as const, action: 'watching' as const },
@@ -994,7 +998,7 @@ export default function TitleDetailPage() {
             );
           })}
           {listStatus && (
-            <button onClick={() => {
+            <button data-native-role="destructive" onClick={() => {
               (['want', 'watching', 'watched'] as const).forEach((l) => listStore.remove(l, detail.id));
               setListStatus(null);
               setListSheet(false);
@@ -1008,7 +1012,7 @@ export default function TitleDetailPage() {
         )}
 
         {maisSheet && reportTarget === null && (
-          <BottomSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
+          <BottomSheet nativeActionSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
             {([
               { icon: 'play'     as const, label: t('viewTrailer'),  action: openTrailer, disabled: !trailerUrl },
               { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); requireAuth('list', () => setListSheet(true)); }, disabled: false },

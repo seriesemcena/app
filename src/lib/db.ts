@@ -578,6 +578,35 @@ export const dbRatingStore = {
     });
     invalidateRatingSummary(titleKey);
   },
+  /** Imports a legacy local rating without replacing a rating that already
+      exists in Firestore. This makes the ratingsV1 migration idempotent and
+      keeps the cloud copy authoritative when devices disagree. */
+  async setIfMissing(
+    db: Firestore,
+    titleKey: string,
+    uid: string,
+    rawRating: number,
+    sourceReviewId?: string,
+  ): Promise<boolean> {
+    if (!uid) return false;
+    const rating = Math.max(1, Math.min(10, Math.round(rawRating)));
+    const ref = ratingRef(db, titleKey, uid);
+    const created = await runTransaction(db, async (transaction) => {
+      const current = await transaction.get(ref);
+      if (current.exists()) return false;
+      transaction.set(ref, stripUndefined({
+        titleId: titleKey,
+        authorUid: uid,
+        rating,
+        sourceReviewId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }));
+      return true;
+    });
+    if (created) invalidateRatingSummary(titleKey);
+    return created;
+  },
   async removeIfSource(db: Firestore, titleKey: string, uid: string, sourceReviewId: string) {
     const ref = ratingRef(db, titleKey, uid);
     await runTransaction(db, async (transaction) => {
@@ -594,24 +623,20 @@ export const dbRatingStore = {
     uid: string,
   ): Promise<Array<{ titleId: string; rating: number; updatedAt?: unknown }>> {
     if (!uid) return [];
-    try {
-      const snap = await getDocs(query(
-        collectionGroup(db, 'userRatings'),
-        where('authorUid', '==', uid),
-        limit(500),
-      ));
-      dataCostDebug.query('ratings:user', snap.size);
-      return snap.docs
-        .map((entry) => entry.data())
-        .filter((entry) => typeof entry.titleId === 'string' && Number(entry.rating) > 0)
-        .map((entry) => ({
-          titleId: String(entry.titleId),
-          rating: Math.max(1, Math.min(10, Number(entry.rating))),
-          updatedAt: entry.updatedAt,
-        }));
-    } catch {
-      return [];
-    }
+    const snap = await getDocs(query(
+      collectionGroup(db, 'userRatings'),
+      where('authorUid', '==', uid),
+      limit(500),
+    ));
+    dataCostDebug.query('ratings:user', snap.size);
+    return snap.docs
+      .map((entry) => entry.data())
+      .filter((entry) => typeof entry.titleId === 'string' && Number(entry.rating) > 0)
+      .map((entry) => ({
+        titleId: String(entry.titleId),
+        rating: Math.max(1, Math.min(10, Number(entry.rating))),
+        updatedAt: entry.updatedAt,
+      }));
   },
 };
 
@@ -1833,6 +1858,120 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
 }
 
 // ── Migration: localStorage → Firestore (runs once after login) ──
+
+type LegacyRatingCandidate = {
+  titleId: string;
+  rating: number;
+  sourceReviewId?: string;
+  updatedAt: string;
+};
+
+const RATING_TITLE_KEY = /^(?:movie|tv)_\d+$|^ep_\d+_s\d+_e\d+$/;
+
+function legacyRatingTime(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/** Independent ratingsV1 migration.
+ *
+ * The original account migration can already be marked complete through
+ * `seasonProgressV1`, even when its legacy review/rating loop never ran.
+ * Ratings therefore have their own per-device fingerprint. A device that
+ * still owns legacy ratings uploads only missing title documents; an existing
+ * Firestore rating always wins. If legacy cache later appears on this device,
+ * its changed fingerprint safely runs the migration again.
+ */
+export async function migrateLocalRatingsToFirestore(
+  db: Firestore,
+  uid: string,
+  authName?: string | null,
+  email?: string | null,
+): Promise<{ candidates: number; imported: number; preserved: number }> {
+  if (typeof window === 'undefined' || !uid) {
+    return { candidates: 0, imported: 0, preserved: 0 };
+  }
+
+  const { profileStore } = await import('./store');
+  const profile = profileStore.get(uid);
+  const legacyNames = new Set(
+    [
+      profile.username,
+      profile.name,
+      authName,
+      email?.split('@')[0],
+    ]
+      .map((value) => String(value || '').trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
+  const allReviews: Record<string, Review[]> = (() => {
+    try {
+      const value = JSON.parse(localStorage.getItem('sec_reviews_v1') || '{}');
+      return value && typeof value === 'object' ? value : {};
+    } catch {
+      return {};
+    }
+  })();
+
+  const byTitle = new Map<string, LegacyRatingCandidate>();
+  Object.entries(allReviews).forEach(([titleId, reviews]) => {
+    if (!RATING_TITLE_KEY.test(titleId) || !Array.isArray(reviews)) return;
+    reviews.forEach((review) => {
+      const rating = Number(review.rating);
+      if (!Number.isFinite(rating) || rating <= 0) return;
+      const ownsByUid = review.uid === uid;
+      const legacyAuthor = String(review.user || '').trim().toLocaleLowerCase();
+      const ownsLegacyReview = !review.uid && legacyNames.has(legacyAuthor);
+      if (!ownsByUid && !ownsLegacyReview) return;
+
+      const candidate: LegacyRatingCandidate = {
+        titleId,
+        rating: Math.max(1, Math.min(10, Math.round(rating))),
+        sourceReviewId: review.id || undefined,
+        updatedAt: review.date || '',
+      };
+      const current = byTitle.get(titleId);
+      if (!current || legacyRatingTime(candidate.updatedAt) > legacyRatingTime(current.updatedAt)) {
+        byTitle.set(titleId, candidate);
+      }
+    });
+  });
+
+  const candidates = Array.from(byTitle.values()).sort((a, b) => a.titleId.localeCompare(b.titleId));
+  const fingerprint = JSON.stringify(candidates.map((candidate) => [
+    candidate.titleId,
+    candidate.rating,
+    candidate.sourceReviewId || '',
+    candidate.updatedAt,
+  ]));
+  const migratedKey = `sec_ratings_migrated_v1_${uid}`;
+  if (localStorage.getItem(migratedKey) === fingerprint) {
+    return { candidates: candidates.length, imported: 0, preserved: candidates.length };
+  }
+
+  let imported = 0;
+  let preserved = 0;
+  for (const candidate of candidates) {
+    const created = await dbRatingStore.setIfMissing(
+      db,
+      candidate.titleId,
+      uid,
+      candidate.rating,
+      candidate.sourceReviewId,
+    );
+    if (created) imported += 1;
+    else preserved += 1;
+  }
+
+  // Written only after every candidate succeeds. A failed/offline migration
+  // remains retryable, and a changed local fingerprint is never suppressed.
+  localStorage.setItem(migratedKey, fingerprint);
+  window.dispatchEvent(new Event('maratonou:sync'));
+  console.info(
+    `[DB] ratingsV1 migrated to Firestore (${imported} imported, ${preserved} preserved)`,
+  );
+  return { candidates: candidates.length, imported, preserved };
+}
 
 export async function migrateLocalToFirestore(db: Firestore, uid: string) {
   if (typeof window === 'undefined') return;

@@ -3,71 +3,27 @@ import Capacitor
 import FirebaseAuth
 import WebKit
 
-@objc(SFSymbolsPlugin)
-public class SFSymbolsPlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "SFSymbolsPlugin"
-    public let jsName = "SFSymbols"
-    public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "render", returnType: CAPPluginReturnPromise)
-    ]
+private final class NativeHeaderActionView: UIVisualEffectView {
+    let button = UIButton(type: .system)
+    var actionID = ""
 
-    private let cache = NSCache<NSString, NSString>()
-
-    @objc func render(_ call: CAPPluginCall) {
-        guard let symbolName = call.getString("name"), !symbolName.isEmpty else {
-            call.reject("A symbol name is required")
-            return
-        }
-
-        let requestedSize = call.getDouble("size") ?? 22
-        let pointSize = CGFloat(min(max(requestedSize, 8), 128))
-        let weightName = call.getString("weight") ?? "regular"
-        let cacheKey = "\(symbolName):\(pointSize):\(weightName)" as NSString
-
-        if let cached = cache.object(forKey: cacheKey) {
-            call.resolve(["dataUrl": cached as String])
-            return
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            let configuration = UIImage.SymbolConfiguration(
-                pointSize: pointSize,
-                weight: self?.symbolWeight(named: weightName) ?? .regular,
-                scale: .medium
-            )
-            guard let source = UIImage(systemName: symbolName, withConfiguration: configuration) else {
-                call.reject("SF Symbol is unavailable: \(symbolName)")
-                return
-            }
-
-            let symbol = source.withTintColor(.white, renderingMode: .alwaysOriginal)
-            let canvas = CGSize(width: pointSize, height: pointSize)
-            let format = UIGraphicsImageRendererFormat()
-            format.opaque = false
-            format.scale = min(UIScreen.main.scale, 3)
-
-            let data = UIGraphicsImageRenderer(size: canvas, format: format).pngData { _ in
-                let sourceSize = symbol.size
-                let ratio = min(canvas.width / sourceSize.width, canvas.height / sourceSize.height)
-                let drawSize = CGSize(width: sourceSize.width * ratio, height: sourceSize.height * ratio)
-                let drawOrigin = CGPoint(
-                    x: (canvas.width - drawSize.width) / 2,
-                    y: (canvas.height - drawSize.height) / 2
-                )
-                symbol.draw(in: CGRect(origin: drawOrigin, size: drawSize))
-            }
-
-            let dataUrl = "data:image/png;base64,\(data.base64EncodedString())"
-            self?.cache.setObject(dataUrl as NSString, forKey: cacheKey)
-            call.resolve(["dataUrl": dataUrl])
-        }
+    override init(effect: UIVisualEffect?) {
+        super.init(effect: effect)
+        clipsToBounds = true
+        layer.borderWidth = 1
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityIdentifier = "maratonou.native.header.action"
+        contentView.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            button.topAnchor.constraint(equalTo: contentView.topAnchor),
+            button.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
     }
 
-    private func symbolWeight(named value: String) -> UIImage.SymbolWeight {
-        switch value.lowercased() {
-        case "bold": return .bold
-        default: return .semibold
-        }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
@@ -80,9 +36,11 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
     private var keyboardIsVisible = false
     private var nativeChromeConfigured = false
     private var nativeChromeIsDark = true
+    private var nativeModalIsVisible = false
+    private var nativeHeaderActions: [String: NativeHeaderActionView] = [:]
+    private var pendingHeaderActionIDs = Set<String>()
 
     public override func capacitorDidLoad() {
-        bridge?.registerPluginInstance(SFSymbolsPlugin())
         configureNativeChromeIfNeeded()
     }
 
@@ -163,21 +121,25 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
             labels = ["Home", "Series", "Search", "Movies", "Activity", "Profile"]
         }
 
-        let symbols = [
-            ("house", "house.fill"),
-            ("play.rectangle", "play.rectangle.fill"),
-            ("magnifyingglass", "magnifyingglass"),
-            ("movieclapper", "movieclapper.fill"),
-            ("bubble.left.and.bubble.right", "bubble.left.and.bubble.right.fill"),
-            ("person.crop.circle", "person.crop.circle.fill"),
+        // These template images are generated from the same SVG sprite used by
+        // React. UIKit owns the tab behavior, but the Maratonou icon language
+        // remains identical on iOS, Android and the web.
+        let imageNames = [
+            "NativeTabHome",
+            "NativeTabSeries",
+            "NativeTabSearch",
+            "NativeTabMovies",
+            "NativeTabActivity",
+            "NativeTabProfile",
         ]
 
-        return zip(labels, symbols).enumerated().map { index, value in
-            let (label, symbol) = value
+        return zip(labels, imageNames).enumerated().map { index, value in
+            let (label, imageName) = value
+            let image = UIImage(named: imageName)?.withRenderingMode(.alwaysTemplate)
             let item = UITabBarItem(
                 title: label,
-                image: UIImage(systemName: symbol.0),
-                selectedImage: UIImage(systemName: symbol.1)
+                image: image,
+                selectedImage: image
             )
             item.tag = index
             item.accessibilityLabel = label
@@ -237,6 +199,7 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
         if let tabBar = nativeTabBar {
             configureTabBarAppearance(tabBar)
         }
+        nativeHeaderActions.values.forEach { styleNativeHeaderAction($0) }
     }
 
     @objc private func accessibilityDisplayOptionsDidChange() {
@@ -256,7 +219,7 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
 
     private func updateNativeTabBarVisibility(animated: Bool) {
         guard let tabBar = nativeTabBar else { return }
-        let shouldShow = wantsNativeTabBar && !keyboardIsVisible
+        let shouldShow = wantsNativeTabBar && !keyboardIsVisible && !nativeModalIsVisible
         let changes = {
             tabBar.alpha = shouldShow ? 1 : 0
             tabBar.transform = shouldShow ? .identity : CGAffineTransform(translationX: 0, y: 12)
@@ -278,6 +241,12 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
             changes()
             completion(true)
         }
+    }
+
+    private func updateNativeModalVisibility(_ visible: Bool) {
+        nativeModalIsVisible = visible
+        nativeHeaderActions.values.forEach { $0.isHidden = visible }
+        updateNativeTabBarVisibility(animated: true)
     }
 
     public func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
@@ -307,10 +276,208 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
                 if let value = body["value"] as? String {
                     self.applyNativeChromeTheme(isDark: value == "dark")
                 }
+            case "modal":
+                self.updateNativeModalVisibility(body["visible"] as? Bool ?? false)
+            case "controls":
+                self.updateNativeHeaderActions(body["controls"] as? [[String: Any]] ?? [])
+            case "controlsCommitted":
+                let ids = body["ids"] as? [String] ?? []
+                self.revealNativeHeaderActions(ids: ids)
+            case "actionSheet":
+                self.presentNativeActionSheet(body)
             default:
                 break
             }
         }
+    }
+
+    private func updateNativeHeaderActions(_ controls: [[String: Any]]) {
+        guard let webView = bridge?.webView else { return }
+        let incomingIDs = Set(controls.compactMap { $0["id"] as? String })
+
+        let staleIDs = nativeHeaderActions.keys.filter { !incomingIDs.contains($0) }
+        for id in staleIDs {
+            nativeHeaderActions[id]?.removeFromSuperview()
+            nativeHeaderActions.removeValue(forKey: id)
+        }
+
+        for control in controls {
+            guard let id = control["id"] as? String,
+                  let x = (control["x"] as? NSNumber)?.doubleValue,
+                  let y = (control["y"] as? NSNumber)?.doubleValue,
+                  let width = (control["width"] as? NSNumber)?.doubleValue,
+                  let height = (control["height"] as? NSNumber)?.doubleValue else { continue }
+
+            let actionView: NativeHeaderActionView
+            if let current = nativeHeaderActions[id] {
+                actionView = current
+            } else {
+                actionView = NativeHeaderActionView(effect: nil)
+                actionView.actionID = id
+                actionView.alpha = 0
+                actionView.button.accessibilityValue = id
+                actionView.button.addTarget(self, action: #selector(nativeHeaderActionTapped(_:)), for: .touchUpInside)
+                view.addSubview(actionView)
+                nativeHeaderActions[id] = actionView
+            }
+
+            actionView.frame = CGRect(
+                x: webView.frame.minX + CGFloat(x),
+                y: webView.frame.minY + CGFloat(y),
+                width: CGFloat(width),
+                height: CGFloat(height)
+            )
+            actionView.layer.cornerRadius = min(actionView.bounds.width, actionView.bounds.height) / 2
+            actionView.button.accessibilityLabel = control["label"] as? String
+            actionView.button.accessibilityTraits = (control["active"] as? Bool ?? false)
+                ? [.button, .selected]
+                : [.button]
+            if let dataURL = control["iconDataUrl"] as? String,
+               let image = imageFromDataURL(dataURL, pointSize: 19) {
+                actionView.button.setImage(image.withRenderingMode(.alwaysTemplate), for: .normal)
+            }
+            styleNativeHeaderAction(actionView)
+            actionView.isHidden = nativeModalIsVisible
+            view.bringSubviewToFront(actionView)
+        }
+
+        if let tabBar = nativeTabBar {
+            view.bringSubviewToFront(tabBar)
+        }
+
+        pendingHeaderActionIDs = incomingIDs
+        let idsJSON = jsonString(Array(incomingIDs)) ?? "[]"
+        bridge?.webView?.evaluateJavaScript(
+            "window.__MARATONOU_NATIVE_UI__?.setReady(\(idsJSON));"
+        )
+    }
+
+    private func revealNativeHeaderActions(ids: [String]) {
+        let committed = Set(ids).intersection(pendingHeaderActionIDs)
+        committed.forEach { id in
+            guard let actionView = nativeHeaderActions[id] else { return }
+            actionView.isHidden = nativeModalIsVisible
+            if UIAccessibility.isReduceMotionEnabled {
+                actionView.alpha = 1
+            } else {
+                UIView.animate(
+                    withDuration: 0.16,
+                    delay: 0,
+                    options: [.beginFromCurrentState, .allowUserInteraction],
+                    animations: { actionView.alpha = 1 }
+                )
+            }
+        }
+    }
+
+    private func styleNativeHeaderAction(_ actionView: NativeHeaderActionView) {
+        actionView.overrideUserInterfaceStyle = nativeChromeIsDark ? .dark : .light
+        actionView.effect = UIAccessibility.isReduceTransparencyEnabled
+            ? nil
+            : UIBlurEffect(style: .systemUltraThinMaterial)
+        actionView.backgroundColor = UIAccessibility.isReduceTransparencyEnabled
+            ? (nativeChromeIsDark ? UIColor(white: 0.14, alpha: 1) : UIColor(white: 0.96, alpha: 1))
+            : UIColor.clear
+        actionView.layer.borderColor = (
+            nativeChromeIsDark
+                ? UIColor.white.withAlphaComponent(0.24)
+                : UIColor.white.withAlphaComponent(0.82)
+        ).cgColor
+        actionView.button.tintColor = nativeChromeIsDark ? .white : .black
+    }
+
+    @objc private func nativeHeaderActionTapped(_ sender: UIButton) {
+        guard let id = sender.accessibilityValue else { return }
+        let encodedID = jsonString(id) ?? "\"\""
+        bridge?.webView?.evaluateJavaScript(
+            "window.__MARATONOU_NATIVE_UI__?.activate(\(encodedID));"
+        )
+    }
+
+    private func imageFromDataURL(_ dataURL: String, pointSize: CGFloat) -> UIImage? {
+        guard let comma = dataURL.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
+              let source = UIImage(data: data) else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = UIScreen.main.scale
+        return UIGraphicsImageRenderer(
+            size: CGSize(width: pointSize, height: pointSize),
+            format: format
+        ).image { _ in
+            source.draw(in: CGRect(x: 0, y: 0, width: pointSize, height: pointSize))
+        }
+    }
+
+    private func presentNativeActionSheet(_ body: [String: Any]) {
+        guard let requestID = body["requestId"] as? String else { return }
+        let controller = UIAlertController(
+            title: body["title"] as? String,
+            message: body["message"] as? String,
+            preferredStyle: .actionSheet
+        )
+        let actions = body["actions"] as? [[String: Any]] ?? []
+        for item in actions {
+            guard let id = item["id"] as? String,
+                  let title = item["title"] as? String else { continue }
+            let role = item["role"] as? String
+            let style: UIAlertAction.Style = role == "destructive"
+                ? .destructive
+                : (role == "cancel" ? .cancel : .default)
+            let action = UIAlertAction(title: title, style: style) { [weak self] _ in
+                self?.updateNativeModalVisibility(false)
+                self?.postWebEvent(
+                    name: "maratonou:native-action-sheet-result",
+                    detail: ["requestId": requestID, "actionId": id]
+                )
+            }
+            action.isEnabled = item["disabled"] as? Bool != true
+            controller.addAction(action)
+        }
+        if !actions.contains(where: { ($0["role"] as? String) == "cancel" }) {
+            controller.addAction(UIAlertAction(title: "Cancelar", style: .cancel) { [weak self] _ in
+                self?.updateNativeModalVisibility(false)
+                self?.postWebEvent(
+                    name: "maratonou:native-action-sheet-result",
+                    detail: ["requestId": requestID, "actionId": NSNull()]
+                )
+            })
+        }
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.maxY - 1, width: 1, height: 1)
+        }
+        updateNativeModalVisibility(true)
+        topPresentedViewController().present(controller, animated: true)
+    }
+
+    private func topPresentedViewController() -> UIViewController {
+        var current: UIViewController = self
+        while let presented = current.presentedViewController {
+            current = presented
+        }
+        return current
+    }
+
+    private func postWebEvent(name: String, detail: [String: Any]) {
+        guard let detailJSON = jsonString(detail) else { return }
+        bridge?.webView?.evaluateJavaScript(
+            "window.dispatchEvent(new CustomEvent('\(name)',{detail:\(detailJSON)}));"
+        )
+    }
+
+    private func jsonString(_ value: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value),
+              let string = String(data: data, encoding: .utf8) else {
+            if let string = value as? String,
+               let data = try? JSONSerialization.data(withJSONObject: [string]),
+               let array = String(data: data, encoding: .utf8) {
+                return String(array.dropFirst().dropLast())
+            }
+            return nil
+        }
+        return string
     }
 
     private func selectNativeTab(for path: String) {
@@ -336,16 +503,178 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
       if (window.__MARATONOU_NATIVE_CHROME_BOOTSTRAPPED__) return;
       window.__MARATONOU_NATIVE_CHROME_BOOTSTRAPPED__ = true;
 
+      const handler = () => window.webkit?.messageHandlers?.maratonouNativeChrome;
+      const selector = [
+        '.ios-top-action',
+        '.glass-header-action-slot > button',
+        '.app-bar-action-slot > button',
+        '.landing-page-header > button'
+      ].join(',');
+      let sequence = 0;
+      let scheduled = false;
+      let lastDigest = '';
+      let lastModal = false;
+      let spritePromise = null;
+      const iconCache = new Map();
+
+      const spriteDocument = async () => {
+        if (!spritePromise) {
+          spritePromise = fetch('/icons/streamline-flex-solid.svg')
+            .then(response => response.text())
+            .then(text => new DOMParser().parseFromString(text, 'image/svg+xml'))
+            .catch(() => null);
+        }
+        return spritePromise;
+      };
+
+      const originalIconPNG = async (button) => {
+        const holder = button.querySelector('[data-maratonou-icon-id]');
+        const iconID = holder?.dataset?.maratonouIconId;
+        if (!iconID) return null;
+        if (iconCache.has(iconID)) return iconCache.get(iconID);
+
+        const pending = (async () => {
+          const source = await spriteDocument();
+          const symbol = source?.getElementById(iconID);
+          if (!symbol) return null;
+          const viewBox = symbol.getAttribute('viewBox') || '0 0 14 14';
+          const body = symbol.innerHTML.replaceAll('currentColor', '#000000');
+          const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" fill="#000000" color="#000000">${body}</svg>`;
+          return await new Promise(resolve => {
+            const image = new Image();
+            const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+            image.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = 48;
+              canvas.height = 48;
+              const context = canvas.getContext('2d');
+              context?.drawImage(image, 4, 4, 40, 40);
+              URL.revokeObjectURL(url);
+              resolve(canvas.toDataURL('image/png'));
+            };
+            image.onerror = () => {
+              URL.revokeObjectURL(url);
+              resolve(null);
+            };
+            image.src = url;
+          });
+        })();
+        iconCache.set(iconID, pending);
+        return pending;
+      };
+
+      const visibleControls = async () => {
+        if (document.documentElement?.dataset?.modalOpen === 'true') return [];
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const elements = Array.from(document.querySelectorAll(selector));
+        const controls = [];
+        for (const element of elements) {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          if (
+            style.display === 'none' ||
+            Number(style.opacity) === 0 ||
+            rect.width < 24 ||
+            rect.height < 24 ||
+            rect.right <= 0 ||
+            rect.bottom <= 0 ||
+            rect.left >= viewportWidth ||
+            rect.top >= viewportHeight
+          ) continue;
+          if (!element.dataset.nativeActionId) {
+            element.dataset.nativeActionId = `native-action-${++sequence}`;
+          }
+          const iconDataUrl = await originalIconPNG(element);
+          // Controls without a Maratonou icon remain web-owned. This prevents
+          // UIKit from silently replacing branded artwork with system glyphs.
+          if (!iconDataUrl) continue;
+          controls.push({
+            id: element.dataset.nativeActionId,
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            label: element.getAttribute('aria-label') || element.getAttribute('title') || '',
+            active: element.getAttribute('aria-pressed') === 'true' || element.dataset.active === 'true',
+            iconDataUrl
+          });
+        }
+        return controls;
+      };
+
+      const syncModal = () => {
+        const visible = document.documentElement?.dataset?.modalOpen === 'true';
+        if (visible === lastModal) return;
+        lastModal = visible;
+        handler()?.postMessage({ type: 'modal', visible });
+      };
+
+      const syncControls = async () => {
+        scheduled = false;
+        syncModal();
+        const controls = await visibleControls();
+        const digest = JSON.stringify(controls.map(({ id, x, y, width, height, active }) => [
+          id,
+          Math.round(x),
+          Math.round(y),
+          Math.round(width),
+          Math.round(height),
+          active
+        ]));
+        if (digest === lastDigest) return;
+        lastDigest = digest;
+        handler()?.postMessage({ type: 'controls', controls });
+      };
+
+      const scheduleSync = () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(syncControls);
+      };
+
       const markNativeChrome = () => {
         if (!document.documentElement) return;
         document.documentElement.dataset.nativeChrome = 'true';
+        document.documentElement.dataset.nativeControls = 'true';
         document.documentElement.style.setProperty('--native-tabbar-base-height', '49px');
         window.__MARATONOU_NATIVE_CHROME__ = true;
         window.dispatchEvent(new CustomEvent('maratonou:native-chrome-ready'));
+        scheduleSync();
+      };
+
+      window.__MARATONOU_NATIVE_UI__ = {
+        activate(id) {
+          document.querySelector(`[data-native-action-id="${CSS.escape(id)}"]`)?.click();
+        },
+        setReady(ids) {
+          const ready = new Set(ids);
+          document.querySelectorAll(selector).forEach(element => {
+            if (ready.has(element.dataset.nativeActionId)) {
+              element.dataset.nativeControlReady = 'true';
+            } else {
+              delete element.dataset.nativeControlReady;
+            }
+          });
+          handler()?.postMessage({ type: 'controlsCommitted', ids });
+        },
+        scheduleSync
       };
 
       markNativeChrome();
-      document.addEventListener('DOMContentLoaded', markNativeChrome, { once: true });
+      document.addEventListener('DOMContentLoaded', () => {
+        markNativeChrome();
+        new MutationObserver(scheduleSync).observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ['class', 'style', 'aria-pressed', 'data-modal-open']
+        });
+      }, { once: true });
+      window.addEventListener('resize', scheduleSync, { passive: true });
+      window.addEventListener('scroll', scheduleSync, { passive: true, capture: true });
+      window.addEventListener('popstate', scheduleSync);
+      window.addEventListener('maratonou:native-chrome-sync', scheduleSync);
     })();
     """
 }

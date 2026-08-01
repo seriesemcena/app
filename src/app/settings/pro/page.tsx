@@ -156,7 +156,7 @@ export default function ProSettingsPage() {
   const handleCover = async (file?: File) => {
     if (!file) return;
     try {
-      const coverImage = await createProfileImagePreview(file, 'cover');
+      const coverImage = await createProfileImagePreview(file, 'cover', { isPro: true });
       editedRef.current = true;
       setPendingCover(file);
       setProfile((current) => {
@@ -258,7 +258,7 @@ export default function ProSettingsPage() {
     if (firebaseConfigured) {
       try {
         if (pendingCover) {
-          const uploaded = await uploadProfileImage(user.uid, 'cover', pendingCover);
+          const uploaded = await uploadProfileImage(user.uid, 'cover', pendingCover, {}, { isPro: true });
           uploadedCover = uploaded.url;
           nextProfile = { ...nextProfile, coverImage: uploaded.url };
         }
@@ -343,7 +343,7 @@ export default function ProSettingsPage() {
                   <button type="button" onClick={openCoverPicker} style={{ flex: 1, minHeight: 42, borderRadius: 21, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area',sans-serif", fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{t('proSettings.profile.uploadCover')}</button>
                   {profile.coverImage && <button type="button" onClick={() => { editedRef.current = true; setPendingCover(null); setProfile((current) => { if (current?.coverImage?.startsWith('blob:')) URL.revokeObjectURL(current.coverImage); return current ? { ...current, coverImage: '' } : current; }); }} style={{ minHeight: 42, padding: '0 14px', borderRadius: 21, border: '1px solid rgba(255,90,95,0.28)', background: 'rgba(255,90,95,0.10)', color: '#FF7378', fontFamily: "'Area',sans-serif", fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{t('proSettings.profile.removeCover')}</button>}
                 </div>
-                <input ref={coverInput} type="file" accept="image/*" disabled={!firebaseStorageEnabled} hidden onChange={(event) => { void handleCover(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                <input ref={coverInput} type="file" accept="image/jpeg,image/webp" disabled={!firebaseStorageEnabled} hidden onChange={(event) => { void handleCover(event.target.files?.[0]); event.currentTarget.value = ''; }} />
               </SettingsCard>
             </section>
 

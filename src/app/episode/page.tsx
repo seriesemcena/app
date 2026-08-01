@@ -319,7 +319,7 @@ function EpisodePageInner() {
         <ScrollArea>
           <GlassHeader
             showLogo={false}
-            showChrome={isDark}
+            showChrome={showNavTitle}
             left={
               <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)}
                 style={{ width: 34, height: 34, borderRadius: 17, background: headerActionBackground, border: `1px solid ${headerActionBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', boxShadow: headerActionShadow } as React.CSSProperties}>

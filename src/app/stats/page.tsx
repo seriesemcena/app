@@ -396,9 +396,13 @@ export default function StatsPage() {
     const tvLikes = tvRevs.reduce((s, r) => s + (r.likes ?? 0), 0);
     const mvLikes = mvRevs.reduce((s, r) => s + (r.likes ?? 0), 0);
 
-    applyRatings(myRevs
-      .filter((review) => review.rating > 0)
-      .map((review) => ({ titleId: review.itemKey, rating: review.rating })));
+    // Signed-in accounts use Firestore as the authoritative rating source.
+    // Local reviews are retained only for offline/local-only installations.
+    if (!user || !firebaseConfigured) {
+      applyRatings(myRevs
+        .filter((review) => review.rating > 0)
+        .map((review) => ({ titleId: review.itemKey, rating: review.rating })));
+    }
 
     const allTracked = Array.from(new Map(
       [...tvWatched, ...tvWatching, ...movieWatched, ...mvWatching]
@@ -507,18 +511,19 @@ export default function StatsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user, syncRevision]);
 
-  /* Firestore ratings are account-wide and therefore include evaluations
-     created on mobile, PWA and desktop. Local records remain the offline and
-     pre-migration fallback. */
+  /* Firestore ratings are account-wide and authoritative across mobile, PWA
+     and desktop. An empty successful query must clear stale local totals. */
   useEffect(() => {
     if (loading || !user || !firebaseConfigured) return;
     let cancelled = false;
     dbRatingStore.listForUser(getDB(), user.uid).then((ratings) => {
-      if (!cancelled && ratings.length > 0) applyRatings(ratings);
-    }).catch(() => {});
+      if (!cancelled) applyRatings(ratings);
+    }).catch((error) => {
+      console.warn('[Stats] Could not load authoritative ratings', error);
+    });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, user]);
+  }, [loading, user, syncRevision]);
 
   /* ── Firestore activity ── */
   useEffect(() => {

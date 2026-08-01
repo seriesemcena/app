@@ -26,6 +26,7 @@
     "admin:build": "npm run build --workspace @maratonou/admin",
     "admin:bootstrap": "node scripts/admin/bootstrap-admin.mjs",
     "icons:app": "node scripts/generate-app-icons.mjs",
+    "icons:ios-native": "node scripts/generate-ios-native-icons.mjs",
     "icons:generate": "node scripts/generate-streamline-flex-sprite.mjs",
     "firebase:emulators": "firebase emulators:start --project demo-maratonou",
     "migrate:firebase:dry": "node scripts/migrations/optimize-firestore.mjs",

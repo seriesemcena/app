@@ -21,6 +21,7 @@ import { AppBannerSlot } from '@/components/AppBannerSlot';
 import { streamingColor } from '@/lib/streamingPlatforms';
 import { formatCurrency } from '@/lib/locale-utils';
 import { calculateWatchedDuration, legacyHistoryToSeasonProgress, uniqueEpisodeNumbers } from '@/lib/seasonProgress';
+import { presentNativeActionSheet } from '@/lib/nativeIOS';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
 type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
@@ -181,7 +182,6 @@ function UserProfileInner() {
   /* ── Load my profile ── */
   useEffect(() => {
     if (!isMe || loading || !user) return;
-    setReviewCount(revStore.countAll());
     const applyProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
       const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
       const resolvedName = merged.name || user.displayName || 'Usuário';
@@ -194,6 +194,10 @@ function UserProfileInner() {
       });
     };
     const local = profileStore.get(user.uid);
+    const localReviewCount = revStore
+      .getByAuthor(user.uid, local.username || local.name)
+      .filter((review) => review.rating > 0).length;
+    setReviewCount(firebaseConfigured ? 0 : localReviewCount);
     setProReminders(proSettingsStore.get(user.uid).reminders);
     applyProfile(local);
     try {
@@ -203,7 +207,9 @@ function UserProfileInner() {
     if (firebaseConfigured) {
       dbRatingStore.listForUser(getDB(), user.uid)
         .then((ratings) => setReviewCount(ratings.length))
-        .catch(() => {});
+        .catch((error) => {
+          console.warn('[Profile] Could not load authoritative ratings', error);
+        });
       dbProfileStore.get(getDB(), user.uid).then(cloud => {
         if (cloud && (cloud.name || cloud.username || cloud.bio)) {
           profileStore.set({ ...local, ...cloud }, user.uid);
@@ -420,6 +426,42 @@ function UserProfileInner() {
     }
   };
 
+  const reportProfile = () => {
+    setMenuOpen(false);
+    setReportTarget({
+      kind: 'profile',
+      contentType: 'profile',
+      contentId: targetUid || targetProfile?.username || slug,
+      targetId: targetProfile?.username || slug,
+      targetLabel: `@${targetProfile?.username || slug}`,
+      reportedUser: targetProfile?.name || targetProfile?.username || slug,
+      reportedUserId: targetUid || undefined,
+    });
+  };
+
+  const openProfileOptions = () => {
+    const request = presentNativeActionSheet({
+      title: t('moreOptions', { defaultValue: 'Mais opções' }),
+      cancelTitle: t('cancel', { defaultValue: 'Cancelar' }),
+      actions: [
+        { id: 'report', title: t('reportProfile') },
+        {
+          id: 'block',
+          title: isBlocked ? t('unblockUser') : t('blockUser'),
+          role: isBlocked ? 'default' : 'destructive',
+        },
+      ],
+    });
+    if (!request) {
+      setMenuOpen(value => !value);
+      return;
+    }
+    void request.then((actionID) => {
+      if (actionID === 'report') reportProfile();
+      if (actionID === 'block') void toggleBlock();
+    });
+  };
+
   const toggleFollow = async () => {
     if (!user) { router.push('/auth'); return; }
     const wasFollowing = isFollowing;
@@ -529,7 +571,9 @@ function UserProfileInner() {
   const proTheme        = activeProfile?.proTheme ?? DEFAULT_PRO_THEME;
   const proAccent       = isProProfile ? proTheme.accent : T.pink;
   const proThemeCover   = isProProfile ? tmdbImg(proTheme.posterPath, 'w780') : null;
-  const profileCover    = isProProfile ? (activeProfile?.coverImage || proThemeCover || '') : '';
+  // Every member may choose a synchronized TMDB cover from a series in
+  // "Maratonando". PRO members may additionally persist a custom Storage URL.
+  const profileCover    = activeProfile?.coverImage || proThemeCover || '';
   // Aggregated counters are the source of truth after migration. Loaded lists
   // remain a safe fallback for accounts that have not been backfilled yet.
   const followingCount  = Math.max(
@@ -551,14 +595,14 @@ function UserProfileInner() {
       <Screen>
         <ScrollArea>
 
-          {/* ── Capa: personalizada/tema para PRO; collage no perfil comum ── */}
+          {/* ── Capa escolhida em Maratonando; upload personalizado para PRO ── */}
           <div style={{ position: 'relative' }}>
             <div style={{ position: 'relative', height: 180, overflow: 'hidden', background: isProProfile ? proTheme.gradient : 'linear-gradient(160deg,#1a0d2e 0%,#0d0d1a 60%,#0a0a14 100%)' }}>
               {profileCover && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profileCover} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
               )}
-              {!isProProfile && collagePosterItems.map((item, idx) => {
+              {!profileCover && !isProProfile && collagePosterItems.map((item, idx) => {
                 const slot = COLLAGE_SLOTS[idx];
                 if (!slot || !item.poster_path) return null;
                 const url = tmdbImg(item.poster_path, 'w185');
@@ -595,7 +639,7 @@ function UserProfileInner() {
                       className="ios-top-action"
                       title="Mais opções"
                       aria-label="Mais opções"
-                      onClick={() => setMenuOpen(o => !o)}
+                      onClick={openProfileOptions}
                       style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <Icon name="menuDots" size={18} color="#fff" />
                     </button>
@@ -610,15 +654,7 @@ function UserProfileInner() {
                         overflow: 'hidden',
                       }}>
                         <button
-                          onClick={() => { setMenuOpen(false); setReportTarget({
-                            kind: 'profile',
-                            contentType: 'profile',
-                            contentId: targetUid || targetProfile?.username || slug,
-                            targetId: targetProfile?.username || slug,
-                            targetLabel: `@${targetProfile?.username || slug}`,
-                            reportedUser: targetProfile?.name || targetProfile?.username || slug,
-                            reportedUserId: targetUid || undefined,
-                          }); }}
+                          onClick={reportProfile}
                           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', background: 'none', border: 'none', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', textAlign: 'left' }}>
                           <Icon name="flag" size={16} color={T.t2} />
                           <Txt size={14} weight={600} color={T.t1}>{t('reportProfile')}</Txt>

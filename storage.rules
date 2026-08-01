@@ -6,12 +6,38 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function validProfileImage(uid) {
+    function isProfileOwner(uid) {
       return signedIn()
         && request.auth.uid == uid
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType == 'image/webp'
         && request.resource.metadata.ownerUid == uid;
+    }
+
+    function isProMember(uid) {
+      return firestore.exists(/databases/(default)/documents/users/$(uid))
+        && firestore.get(/databases/(default)/documents/users/$(uid))
+          .data.profile.proMember == true;
+    }
+
+    function validAvatar(uid) {
+      return isProfileOwner(uid)
+        && (
+          (
+            request.resource.contentType in ['image/jpeg', 'image/webp']
+            && request.resource.size <= 400 * 1024
+          )
+          || (
+            request.resource.contentType == 'image/gif'
+            && request.resource.size <= 600 * 1024
+            && isProMember(uid)
+          )
+        );
+    }
+
+    function validProCover(uid) {
+      return isProfileOwner(uid)
+        && isProMember(uid)
+        && request.resource.contentType in ['image/jpeg', 'image/webp']
+        && request.resource.size <= 5 * 1024 * 1024;
     }
 
     function isMaratonouAdmin() {
@@ -30,12 +56,14 @@ service firebase.storage {
         && request.resource.metadata.ownerUid == uid;
     }
 
-    // Versioned WebP avatar/cover objects. Public app screens may read them;
-    // only the profile owner can upload or remove their own media.
+    // Avatars: JPG/JPEG/WebP up to 400 KB. PRO accounts may also use an
+    // animated GIF up to 600 KB. Custom cover uploads are restricted to PRO;
+    // regular accounts choose a TMDB image and therefore do not write a cover
+    // object to Storage.
     match /users/{uid}/{kind}/{fileName} {
       allow read: if signedIn();
-      allow create, update: if kind in ['avatar', 'cover']
-                            && validProfileImage(uid);
+      allow create, update: if (kind == 'avatar' && validAvatar(uid))
+                            || (kind == 'cover' && validProCover(uid));
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 

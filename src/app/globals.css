@@ -235,6 +235,16 @@
   .landing-page-header > button { transition: none !important; }
 }
 
+/* Buttons use a flat surface throughout the app. Keep backdrop materials
+   where they are part of the control itself, but never project a blurred
+   glow/shadow behind a button. Native UIKit controls are unaffected. */
+.app-screen button,
+.safe-bottom-sheet button,
+.keyboard-aware-bottom button,
+#modal-root button {
+  box-shadow: none !important;
+}
+
 @supports (height: 100svh) {
   :root { --app-height: 100svh; }
 }
@@ -348,6 +358,15 @@ html[data-native-chrome="true"] {
 
 html[data-native-chrome="true"] .tab-bar-wrap {
   display: none !important;
+}
+
+/* UIKit hides a web header action only after it has created the matching
+   native control and completed the bridge handshake. `visibility` preserves
+   the original layout, so sticky titles never jump and the two layers cannot
+   overlap or flash during route hydration. */
+html[data-native-controls="true"] [data-native-control-ready="true"] {
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* Android uses a solid Material-like fallback rather than inheriting an iOS

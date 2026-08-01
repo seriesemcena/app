@@ -2,11 +2,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Txt, Toast } from '@/components/primitives';
+import { BottomSheet, Screen, ScrollArea, Txt, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { SettingsCard, SettingsHeader, SettingsPrimaryButton, settingsInputStyle } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
-import { profileStore, type Profile } from '@/lib/store';
+import { listStore, profileStore, type Profile } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { firebaseConfigured, firebaseStorageEnabled, getDB } from '@/lib/firebase';
 import { dbProfileStore, isUsernameTaken } from '@/lib/db';
@@ -14,6 +14,7 @@ import { navigateBack } from '@/lib/navigation';
 import { slugifyUsername, USERNAME_FALLBACK } from '@/lib/username';
 import { useTranslation } from 'react-i18next';
 import { createProfileImagePreview, removeProfileImages, uploadProfileImage } from '@/lib/imageStorage';
+import { tmdb, tmdbImg } from '@/lib/tmdb';
 import '@/lib/i18n';
 
 const GRADIENTS = [
@@ -32,6 +33,12 @@ const INPUT: React.CSSProperties = {
   padding: '7px 0 0',
 };
 
+type WatchingCover = {
+  id: number;
+  title: string;
+  image: string;
+};
+
 export default function EditProfilePage() {
   const router = useRouter();
   const { t } = useTranslation('settings');
@@ -42,6 +49,9 @@ export default function EditProfilePage() {
   const [saving, setSaving] = useState(false);
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [pendingCover, setPendingCover] = useState<File | null>(null);
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
+  const [watchingCovers, setWatchingCovers] = useState<WatchingCover[]>([]);
+  const [watchingCoversLoading, setWatchingCoversLoading] = useState(true);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef  = useRef<HTMLInputElement>(null);
   // Username as it was when the form loaded — used to detect a rename
@@ -94,6 +104,45 @@ export default function EditProfilePage() {
     }
   }, [user, loading]);
 
+  // The list itself is synchronized from Firestore by AppBootstrap. Hydrate it
+  // with TMDB backdrops so every device offers the same "Maratonando" covers.
+  useEffect(() => {
+    if (loading) return;
+    let active = true;
+    let revision = 0;
+
+    const refresh = async () => {
+      const currentRevision = ++revision;
+      setWatchingCoversLoading(true);
+      const watching = listStore.get('watching').filter((item) => item.type === 'tv');
+      const covers = await Promise.all(watching.slice(0, 20).map(async (item) => {
+        try {
+          const detail = await tmdb.tvDetail(item.id);
+          const image = tmdbImg(detail?.backdrop_path ?? detail?.poster_path ?? item.poster_path, 'w780');
+          return image ? {
+            id: item.id,
+            title: detail?.name || detail?.title || item.title,
+            image,
+          } : null;
+        } catch {
+          const image = tmdbImg(item.poster_path, 'w780');
+          return image ? { id: item.id, title: item.title, image } : null;
+        }
+      }));
+      if (active && currentRevision === revision) {
+        setWatchingCovers(covers.filter((item): item is WatchingCover => item !== null));
+        setWatchingCoversLoading(false);
+      }
+    };
+
+    void refresh();
+    window.addEventListener('maratonou:sync', refresh);
+    return () => {
+      active = false;
+      window.removeEventListener('maratonou:sync', refresh);
+    };
+  }, [loading]);
+
   const update = (field: keyof Profile, val: unknown) =>
     setProfile(p => p ? ({ ...p, [field]: val }) : p);
 
@@ -103,17 +152,36 @@ export default function EditProfilePage() {
   const handleFile = async (file: File | undefined, field: 'avatarImage' | 'coverImage') => {
     if (!file) return;
     try {
-      const preview = await createProfileImagePreview(file, field === 'avatarImage' ? 'avatar' : 'cover');
+      if (field === 'coverImage' && profile?.proMember !== true) {
+        throw new Error(t('editProfile.coverUploadProOnly'));
+      }
+      const preview = await createProfileImagePreview(
+        file,
+        field === 'avatarImage' ? 'avatar' : 'cover',
+        { isPro: profile?.proMember === true },
+      );
       setProfile((current) => {
         if (current?.[field]?.startsWith('blob:')) URL.revokeObjectURL(current[field]);
         return current ? { ...current, [field]: preview } : current;
       });
       if (field === 'avatarImage') setPendingAvatar(file);
-      else setPendingCover(file);
+      else {
+        setPendingCover(file);
+        setCoverPickerOpen(false);
+      }
     } catch (e: unknown) {
       setToastErr(e instanceof Error ? e.message : 'Erro');
       setTimeout(() => setToastErr(null), 2500);
     }
+  };
+
+  const selectWatchingCover = (cover: WatchingCover) => {
+    setProfile((current) => {
+      if (current?.coverImage?.startsWith('blob:')) URL.revokeObjectURL(current.coverImage);
+      return current ? { ...current, coverImage: cover.image } : current;
+    });
+    setPendingCover(null);
+    setCoverPickerOpen(false);
   };
 
   const clearImage = (field: 'avatarImage' | 'coverImage') => {
@@ -182,12 +250,25 @@ export default function EditProfilePage() {
       }
       if (user && firebaseConfigured) {
         if (pendingAvatar) {
-          const uploaded = await uploadProfileImage(user.uid, 'avatar', pendingAvatar);
+          const uploaded = await uploadProfileImage(
+            user.uid,
+            'avatar',
+            pendingAvatar,
+            {},
+            { isPro: next.proMember === true },
+          );
           uploadedUrls.push(uploaded.url, uploaded.thumbUrl || '');
           next = { ...next, avatarImage: uploaded.url, avatarThumbImage: uploaded.thumbUrl || uploaded.url };
         }
         if (pendingCover) {
-          const uploaded = await uploadProfileImage(user.uid, 'cover', pendingCover);
+          if (next.proMember !== true) throw new Error(t('editProfile.coverUploadProOnly'));
+          const uploaded = await uploadProfileImage(
+            user.uid,
+            'cover',
+            pendingCover,
+            {},
+            { isPro: true },
+          );
           uploadedUrls.push(uploaded.url);
           next = { ...next, coverImage: uploaded.url };
         }
@@ -198,7 +279,7 @@ export default function EditProfilePage() {
           (pendingAvatar || !next.avatarImage) && old.avatarImage
             ? removeProfileImages(old.avatarImage, old.avatarThumbImage)
             : Promise.resolve(),
-          (pendingCover || !next.coverImage) && old.coverImage
+          next.coverImage !== old.coverImage && old.coverImage
             ? removeProfileImages(old.coverImage)
             : Promise.resolve(),
         ]);
@@ -271,7 +352,7 @@ export default function EditProfilePage() {
               >
                 {/* edit cover button */}
                 <button
-                  onClick={() => openImagePicker(coverInputRef)}
+                  onClick={() => setCoverPickerOpen(true)}
                   style={{ position: 'absolute', bottom: 10, right: 10, display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'rgba(0,0,0,0.6)', border: `1px solid ${T.dim}`, borderRadius: 20, cursor: 'pointer', backdropFilter: 'blur(8px)' }}
                 >
                   <Icon name="film" size={13} color={T.white} />
@@ -311,12 +392,35 @@ export default function EditProfilePage() {
             </div>
 
             {/* hidden file inputs */}
-            <input ref={avatarInputRef} type="file" accept="image/*" disabled={!firebaseStorageEnabled} style={{ display: 'none' }}
-              onChange={e => handleFile(e.target.files?.[0], 'avatarImage')} />
-            <input ref={coverInputRef}  type="file" accept="image/*" disabled={!firebaseStorageEnabled} style={{ display: 'none' }}
-              onChange={e => handleFile(e.target.files?.[0], 'coverImage')} />
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept={profile.proMember ? 'image/jpeg,image/webp,image/gif' : 'image/jpeg,image/webp'}
+              disabled={!firebaseStorageEnabled}
+              style={{ display: 'none' }}
+              onChange={(event) => {
+                void handleFile(event.target.files?.[0], 'avatarImage');
+                event.currentTarget.value = '';
+              }}
+            />
+            {profile.proMember && (
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/jpeg,image/webp"
+                disabled={!firebaseStorageEnabled}
+                style={{ display: 'none' }}
+                onChange={(event) => {
+                  void handleFile(event.target.files?.[0], 'coverImage');
+                  event.currentTarget.value = '';
+                }}
+              />
+            )}
 
             <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <Txt size={11} color={T.t3} style={{ display: 'block', textAlign: 'center', lineHeight: 1.45 }}>
+                {t(profile.proMember ? 'editProfile.proAvatarRules' : 'editProfile.avatarRules')}
+              </Txt>
 
               {/* remove avatar photo */}
               {profile.avatarImage && (
@@ -400,6 +504,59 @@ export default function EditProfilePage() {
 
         <Toast msg={toast} visible={!!toast} icon="check" />
         <Toast msg={toastErr} visible={!!toastErr} icon="close" />
+        <BottomSheet
+          visible={coverPickerOpen}
+          onClose={() => setCoverPickerOpen(false)}
+          title={t('editProfile.coverPickerTitle')}
+        >
+          <Txt size={12} color={T.t3} style={{ display: 'block', marginBottom: 14, lineHeight: 1.45 }}>
+            {t('editProfile.coverPickerDetail')}
+          </Txt>
+
+          {watchingCoversLoading ? (
+            <div style={{ display: 'flex', gap: 10, overflow: 'hidden' }}>
+              {[0, 1, 2].map((item) => (
+                <div key={item} style={{ width: 150, height: 92, borderRadius: 14, flexShrink: 0, background: T.surface2 }} />
+              ))}
+            </div>
+          ) : watchingCovers.length ? (
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 4 } as React.CSSProperties}>
+              {watchingCovers.map((cover) => (
+                <button
+                  key={cover.id}
+                  type="button"
+                  onClick={() => selectWatchingCover(cover)}
+                  style={{ width: 164, flexShrink: 0, padding: 0, overflow: 'hidden', borderRadius: 14, border: profile.coverImage === cover.image ? `2px solid ${T.pink}` : `1px solid ${T.border}`, background: T.surface2, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={cover.image} alt="" style={{ width: '100%', height: 92, display: 'block', objectFit: 'cover' }} />
+                  <Txt size={11} weight={700} color={T.t1} style={{ display: 'block', padding: '9px 10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {cover.title}
+                  </Txt>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ minHeight: 90, display: 'grid', placeItems: 'center', borderRadius: 14, background: T.surface2, padding: 16, textAlign: 'center' }}>
+              <Txt size={12} color={T.t3}>{t('editProfile.noWatchingCovers')}</Txt>
+            </div>
+          )}
+
+          {profile.proMember && (
+            <button
+              type="button"
+              onClick={() => openImagePicker(coverInputRef)}
+              style={{ width: '100%', minHeight: 46, marginTop: 14, borderRadius: 23, border: `1px solid ${T.border}`, background: T.surface2, color: T.t1, fontFamily: "'Area',sans-serif", fontSize: 13, fontWeight: 800, cursor: 'pointer' }}
+            >
+              {t('editProfile.uploadCustomCover')}
+            </button>
+          )}
+          {!profile.proMember && (
+            <Txt size={11} color={T.t3} style={{ display: 'block', marginTop: 12, lineHeight: 1.45, textAlign: 'center' }}>
+              {t('editProfile.customCoverProHint')}
+            </Txt>
+          )}
+        </BottomSheet>
       </Screen>
     </Frame>
   );
