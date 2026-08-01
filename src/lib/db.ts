@@ -99,7 +99,7 @@ async function setPrivateValue(
 const PROFILE_DEFAULT: Profile = {
   name: '', username: '', bio: '',
   avatarLetter: '', avatarGradient: '', avatarImage: '', avatarThumbImage: '', coverImage: '',
-  social: { instagram: '', twitter: '', letterboxd: '' },
+  social: { instagram: '', twitter: '', tiktok: '' },
   streamings: [], genres: [],
   followers: 0, following: 0,
   proMember: false,
@@ -119,6 +119,7 @@ export const dbProfileStore = {
           ? {
               ...PROFILE_DEFAULT,
               ...profile,
+              social: { ...PROFILE_DEFAULT.social, ...(profile.social ?? {}) },
               counters: { ...EMPTY_PROFILE_COUNTERS, ...(data?.counters ?? {}) },
             } as Profile
           : null;
@@ -186,6 +187,10 @@ export async function getUserByUsername(
     profile: {
       ...PROFILE_DEFAULT,
       ...(d.data()?.profile ?? {}),
+      social: {
+        ...PROFILE_DEFAULT.social,
+        ...(d.data()?.profile?.social ?? {}),
+      },
       counters: { ...EMPTY_PROFILE_COUNTERS, ...(d.data()?.counters ?? {}) },
     } as Profile,
     followingCount: Number(

@@ -39,6 +39,8 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
     private var nativeModalIsVisible = false
     private var nativeHeaderActions: [String: NativeHeaderActionView] = [:]
     private var pendingHeaderActionIDs = Set<String>()
+    private var nativeHeaderActionRemovalWorkItems: [String: DispatchWorkItem] = [:]
+    private var nativeHeaderRoute = ""
 
     public override func capacitorDidLoad() {
         configureNativeChromeIfNeeded()
@@ -205,6 +207,7 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
     @objc private func accessibilityDisplayOptionsDidChange() {
         guard let tabBar = nativeTabBar else { return }
         configureTabBarAppearance(tabBar)
+        nativeHeaderActions.values.forEach { styleNativeHeaderAction($0) }
     }
 
     @objc private func keyboardWillShow() {
@@ -279,7 +282,10 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
             case "modal":
                 self.updateNativeModalVisibility(body["visible"] as? Bool ?? false)
             case "controls":
-                self.updateNativeHeaderActions(body["controls"] as? [[String: Any]] ?? [])
+                self.updateNativeHeaderActions(
+                    body["controls"] as? [[String: Any]] ?? [],
+                    route: body["route"] as? String ?? ""
+                )
             case "controlsCommitted":
                 let ids = body["ids"] as? [String] ?? []
                 self.revealNativeHeaderActions(ids: ids)
@@ -291,14 +297,25 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
         }
     }
 
-    private func updateNativeHeaderActions(_ controls: [[String: Any]]) {
+    private func updateNativeHeaderActions(_ controls: [[String: Any]], route: String) {
         guard let webView = bridge?.webView else { return }
         let incomingIDs = Set(controls.compactMap { $0["id"] as? String })
+        let routeChanged = !nativeHeaderRoute.isEmpty && nativeHeaderRoute != route
+        nativeHeaderRoute = route
+        pendingHeaderActionIDs = incomingIDs
+
+        incomingIDs.forEach { id in
+            nativeHeaderActionRemovalWorkItems[id]?.cancel()
+            nativeHeaderActionRemovalWorkItems.removeValue(forKey: id)
+        }
 
         let staleIDs = nativeHeaderActions.keys.filter { !incomingIDs.contains($0) }
         for id in staleIDs {
-            nativeHeaderActions[id]?.removeFromSuperview()
-            nativeHeaderActions.removeValue(forKey: id)
+            if routeChanged {
+                removeNativeHeaderAction(id: id)
+            } else {
+                scheduleNativeHeaderActionRemoval(id: id)
+            }
         }
 
         for control in controls {
@@ -314,19 +331,28 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
             } else {
                 actionView = NativeHeaderActionView(effect: nil)
                 actionView.actionID = id
+                // Keep the native replacement transparent until JavaScript has
+                // hidden the matching web control. This prevents both layers
+                // from being visible during the readiness handshake.
                 actionView.alpha = 0
                 actionView.button.accessibilityValue = id
                 actionView.button.addTarget(self, action: #selector(nativeHeaderActionTapped(_:)), for: .touchUpInside)
+                styleNativeHeaderAction(actionView)
                 view.addSubview(actionView)
                 nativeHeaderActions[id] = actionView
             }
 
-            actionView.frame = CGRect(
+            let nextFrame = CGRect(
                 x: webView.frame.minX + CGFloat(x),
                 y: webView.frame.minY + CGFloat(y),
                 width: CGFloat(width),
                 height: CGFloat(height)
             )
+            actionView.layer.removeAllAnimations()
+            UIView.performWithoutAnimation {
+                actionView.frame = nextFrame
+                actionView.layoutIfNeeded()
+            }
             actionView.layer.cornerRadius = min(actionView.bounds.width, actionView.bounds.height) / 2
             actionView.button.accessibilityLabel = control["label"] as? String
             actionView.button.accessibilityTraits = (control["active"] as? Bool ?? false)
@@ -336,7 +362,6 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
                let image = imageFromDataURL(dataURL, pointSize: 19) {
                 actionView.button.setImage(image.withRenderingMode(.alwaysTemplate), for: .normal)
             }
-            styleNativeHeaderAction(actionView)
             actionView.isHidden = nativeModalIsVisible
             view.bringSubviewToFront(actionView)
         }
@@ -345,10 +370,32 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
             view.bringSubviewToFront(tabBar)
         }
 
-        pendingHeaderActionIDs = incomingIDs
         let idsJSON = jsonString(Array(incomingIDs)) ?? "[]"
         bridge?.webView?.evaluateJavaScript(
             "window.__MARATONOU_NATIVE_UI__?.setReady(\(idsJSON));"
+        )
+    }
+
+    private func scheduleNativeHeaderActionRemoval(id: String) {
+        guard nativeHeaderActionRemovalWorkItems[id] == nil else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.pendingHeaderActionIDs.contains(id) else { return }
+            self.removeNativeHeaderAction(id: id)
+        }
+        nativeHeaderActionRemovalWorkItems[id] = workItem
+        // A short grace period absorbs transient DOM measurements during a
+        // React render without leaving stale controls behind on navigation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+    }
+
+    private func removeNativeHeaderAction(id: String) {
+        nativeHeaderActionRemovalWorkItems[id]?.cancel()
+        nativeHeaderActionRemovalWorkItems.removeValue(forKey: id)
+        nativeHeaderActions[id]?.removeFromSuperview()
+        nativeHeaderActions.removeValue(forKey: id)
+        let idsJSON = jsonString([id]) ?? "[]"
+        bridge?.webView?.evaluateJavaScript(
+            "window.__MARATONOU_NATIVE_UI__?.clearReady(\(idsJSON));"
         )
     }
 
@@ -357,32 +404,41 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
         committed.forEach { id in
             guard let actionView = nativeHeaderActions[id] else { return }
             actionView.isHidden = nativeModalIsVisible
-            if UIAccessibility.isReduceMotionEnabled {
-                actionView.alpha = 1
-            } else {
-                UIView.animate(
-                    withDuration: 0.16,
-                    delay: 0,
-                    options: [.beginFromCurrentState, .allowUserInteraction],
-                    animations: { actionView.alpha = 1 }
-                )
-            }
+            actionView.layer.removeAllAnimations()
+            actionView.alpha = 1
         }
     }
 
     private func styleNativeHeaderAction(_ actionView: NativeHeaderActionView) {
         actionView.overrideUserInterfaceStyle = nativeChromeIsDark ? .dark : .light
-        actionView.effect = UIAccessibility.isReduceTransparencyEnabled
-            ? nil
-            : UIBlurEffect(style: .systemUltraThinMaterial)
-        actionView.backgroundColor = UIAccessibility.isReduceTransparencyEnabled
-            ? (nativeChromeIsDark ? UIColor(white: 0.14, alpha: 1) : UIColor(white: 0.96, alpha: 1))
-            : UIColor.clear
-        actionView.layer.borderColor = (
-            nativeChromeIsDark
-                ? UIColor.white.withAlphaComponent(0.24)
-                : UIColor.white.withAlphaComponent(0.82)
-        ).cgColor
+        if UIAccessibility.isReduceTransparencyEnabled {
+            actionView.effect = nil
+            actionView.backgroundColor = nativeChromeIsDark
+                ? UIColor(white: 0.14, alpha: 1)
+                : UIColor(white: 0.96, alpha: 1)
+            actionView.layer.borderWidth = 1
+            actionView.layer.borderColor = (
+                nativeChromeIsDark
+                    ? UIColor.white.withAlphaComponent(0.24)
+                    : UIColor.black.withAlphaComponent(0.10)
+            ).cgColor
+        } else if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect(style: .regular)
+            glass.isInteractive = true
+            actionView.effect = glass
+            actionView.backgroundColor = .clear
+            actionView.layer.borderWidth = 0
+            actionView.layer.borderColor = UIColor.clear.cgColor
+        } else {
+            actionView.effect = UIBlurEffect(style: .systemUltraThinMaterial)
+            actionView.backgroundColor = .clear
+            actionView.layer.borderWidth = 1
+            actionView.layer.borderColor = (
+                nativeChromeIsDark
+                    ? UIColor.white.withAlphaComponent(0.24)
+                    : UIColor.white.withAlphaComponent(0.82)
+            ).cgColor
+        }
         actionView.button.tintColor = nativeChromeIsDark ? .white : .black
     }
 
@@ -512,6 +568,8 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
       ].join(',');
       let sequence = 0;
       let scheduled = false;
+      let syncInFlight = false;
+      let syncRequested = false;
       let lastDigest = '';
       let lastModal = false;
       let spritePromise = null;
@@ -564,16 +622,25 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
       };
 
       const visibleControls = async () => {
-        if (document.documentElement?.dataset?.modalOpen === 'true') return [];
+        if (document.documentElement?.dataset?.modalOpen === 'true') return null;
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const elements = Array.from(document.querySelectorAll(selector));
         const controls = [];
         for (const element of elements) {
+          if (!element.dataset.nativeActionId) {
+            element.dataset.nativeActionId = `native-action-${++sequence}`;
+          }
+          const iconDataUrl = await originalIconPNG(element);
+          // An async icon decode can outlive the DOM node that requested it.
+          // Measure only after it resolves so stale geometry is never posted.
+          if (!iconDataUrl || !element.isConnected) continue;
           const style = getComputedStyle(element);
           const rect = element.getBoundingClientRect();
+          const nativeReady = element.dataset.nativeControlReady === 'true';
           if (
             style.display === 'none' ||
+            (style.visibility === 'hidden' && !nativeReady) ||
             Number(style.opacity) === 0 ||
             rect.width < 24 ||
             rect.height < 24 ||
@@ -582,19 +649,16 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
             rect.left >= viewportWidth ||
             rect.top >= viewportHeight
           ) continue;
-          if (!element.dataset.nativeActionId) {
-            element.dataset.nativeActionId = `native-action-${++sequence}`;
-          }
-          const iconDataUrl = await originalIconPNG(element);
           // Controls without a Maratonou icon remain web-owned. This prevents
           // UIKit from silently replacing branded artwork with system glyphs.
-          if (!iconDataUrl) continue;
+          const pixelRatio = window.devicePixelRatio || 1;
+          const quantize = value => Math.round(value * pixelRatio) / pixelRatio;
           controls.push({
             id: element.dataset.nativeActionId,
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
+            x: quantize(rect.x),
+            y: quantize(rect.y),
+            width: quantize(rect.width),
+            height: quantize(rect.height),
             label: element.getAttribute('aria-label') || element.getAttribute('title') || '',
             active: element.getAttribute('aria-pressed') === 'true' || element.dataset.active === 'true',
             iconDataUrl
@@ -612,23 +676,43 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
 
       const syncControls = async () => {
         scheduled = false;
-        syncModal();
-        const controls = await visibleControls();
-        const digest = JSON.stringify(controls.map(({ id, x, y, width, height, active }) => [
-          id,
-          Math.round(x),
-          Math.round(y),
-          Math.round(width),
-          Math.round(height),
-          active
-        ]));
-        if (digest === lastDigest) return;
-        lastDigest = digest;
-        handler()?.postMessage({ type: 'controls', controls });
+        if (syncInFlight) {
+          syncRequested = true;
+          return;
+        }
+
+        syncInFlight = true;
+        try {
+          // Serialize measurements and discard a scan if the DOM changed while
+          // an icon was decoding. Only the newest complete scan reaches UIKit.
+          do {
+            syncRequested = false;
+            syncModal();
+            const controls = await visibleControls();
+            if (syncRequested || controls === null) continue;
+            const route = `${location.pathname}${location.search}`;
+            const digest = JSON.stringify([route, controls.map(({ id, x, y, width, height, active }) => [
+              id,
+              x,
+              y,
+              width,
+              height,
+              active
+            ])]);
+            if (digest !== lastDigest) {
+              lastDigest = digest;
+              handler()?.postMessage({ type: 'controls', route, controls });
+            }
+          } while (syncRequested);
+        } finally {
+          syncInFlight = false;
+          if (syncRequested) scheduleSync();
+        }
       };
 
       const scheduleSync = () => {
-        if (scheduled) return;
+        syncRequested = true;
+        if (scheduled || syncInFlight) return;
         scheduled = true;
         requestAnimationFrame(syncControls);
       };
@@ -652,11 +736,17 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
           document.querySelectorAll(selector).forEach(element => {
             if (ready.has(element.dataset.nativeActionId)) {
               element.dataset.nativeControlReady = 'true';
-            } else {
-              delete element.dataset.nativeControlReady;
             }
           });
           handler()?.postMessage({ type: 'controlsCommitted', ids });
+        },
+        clearReady(ids) {
+          const stale = new Set(ids);
+          document.querySelectorAll(selector).forEach(element => {
+            if (stale.has(element.dataset.nativeActionId)) {
+              delete element.dataset.nativeControlReady;
+            }
+          });
         },
         scheduleSync
       };
@@ -671,8 +761,11 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
           attributeFilter: ['class', 'style', 'aria-pressed', 'data-modal-open']
         });
       }, { once: true });
-      window.addEventListener('resize', scheduleSync, { passive: true });
+      // Scroll events from the app's internal page containers do not bubble.
+      // Capture them at window level so UIKit always follows the web control.
       window.addEventListener('scroll', scheduleSync, { passive: true, capture: true });
+      window.addEventListener('resize', scheduleSync, { passive: true });
+      window.visualViewport?.addEventListener('resize', scheduleSync, { passive: true });
       window.addEventListener('popstate', scheduleSync);
       window.addEventListener('maratonou:native-chrome-sync', scheduleSync);
     })();

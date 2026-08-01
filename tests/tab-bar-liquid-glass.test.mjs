@@ -43,6 +43,8 @@ test('Capacitor iOS uses a real UIKit tab bar and route bridge', () => {
 
 test('native appearance delegates Liquid Glass to iOS 26', () => {
   assert.match(appDelegate, /#unavailable\(iOS 26\.0\)/);
+  assert.match(appDelegate, /UIGlassEffect\(style: \.regular\)/);
+  assert.match(appDelegate, /glass\.isInteractive = true/);
   assert.match(appDelegate, /systemUltraThinMaterial/);
   assert.match(appDelegate, /isReduceTransparencyEnabled/);
 });
@@ -60,6 +62,21 @@ test('native iOS header actions use original app artwork and a readiness handsha
   assert.match(appDelegate, /setReady\(ids\)/);
   assert.match(globals, /data-native-control-ready="true"/);
   assert.match(globals, /visibility:\s*hidden !important/);
+});
+
+test('native iOS header actions do not flicker or apply stale scroll geometry', () => {
+  assert.match(appDelegate, /syncInFlight/);
+  assert.match(appDelegate, /syncRequested/);
+  assert.match(appDelegate, /if \(syncRequested \|\| controls === null\) continue/);
+  assert.match(appDelegate, /if \(!iconDataUrl \|\| !element\.isConnected\) continue/);
+  assert.match(appDelegate, /style\.visibility === 'hidden' && !nativeReady/);
+  assert.match(appDelegate, /actionView\.alpha = 0/);
+  assert.match(appDelegate, /scheduleNativeHeaderActionRemoval/);
+  assert.match(appDelegate, /clearReady\(ids\)/);
+  assert.match(appDelegate, /UIView\.performWithoutAnimation/);
+  assert.match(appDelegate, /const quantize = value => Math\.round\(value \* pixelRatio\) \/ pixelRatio/);
+  assert.match(appDelegate, /window\.addEventListener\('scroll', scheduleSync, \{ passive: true, capture: true \}\)/);
+  assert.doesNotMatch(appDelegate, /Math\.round\(x\)[\s\S]*Math\.round\(y\)/);
 });
 
 test('native action sheets hide native chrome and preserve web handlers', () => {

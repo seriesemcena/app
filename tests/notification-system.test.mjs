@@ -33,7 +33,30 @@ test('notification page keeps the inbox controls and metadata visually clear', (
   assert.doesNotMatch(page, /t\('markAll'\)/);
   assert.doesNotMatch(page, /borderBottom: `1px solid \$\{T\.border\}`/);
   assert.match(page, /size=\{11\} weight=\{600\} color=\{T\.t3\}[\s\S]*t\('footer'\)/);
-  assert.equal((page.match(/size=\{10\} weight=\{600\} color=\{T\.t2\}/g) ?? []).length, 2);
+  assert.equal((page.match(/size=\{11\} weight=\{600\} color=\{T\.t2\}/g) ?? []).length, 2);
+});
+
+test('notification tabs have breathing room, intrinsic widths and a visible inactive state', () => {
+  const page = read('src/app/notifications/page.tsx');
+
+  assert.match(page, /className="notification-tabs-shell"[\s\S]*padding: '12px 16px 0'/);
+  assert.match(page, /className="notification-tabs"[\s\S]*role="tablist"/);
+  assert.match(page, /className="notification-tab"/);
+  assert.match(page, /flex: '0 0 auto'/);
+  assert.match(page, /width: 'auto'/);
+  assert.doesNotMatch(page, /flex: 1, padding: '10px 4px'/);
+  assert.match(page, /background: active \? T\.pillActiveBg : T\.surface2/);
+});
+
+test('clear action shares the day heading row and notification copy is easier to read', () => {
+  const page = read('src/app/notifications/page.tsx');
+
+  assert.match(page, /className="notification-day-heading"/);
+  assert.match(page, /alignItems: 'center', justifyContent: 'space-between'/);
+  assert.match(page, /headerAction=\{index === 0/);
+  assert.doesNotMatch(page, /justifyContent: 'flex-end', padding: '10px 16px 0'/);
+  assert.equal((page.match(/<Txt size=\{15\} weight=\{700\} color=\{T\.t1\}/g) ?? []).length, 2);
+  assert.match(page, /<Txt size=\{13\} color=\{T\.t3\}/);
 });
 
 test('movie streaming alerts require a verified flatrate provider transition', () => {

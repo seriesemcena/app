@@ -343,7 +343,7 @@ export type Profile = {
   /** Small public avatar used by feeds, comments and follower lists. */
   avatarThumbImage?: string;
   coverImage: string;    // Firebase Storage URL (legacy base64 may still exist until migration)
-  social: { instagram: string; twitter: string; letterboxd: string };
+  social: { instagram: string; twitter: string; tiktok: string };
   streamings: string[];
   genres: string[];
   followers: number;
@@ -411,7 +411,7 @@ const PROFILE_DEFAULT: Profile = {
   avatarImage: '',
   avatarThumbImage: '',
   coverImage: '',
-  social: { instagram: '', twitter: '', letterboxd: '' },
+  social: { instagram: '', twitter: '', tiktok: '' },
   streamings: [],
   genres: [],
   followers: 0,
@@ -429,7 +429,14 @@ export const profileStore = {
   get(uid?: string | null): Profile {
     if (typeof window === 'undefined') return PROFILE_DEFAULT;
     const key = profileKey(uid);
-    try { return { ...PROFILE_DEFAULT, ...JSON.parse(localStorage.getItem(key) || '{}') }; } catch { return PROFILE_DEFAULT; }
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) || '{}');
+      return {
+        ...PROFILE_DEFAULT,
+        ...stored,
+        social: { ...PROFILE_DEFAULT.social, ...(stored?.social ?? {}) },
+      };
+    } catch { return PROFILE_DEFAULT; }
   },
   set(p: Partial<Profile>, uid?: string | null) {
     if (typeof window === 'undefined') return;

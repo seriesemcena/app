@@ -327,22 +327,45 @@ export default function NotificationsPage() {
         </GlassHeader>
 
         {/* ── Tab selector ── */}
-        <div style={{ flexShrink: 0, padding: '0 16px', background: T.bg }}>
-          <div style={{ display: 'flex', gap: 4 }}>
+        <div
+          className="notification-tabs-shell"
+          style={{ flexShrink: 0, padding: '12px 16px 0', background: T.bg }}
+        >
+          <div
+            className="notification-tabs"
+            role="tablist"
+            aria-label={t('title')}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
             {([
               { key: 'account', label: t('tabs.account'), count: accountUnread },
               { key: 'app',     label: t('tabs.app'),     count: appUnread     },
             ] as { key: ActiveTab; label: string; count: number }[]).map(({ key, label, count }) => {
               const active = tab === key;
               return (
-                <button key={key} onClick={() => setTab(key)} style={{
-                  flex: 1, padding: '10px 4px', background: active ? T.pillActiveBg : 'transparent', border: 'none',
-                  borderRadius: 20,
-                  cursor: 'pointer', position: 'relative',
-                  transition: 'background 0.2s',
-                }}>
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className="notification-tab"
+                  onClick={() => setTab(key)}
+                  style={{
+                    flex: '0 0 auto',
+                    width: 'auto',
+                    minHeight: 38,
+                    padding: '9px 18px',
+                    background: active ? T.pillActiveBg : T.surface2,
+                    border: `1px solid ${active ? T.pillActiveBorder : T.border}`,
+                    borderRadius: 20,
+                    cursor: 'pointer',
+                    position: 'relative',
+                    whiteSpace: 'nowrap',
+                    transition: 'background 0.2s, border-color 0.2s',
+                  }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <Txt size={13} weight={active ? 700 : 500} color={active ? T.pillActiveText : T.t3}>{label}</Txt>
+                    <Txt size={13} weight={active ? 700 : 600} color={active ? T.pillActiveText : T.t2}>{label}</Txt>
                     {count > 0 && (
                       <div style={{ minWidth: 18, height: 18, borderRadius: 9, background: '#C069FF', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
                         <Txt size={10} weight={700} color="#fff">{count > 99 ? '99+' : count}</Txt>
@@ -356,27 +379,6 @@ export default function NotificationsPage() {
         </div>
 
         <ScrollArea>
-          {currentCount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 16px 0' }}>
-              <button
-                type="button"
-                onClick={clearNotifications}
-                disabled={clearing}
-                aria-label={t('clear')}
-                style={{
-                  padding: '7px 11px', borderRadius: 18,
-                  background: 'rgba(255,90,95,0.10)',
-                  border: '1px solid rgba(255,90,95,0.18)',
-                  color: '#FF7378', cursor: clearing ? 'default' : 'pointer',
-                  fontSize: 11, fontWeight: 700,
-                  fontFamily: "'Area','Inter',sans-serif",
-                  opacity: clearing ? 0.55 : 1,
-                }}
-              >
-                {clearing ? t('clearing') : t('clear')}
-              </button>
-            </div>
-          )}
           <div style={{ padding: '16px 16px 0' }}>
 
             {/* ══ MINHA CONTA tab ══ */}
@@ -398,8 +400,19 @@ export default function NotificationsPage() {
                   />
                 )}
 
-                {!accountLoading && accountGrouped.map(group => (
-                  <DayGroup key={group.key} dayKey={group.key} count={group.items.length}>
+                {!accountLoading && accountGrouped.map((group, index) => (
+                  <DayGroup
+                    key={group.key}
+                    dayKey={group.key}
+                    count={group.items.length}
+                    headerAction={index === 0 && currentCount > 0 ? (
+                      <ClearNotificationsButton
+                        clearing={clearing}
+                        label={clearing ? t('clearing') : t('clear')}
+                        onClick={clearNotifications}
+                      />
+                    ) : undefined}
+                  >
                     {group.items.map(n => (
                       <AccountCard
                         key={n.docId}
@@ -470,8 +483,19 @@ export default function NotificationsPage() {
                   />
                 )}
 
-                {appGrouped.map(group => (
-                  <DayGroup key={group.key} dayKey={group.key} count={group.items.length}>
+                {appGrouped.map((group, index) => (
+                  <DayGroup
+                    key={group.key}
+                    dayKey={group.key}
+                    count={group.items.length}
+                    headerAction={index === 0 && currentCount > 0 ? (
+                      <ClearNotificationsButton
+                        clearing={clearing}
+                        label={clearing ? t('clearing') : t('clear')}
+                        onClick={clearNotifications}
+                      />
+                    ) : undefined}
+                  >
                     {group.items.map(n => (
                       <AppCard
                         key={n.id}
@@ -514,7 +538,31 @@ function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () =>
 }
 
 /* ── Day group wrapper ── */
-function DayGroup({ dayKey, count, children }: { dayKey: DayKey; count: number; children: React.ReactNode }) {
+function ClearNotificationsButton({ clearing, label, onClick }: { clearing: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={clearing}
+      aria-label={label}
+      style={{
+        padding: '7px 11px', borderRadius: 18,
+        background: 'rgba(255,90,95,0.10)',
+        border: '1px solid rgba(255,90,95,0.18)',
+        color: '#FF7378', cursor: clearing ? 'default' : 'pointer',
+        fontSize: 11, fontWeight: 700,
+        fontFamily: "'Area','Inter',sans-serif",
+        opacity: clearing ? 0.55 : 1,
+        flexShrink: 0,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/* ── Day group wrapper ── */
+function DayGroup({ dayKey, count, children, headerAction }: { dayKey: DayKey; count: number; children: React.ReactNode; headerAction?: React.ReactNode }) {
   const { t } = useTranslation('notifications');
   let label: string;
   if (dayKey === 'today')     label = t('groups.today');
@@ -526,9 +574,12 @@ function DayGroup({ dayKey, count, children }: { dayKey: DayKey; count: number; 
   }
   return (
     <div style={{ marginBottom: 24 }}>
-      <Txt size={11} weight={700} color={T.t2} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>
-        {label}
-      </Txt>
+      <div className="notification-day-heading" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 32, marginBottom: 10 }}>
+        <Txt size={11} weight={700} color={T.t2} style={{ display: 'block', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          {label}
+        </Txt>
+        {headerAction}
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
     </div>
   );
@@ -601,15 +652,15 @@ function AccountCard({ notif, onTap }: { notif: NotifDoc & { docId: string }; on
 
       {/* Text */}
       <div style={{ flex: 1, minWidth: 0, paddingRight: 16 }}>
-        <Txt size={13} weight={isUnread ? 700 : 500} color={T.t1} style={{ display: 'block', lineHeight: 1.4 }}>
+        <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', lineHeight: 1.35 }}>
           {main}
         </Txt>
         {sub && (
-          <Txt size={11} color={T.t3} style={{ display: 'block', marginTop: 2 }}>
+          <Txt size={13} color={T.t3} style={{ display: 'block', marginTop: 3, lineHeight: 1.4 }}>
             {sub}
           </Txt>
         )}
-        <Txt size={10} weight={600} color={T.t2} style={{ display: 'block', marginTop: 4 }}>
+        <Txt size={11} weight={600} color={T.t2} style={{ display: 'block', marginTop: 5 }}>
           {timeAgo(notif.createdAt)}
         </Txt>
       </div>
@@ -659,12 +710,12 @@ function AppCard({ notif, onTap }: { notif: InboxNotif; onTap: () => void }) {
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
-          <Txt size={13} weight={isUnread ? 700 : 600} color={T.t1} style={{ display: 'block', lineHeight: 1.4 }}>
+          <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', lineHeight: 1.35 }}>
             {notif.title}
           </Txt>
-          <Txt size={10} weight={600} color={T.t2} style={{ flexShrink: 0, marginTop: 2 }}>{timeAgo(notif.time)}</Txt>
+          <Txt size={11} weight={600} color={T.t2} style={{ flexShrink: 0, marginTop: 2 }}>{timeAgo(notif.time)}</Txt>
         </div>
-        <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 4, lineHeight: 1.5 }}>
+        <Txt size={13} color={T.t3} style={{ display: 'block', marginTop: 5, lineHeight: 1.5 }}>
           {notif.body}
         </Txt>
       </div>

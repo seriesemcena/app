@@ -17,17 +17,6 @@ import { createProfileImagePreview, removeProfileImages, uploadProfileImage } fr
 import { tmdb, tmdbImg } from '@/lib/tmdb';
 import '@/lib/i18n';
 
-const GRADIENTS = [
-  'linear-gradient(135deg,#C069FF,#c030a0)',
-  'linear-gradient(135deg,#E50914,#a00000)',
-  'linear-gradient(135deg,#3b82f6,#1d4ed8)',
-  'linear-gradient(135deg,#10b981,#047857)',
-  'linear-gradient(135deg,#f59e0b,#b45309)',
-  'linear-gradient(135deg,#8b5cf6,#6d28d9)',
-  'linear-gradient(135deg,#ec4899,#be185d)',
-  'linear-gradient(135deg,#06b6d4,#0e7490)',
-];
-
 const INPUT: React.CSSProperties = {
   ...settingsInputStyle,
   padding: '7px 0 0',
@@ -65,7 +54,13 @@ export default function EditProfilePage() {
     const local = profileStore.get(user?.uid);
 
     const buildProfile = (base: Profile, cloudOverride?: Partial<Profile>) => {
-      const merged = cloudOverride ? { ...base, ...cloudOverride } : base;
+      const merged = cloudOverride
+        ? {
+            ...base,
+            ...cloudOverride,
+            social: { ...base.social, ...(cloudOverride.social ?? {}) },
+          }
+        : base;
       if (!user) return merged;
       const resolvedName = merged.name || user.displayName || 'Usuário';
       return {
@@ -433,22 +428,6 @@ export default function EditProfilePage() {
                 </button>
               )}
 
-              {/* gradient picker (only when no avatar photo) */}
-              {!profile.avatarImage && (
-                <SettingsCard style={{ padding: 16 }}>
-                  <Txt size={11} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>{t('editProfile.avatarColor')}</Txt>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {GRADIENTS.map((g) => (
-                      <button
-                        key={g}
-                        onClick={() => update('avatarGradient', g)}
-                        style={{ width: 36, height: 36, borderRadius: 18, background: g, border: profile.avatarGradient === g ? '3px solid #fff' : '3px solid transparent', cursor: 'pointer', transition: 'border 0.15s' }}
-                      />
-                    ))}
-                  </div>
-                </SettingsCard>
-              )}
-
               {/* Name & username */}
               <SettingsCard>
                 <div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.border}` }}>
@@ -481,9 +460,9 @@ export default function EditProfilePage() {
                   {([
                     { key: 'instagram'  as const, label: 'Instagram',   placeholder: '@seuinsta',    color: '#e1306c' },
                     { key: 'twitter'    as const, label: 'X / Twitter', placeholder: '@seutwitter',  color: '#1d9bf0' },
-                    { key: 'letterboxd' as const, label: 'Letterboxd',  placeholder: 'usuario',       color: '#00c030' },
+                    { key: 'tiktok'     as const, label: 'TikTok',      placeholder: '@seutiktok',    color: '#ff0050' },
                   ] as const).map(({ key, label, placeholder, color }) => (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: key !== 'letterboxd' ? `1px solid ${T.border}` : 'none' }}>
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: key !== 'tiktok' ? `1px solid ${T.border}` : 'none' }}>
                       <div style={{ width: 36, height: 36, borderRadius: 12, background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Icon name="share" size={16} color={color} />
                       </div>
