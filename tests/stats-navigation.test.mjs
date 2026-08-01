@@ -43,6 +43,17 @@ test('userRatings collection-group query is backed by a COLLECTION_GROUP index',
   );
 });
 
+test('ratings page falls back to local reviews when the authoritative query fails', async () => {
+  const ratings = await read('src/app/ratings/page.tsx');
+  const block = ratings.slice(
+    ratings.indexOf('dbRatingStore.listForUser(getDB(), user.uid)'),
+    ratings.indexOf('.finally('),
+  );
+  assert.match(block, /\.catch\(/);
+  // Failure only (an empty success still calls .then with []): show local reviews.
+  assert.match(block, /if \(!cancelled\) setRecords\(local\)/);
+});
+
 test('stats falls back to local reviews when the authoritative ratings query fails', async () => {
   const stats = await read('src/app/stats/page.tsx');
   const block = stats.slice(

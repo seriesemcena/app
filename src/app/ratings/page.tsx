@@ -183,6 +183,10 @@ export default function RatingsPage() {
       if (!cancelled) setRecords(dedupeRatings(cloud));
     }).catch((error) => {
       console.warn('[Ratings] Could not load authoritative ratings', error);
+      // Only a genuine failure (most often a Firestore index still building)
+      // falls back to local reviews — an empty success above keeps the empty
+      // state. This avoids telling a rater they have no ratings during an outage.
+      if (!cancelled) setRecords(local);
     }).finally(() => {
       if (!cancelled) setSourceLoading(false);
     });
