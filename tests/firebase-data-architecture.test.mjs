@@ -59,12 +59,13 @@ test('profile media is optimized for Storage while PRO GIF avatars preserve anim
   assert.match(storageRules, /isProMember\(uid\)/);
 });
 
-test('Storage is configured and remains gated by an explicit public environment flag', () => {
+test('Storage is enabled by the configured bucket without a second client-side flag', () => {
   const firebase = read('src/lib/firebase.ts');
   const defaultConfig = read('firebase.json');
   const editor = read('src/app/settings/edit-profile/page.tsx');
   const storageRules = read('storage.rules');
-  assert.match(firebase, /NEXT_PUBLIC_FIREBASE_STORAGE_ENABLED === 'true'/);
+  assert.match(firebase, /firebaseConfig\.storageBucket/);
+  assert.doesNotMatch(firebase, /NEXT_PUBLIC_FIREBASE_STORAGE_ENABLED/);
   assert.equal(JSON.parse(defaultConfig).storage?.rules, 'storage.rules');
   assert.match(storageRules, /match \/users\/\{uid\}\/\{kind\}\/\{fileName\}/);
   assert.match(storageRules, /match \/admin\/popup-banners\/\{uid\}\/\{fileName\}/);

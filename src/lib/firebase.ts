@@ -47,11 +47,13 @@ export const firebaseConfigured = Boolean(
   firebaseConfig.appId
 );
 
-/** Cloud Storage requires Blaze, so Spark projects keep uploads opt-in. */
+/** Storage is available whenever the configured Firebase app has a bucket.
+ * Security and upload limits are enforced by storage.rules; keeping a second
+ * client-side feature flag here can silently disable uploads even after the
+ * bucket and rules have been configured. */
 export const firebaseStorageEnabled = Boolean(
   firebaseConfigured
   && firebaseConfig.storageBucket
-  && process.env.NEXT_PUBLIC_FIREBASE_STORAGE_ENABLED === 'true'
 );
 
 let _app:  FirebaseApp | null = null;
