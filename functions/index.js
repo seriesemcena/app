@@ -434,6 +434,72 @@ async function deliver(uid, eventKey, notification) {
   return { created: true, pushSuccess, pushFailure };
 }
 
+/** Sends a push to every device a user registered, pruning tokens FCM reports
+ * as permanently invalid. Unlike deliver(), it does NOT create an in-app record
+ * — the caller already stored one — so social notifications are not duplicated.
+ * A failure here must never break the caller: the in-app record already exists. */
+async function pushToUser(uid, { title, body, url, type, eventKey }) {
+  const tokenRef = db.doc(`users/${uid}/private/push`);
+  const tokenSnap = await tokenRef.get();
+  const tokens = [...new Set(
+    (Array.isArray(tokenSnap.data()?.tokens) ? tokenSnap.data().tokens : [])
+      .filter((token) => typeof token === 'string' && token.length > 20),
+  )].slice(0, 20);
+  if (!tokens.length) return { pushSuccess: 0, pushFailure: 0 };
+
+  const response = await getMessaging().sendEachForMulticast({
+    tokens,
+    notification: { title, body },
+    data: { url, eventKey, type: type || 'general' },
+    android: { priority: 'high', notification: { sound: 'default' } },
+    apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
+    webpush: { fcmOptions: { link: url } },
+  });
+
+  const invalid = [];
+  const failures = [];
+  response.responses.forEach((result, index) => {
+    if (result.success) return;
+    failures.push({ code: result.error?.code || 'unknown', token: maskToken(tokens[index]) });
+    if (['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(result.error?.code)) {
+      invalid.push(tokens[index]);
+    }
+  });
+  if (failures.length) logger.warn('Push delivery partially rejected by FCM', { uid, eventKey, failures });
+  if (invalid.length) {
+    await tokenRef.set({ tokens: tokens.filter((token) => !invalid.includes(token)) }, { merge: true });
+  }
+  return { pushSuccess: response.successCount, pushFailure: response.failureCount };
+}
+
+/** Push copy for social events, mirroring the in-app strings the client renders
+ * from notifications.json. The recipient's stored locale drives the language so
+ * a push reads the same as the inbox entry it accompanies. */
+function socialPushCopy(locale, type, actor, context) {
+  const language = String(locale || 'pt-BR').toLowerCase();
+  const isEn = language.startsWith('en');
+  const isEs = language.startsWith('es');
+  const handle = actor.username
+    ? `@${actor.username}`
+    : (actor.name || (isEn ? 'Someone' : isEs ? 'Alguien' : 'Alguém'));
+  const snippet = context.commentSnippet || context.titleName || '';
+
+  if (type === 'new_follower') {
+    if (isEn) return { title: `${handle} started following you`, body: 'Tap to see their profile.' };
+    if (isEs) return { title: `${handle} empezó a seguirte`, body: 'Toca para ver su perfil.' };
+    return { title: `${handle} começou a te seguir`, body: 'Toque para ver o perfil.' };
+  }
+  if (type === 'comment_reply') {
+    if (isEn) return { title: `${handle} replied to your comment`, body: snippet || 'Tap to read the reply.' };
+    if (isEs) return { title: `${handle} respondió a tu comentario`, body: snippet || 'Toca para leer la respuesta.' };
+    return { title: `${handle} respondeu seu comentário`, body: snippet || 'Toque para ler a resposta.' };
+  }
+  // comment_like
+  if (isEn) return { title: `${handle} liked your comment`, body: snippet || 'Tap to see the comment.' };
+  if (isEs) return { title: `${handle} le dio me gusta a tu comentario`, body: snippet || 'Toca para ver el comentario.' };
+  return { title: `${handle} curtiu seu comentário`, body: snippet || 'Toque para ver o comentário.' };
+}
+
 /** Authenticated diagnostics endpoint used by notification settings.
  * It only sends fixed Maratonou copy to the caller's own registered devices. */
 exports.sendTestPush = onCall({
@@ -632,6 +698,23 @@ exports.createSocialNotification = onCall({
     read: false,
     createdAt: new Date().toISOString(),
   });
+
+  // The in-app record is stored above. Mirror it to a push so likes, follows
+  // and replies reach the lock screen too, not only the in-app inbox. Wrapped
+  // so a delivery failure never fails the call — the inbox entry already exists.
+  try {
+    const copy = socialPushCopy(recipientPreferences?.locale, type, actorProfile, optional);
+    const pushUrl = optional.link
+      || (type === 'new_follower' && actorProfile.username ? `/user/${actorProfile.username}` : '/notifications?tab=account');
+    await pushToUser(recipientId, {
+      ...copy,
+      url: pushUrl,
+      type,
+      eventKey: `social:${type}:${actorId}:${Date.now()}`,
+    });
+  } catch (error) {
+    logger.warn('Social push delivery failed', { recipientId, type, error: error?.message });
+  }
 
   return { created: true };
 });

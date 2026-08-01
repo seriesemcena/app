@@ -80,6 +80,54 @@ test('notification preferences are enforced server-side before social notificati
   assert.match(functions, /return \{ created: false \}/);
 });
 
+test('social likes, follows and replies push to the lock screen, not just the inbox', () => {
+  const functions = read('functions/index.js');
+  // A dedicated helper mirrors the inbox entry to a push without creating a
+  // second in-app record (that would duplicate the notification).
+  assert.match(functions, /async function pushToUser\(uid, \{ title, body, url, type, eventKey \}\)/);
+  assert.match(functions, /function socialPushCopy\(locale, type, actor, context\)/);
+
+  const social = functions.slice(
+    functions.indexOf('exports.createSocialNotification'),
+    functions.indexOf('async function forEachUserPage'),
+  );
+  assert.match(social, /await pushToUser\(recipientId, \{/);
+  assert.match(social, /socialPushCopy\(recipientPreferences\?\.locale, type, actorProfile, optional\)/);
+  // The disabled-preference opt-out must still short-circuit before any push.
+  assert.ok(
+    social.indexOf('notifPrefs?.[preferenceByType[type]] === false') <
+    social.indexOf('await pushToUser'),
+    'preference opt-out must return before the push is sent',
+  );
+  // Copy stays localized to match the in-app strings in notifications.json.
+  assert.match(functions, /começou a te seguir/);
+  assert.match(functions, /started following you/);
+  assert.match(functions, /empezó a seguirte/);
+});
+
+test('foreground social pushes are not mirrored into the app inbox and refresh the account tab', () => {
+  const auth = read('src/context/AuthContext.tsx');
+  const page = read('src/app/notifications/page.tsx');
+  // A social push must not be added to the local store (that feeds the app tab)
+  // — its canonical home is the Firestore-backed account tab.
+  assert.match(auth, /!eventKey\.startsWith\('push-test:'\) && !eventKey\.startsWith\('social:'\)/);
+  // The account tab reloads when a social push arrives so the entry shows live.
+  assert.match(page, /detail\?\.eventKey\?\.startsWith\('social:'\)\) setAccountLoaded\(false\)/);
+});
+
+test('the social push helper reuses invalid-token pruning and high-priority delivery', () => {
+  const functions = read('functions/index.js');
+  const helper = functions.slice(
+    functions.indexOf('async function pushToUser'),
+    functions.indexOf('function socialPushCopy'),
+  );
+  assert.match(helper, /users\/\$\{uid\}\/private\/push/);
+  assert.match(helper, /sendEachForMulticast/);
+  assert.match(helper, /'apns-priority': '10'/);
+  assert.match(helper, /messaging\/registration-token-not-registered/);
+  assert.match(helper, /tokens: tokens\.filter\(\(token\) => !invalid\.includes\(token\)\)/);
+});
+
 test('FCM registration and scheduled server workers are wired', () => {
   const auth = read('src/context/AuthContext.tsx');
   const home = read('src/app/home/page.tsx');

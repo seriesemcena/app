@@ -114,7 +114,15 @@ export default function NotificationsPage() {
   /* Refresh the app inbox when a foreground push arrives or when a PWA/native
      installation returns from the background after receiving a system push. */
   useEffect(() => {
-    const refresh = () => setAppRefreshVersion((version) => version + 1);
+    const refresh = (event?: Event) => {
+      // Social pushes (likes, follows, replies) land in the Firestore-backed
+      // account inbox, so reload its first page instead of the app inbox. Other
+      // events — foreground app pushes, focus, pageshow — carry no social
+      // eventKey and refresh the app inbox exactly as before.
+      const detail = (event as CustomEvent<{ eventKey?: string }> | undefined)?.detail;
+      if (detail?.eventKey?.startsWith('social:')) setAccountLoaded(false);
+      else setAppRefreshVersion((version) => version + 1);
+    };
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') refresh();
     };

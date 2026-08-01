@@ -184,7 +184,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   // Cloud Functions are the canonical inbox writer. This
                   // immediate local mirror keeps foreground delivery visible
                   // even before the Firestore refresh finishes.
-                  if (eventKey && !eventKey.startsWith('push-test:')) {
+                  // Social pushes (likes, follows, replies) already live in the
+                  // Firestore-backed "account" inbox; mirroring them into the
+                  // local store would duplicate them into the "app" tab, so skip
+                  // — the banner and the account-tab refresh still surface them.
+                  if (eventKey && !eventKey.startsWith('push-test:') && !eventKey.startsWith('social:')) {
                     notifInboxStore.add({
                       id: eventKey,
                       type,
