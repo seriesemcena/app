@@ -15,7 +15,8 @@ test('authentication requires a region before exposing sign-in and registration'
   assert.match(authPage, /localStorage\.getItem\(REGION_SELECTED_KEY\)/);
   assert.match(authPage, /localStorage\.setItem\(REGION_SELECTED_KEY, '1'\)/);
   assert.ok(authPage.indexOf("if (view === 'region')") < authPage.indexOf("if (view === 'landing')"));
-  assert.match(authPage, /<BottomSheet nativeActionSheet visible=\{regionPickerOpen\}/);
+  assert.match(authPage, /<BottomSheet visible=\{regionPickerOpen\}/);
+  assert.doesNotMatch(authPage, /nativeActionSheet/);
   assert.doesNotMatch(authPage, /selectedRegion\.flag|\{region\.flag\}/);
   assert.match(regions, /sec_region_selected_v1/);
   assert.match(regions, /code: 'BR'/);

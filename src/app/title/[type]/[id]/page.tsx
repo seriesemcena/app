@@ -891,7 +891,7 @@ export default function TitleDetailPage() {
         )}
 
         {listSheet && reportTarget === null && (
-        <BottomSheet nativeActionSheet visible onClose={() => setListSheet(false)} title={listStatus ? t('myList') : t('addToList')}>
+        <BottomSheet visible onClose={() => setListSheet(false)} title={listStatus ? t('myList') : t('addToList')}>
           {([
             { key: 'want',     label: t('wantStatus'),     icon: 'bookmark' as const, action: 'want'     as const },
             { key: 'watching', label: t('watchingStatus'), icon: 'eye'      as const, action: 'watching' as const },
@@ -899,13 +899,16 @@ export default function TitleDetailPage() {
           ] as const).map(({ key, label, icon, action }) => {
             const isActive = listStatus === key;
             return (
-            <button key={key} onClick={async () => {
-              const item = { id: detail.id, title, type: isTV ? 'tv' : 'movie', poster_path: detail.poster_path };
-              const others = (['want', 'watching', 'watched'] as const).filter((l) => l !== key);
-              others.forEach((l) => listStore.remove(l, detail.id));
-              listStore.add(key, item);
-              setListStatus(key);
-              setListSheet(false);
+            <button
+              key={key}
+              aria-pressed={isActive}
+              onClick={async () => {
+                const item = { id: detail.id, title, type: isTV ? 'tv' : 'movie', poster_path: detail.poster_path };
+                const others = (['want', 'watching', 'watched'] as const).filter((l) => l !== key);
+                others.forEach((l) => listStore.remove(l, detail.id));
+                listStore.add(key, item);
+                setListStatus(key);
+                setListSheet(false);
               showToast(`${label} ✓`);
               // Finalizing a series completes only seasons with a confirmed
               // premiere date in the past. Future or undated metadata must
@@ -998,11 +1001,18 @@ export default function TitleDetailPage() {
             );
           })}
           {listStatus && (
-            <button data-native-role="destructive" onClick={() => {
+            <button onClick={async () => {
               (['want', 'watching', 'watched'] as const).forEach((l) => listStore.remove(l, detail.id));
               setListStatus(null);
               setListSheet(false);
               showToast(t('removedFromList'));
+              if (firebaseConfigured && user) {
+                try {
+                  const db = getDB();
+                  await Promise.all((['want', 'watching', 'watched'] as const)
+                    .map((list) => dbListStore.remove(db, user.uid, list, detail.id)));
+                } catch {}
+              }
             }} style={{ width: '100%', padding: '14px 0', background: 'none', border: 'none', marginTop: 4, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
               <Icon name="close" size={17} color={T.t3} />
               <span style={{ color: T.t3, fontSize: 14, fontWeight: 600, fontFamily: "'Area','Inter',sans-serif" }}>{t('removeFromList')}</span>
@@ -1012,7 +1022,7 @@ export default function TitleDetailPage() {
         )}
 
         {maisSheet && reportTarget === null && (
-          <BottomSheet nativeActionSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
+          <BottomSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
             {([
               { icon: 'play'     as const, label: t('viewTrailer'),  action: openTrailer, disabled: !trailerUrl },
               { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); requireAuth('list', () => setListSheet(true)); }, disabled: false },

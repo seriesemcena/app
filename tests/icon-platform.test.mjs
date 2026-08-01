@@ -53,16 +53,15 @@ test('every platform keeps the original Maratonou SVG icon language', async () =
   assert.doesNotMatch(packageJson, /"@solar-icons\/react"/);
 });
 
-test('the iOS bridge renders original app artwork without an SF Symbols plugin', async () => {
+test('the native iOS toolbar renders original app artwork without an SF Symbols plugin', async () => {
   const [swiftSource, storyboard] = await Promise.all([
     readProjectFile('ios/App/App/AppDelegate.swift'),
     readProjectFile('ios/App/App/Base.lproj/Main.storyboard'),
   ]);
 
   assert.match(swiftSource, /UIImage\(named: imageName\)/);
-  assert.match(swiftSource, /originalIconPNG/);
-  assert.match(swiftSource, /streamline-flex-solid\.svg/);
-  assert.match(swiftSource, /data-maratonou-icon-id/);
+  assert.match(swiftSource, /NativeTabHome/);
+  assert.match(swiftSource, /NativeTabActivity/);
   assert.doesNotMatch(swiftSource, /SFSymbolsPlugin/);
   assert.doesNotMatch(swiftSource, /UIImage\(systemName:/);
   assert.match(storyboard, /customClass="MaratonouBridgeViewController"/);

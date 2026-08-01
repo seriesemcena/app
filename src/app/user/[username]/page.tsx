@@ -21,7 +21,6 @@ import { AppBannerSlot } from '@/components/AppBannerSlot';
 import { streamingColor } from '@/lib/streamingPlatforms';
 import { formatCurrency } from '@/lib/locale-utils';
 import { calculateWatchedDuration, legacyHistoryToSeasonProgress, uniqueEpisodeNumbers } from '@/lib/seasonProgress';
-import { presentNativeActionSheet } from '@/lib/nativeIOS';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
 type Lists = { watching: ListItem[]; want: ListItem[]; watched: ListItem[]; favorites: ListItem[] };
@@ -439,29 +438,6 @@ function UserProfileInner() {
     });
   };
 
-  const openProfileOptions = () => {
-    const request = presentNativeActionSheet({
-      title: t('moreOptions', { defaultValue: 'Mais opções' }),
-      cancelTitle: t('cancel', { defaultValue: 'Cancelar' }),
-      actions: [
-        { id: 'report', title: t('reportProfile') },
-        {
-          id: 'block',
-          title: isBlocked ? t('unblockUser') : t('blockUser'),
-          role: isBlocked ? 'default' : 'destructive',
-        },
-      ],
-    });
-    if (!request) {
-      setMenuOpen(value => !value);
-      return;
-    }
-    void request.then((actionID) => {
-      if (actionID === 'report') reportProfile();
-      if (actionID === 'block') void toggleBlock();
-    });
-  };
-
   const toggleFollow = async () => {
     if (!user) { router.push('/auth'); return; }
     const wasFollowing = isFollowing;
@@ -639,7 +615,7 @@ function UserProfileInner() {
                       className="ios-top-action"
                       title="Mais opções"
                       aria-label="Mais opções"
-                      onClick={openProfileOptions}
+                      onClick={() => setMenuOpen(value => !value)}
                       style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <Icon name="menuDots" size={18} color="#fff" />
                     </button>

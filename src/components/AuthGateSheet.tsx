@@ -12,7 +12,7 @@
      <button onClick={() => requireAuth('comment', enviarComentario)} />
      {authGate}
    ───────────────────────────────────────────────────────────── */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
@@ -20,7 +20,6 @@ import { BottomSheet, Txt, Btn } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { useAuth } from '@/hooks/useAuth';
-import { nativeIOSUIAvailable, presentNativeActionSheet } from '@/lib/nativeIOS';
 
 /** Ação bloqueada — define a frase mostrada ao visitante. */
 export type AuthGateReason =
@@ -47,32 +46,12 @@ export function useAuthGate() {
   }, [user]);
 
   const close = () => setReason(null);
-  const go = useCallback((mode: 'login' | 'register') => {
+  const go = (mode: 'login' | 'register') => {
     setReason(null);
     router.push(mode === 'register' ? '/auth?mode=register' : '/auth');
-  }, [router]);
+  };
 
-  const useNativeSheet = nativeIOSUIAvailable();
-  useEffect(() => {
-    if (!reason || !useNativeSheet) return;
-    let active = true;
-    presentNativeActionSheet({
-      title: t('gate.title'),
-      message: `${t(`gate.reason.${reason}`)}\n\n${t('gate.subtitle')}`,
-      cancelTitle: t('gate.cancel', { defaultValue: 'Cancelar' }),
-      actions: [
-        { id: 'register', title: t('gate.createAccount') },
-        { id: 'login', title: t('gate.signIn') },
-      ],
-    })?.then((action) => {
-      if (!active) return;
-      if (action === 'register' || action === 'login') go(action);
-      else close();
-    });
-    return () => { active = false; };
-  }, [go, reason, t, useNativeSheet]);
-
-  const authGate = useNativeSheet ? null : (
+  const authGate = (
     <BottomSheet visible={reason !== null} onClose={close} title={t('gate.title')}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '4px 0 8px' }}>
         <div style={{

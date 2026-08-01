@@ -360,15 +360,6 @@ html[data-native-chrome="true"] .tab-bar-wrap {
   display: none !important;
 }
 
-/* UIKit hides a web header action only after it has created the matching
-   native control and completed the bridge handshake. `visibility` preserves
-   the original layout, so sticky titles never jump and the two layers cannot
-   overlap or flash during route hydration. */
-html[data-native-controls="true"] [data-native-control-ready="true"] {
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
 /* Android uses a solid Material-like fallback rather than inheriting an iOS
    glass imitation. Browser fallback is deliberately restrained as well. */
 html[data-platform="android"] .ios-top-action,

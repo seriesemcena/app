@@ -43,8 +43,6 @@ test('Capacitor iOS uses a real UIKit tab bar and route bridge', () => {
 
 test('native appearance delegates Liquid Glass to iOS 26', () => {
   assert.match(appDelegate, /#unavailable\(iOS 26\.0\)/);
-  assert.match(appDelegate, /UIGlassEffect\(style: \.regular\)/);
-  assert.match(appDelegate, /glass\.isInteractive = true/);
   assert.match(appDelegate, /systemUltraThinMaterial/);
   assert.match(appDelegate, /isReduceTransparencyEnabled/);
 });
@@ -53,39 +51,32 @@ test('native chrome owns themed active toolbar colors', () => {
   assert.match(appDelegate, /selectedColor: UIColor = nativeChromeIsDark \? \.white : \.black/);
 });
 
-test('native iOS header actions use original app artwork and a readiness handshake', () => {
-  assert.doesNotMatch(appDelegate, /UIHostingController<AnyView>/);
-  assert.match(appDelegate, /NativeHeaderActionView/);
-  assert.match(appDelegate, /originalIconPNG/);
-  assert.match(appDelegate, /data-maratonou-icon-id/);
-  assert.match(appDelegate, /controlsCommitted/);
-  assert.match(appDelegate, /setReady\(ids\)/);
-  assert.match(globals, /data-native-control-ready="true"/);
-  assert.match(globals, /visibility:\s*hidden !important/);
+test('only the bottom toolbar is native on iOS', () => {
+  assert.match(appDelegate, /NativeTabHome/);
+  assert.match(appDelegate, /NativeTabSeries/);
+  assert.match(appDelegate, /NativeTabSearch/);
+  assert.doesNotMatch(appDelegate, /NativeHeaderActionView/);
+  assert.doesNotMatch(appDelegate, /controlsCommitted/);
+  assert.doesNotMatch(appDelegate, /data-maratonou-icon-id/);
+  assert.doesNotMatch(globals, /data-native-control-ready/);
 });
 
-test('native iOS header actions do not flicker or apply stale scroll geometry', () => {
-  assert.match(appDelegate, /syncInFlight/);
-  assert.match(appDelegate, /syncRequested/);
-  assert.match(appDelegate, /if \(syncRequested \|\| controls === null\) continue/);
-  assert.match(appDelegate, /if \(!iconDataUrl \|\| !element\.isConnected\) continue/);
-  assert.match(appDelegate, /style\.visibility === 'hidden' && !nativeReady/);
-  assert.match(appDelegate, /actionView\.alpha = 0/);
-  assert.match(appDelegate, /scheduleNativeHeaderActionRemoval/);
-  assert.match(appDelegate, /clearReady\(ids\)/);
-  assert.match(appDelegate, /UIView\.performWithoutAnimation/);
-  assert.match(appDelegate, /const quantize = value => Math\.round\(value \* pixelRatio\) \/ pixelRatio/);
-  assert.match(appDelegate, /window\.addEventListener\('scroll', scheduleSync, \{ passive: true, capture: true \}\)/);
-  assert.doesNotMatch(appDelegate, /Math\.round\(x\)[\s\S]*Math\.round\(y\)/);
+test('web header buttons remain visible and are not mirrored by UIKit', () => {
+  assert.doesNotMatch(appDelegate, /native-controls/);
+  assert.doesNotMatch(appDelegate, /headerControls/);
+  assert.doesNotMatch(globals, /data-native-controls/);
+  assert.match(globals, /\.ios-top-action/);
 });
 
-test('native action sheets hide native chrome and preserve web handlers', () => {
-  assert.match(appDelegate, /UIAlertController\(/);
-  assert.match(appDelegate, /preferredStyle:\s*\.actionSheet/);
-  assert.match(appDelegate, /updateNativeModalVisibility\(true\)/);
-  assert.match(appDelegate, /maratonou:native-action-sheet-result/);
-  assert.match(primitives, /nativeActionSheet/);
-  assert.match(primitives, /button\.click\(\)/);
+test('web action sheets are preserved and temporarily hide the native toolbar', () => {
+  assert.doesNotMatch(appDelegate, /UIAlertController/);
+  assert.doesNotMatch(appDelegate, /NativeActionSheetViewController/);
+  assert.doesNotMatch(primitives, /nativeActionSheet/);
+  assert.match(primitives, /createPortal/);
+  assert.match(primitives, /dataset\.modalOpen = 'true'/);
+  assert.match(appDelegate, /case "modal"/);
+  assert.match(appDelegate, /!nativeModalIsVisible/);
+  assert.match(appDelegate, /MutationObserver\(syncModal\)/);
 });
 
 test('native toolbar honors system accessibility preferences', () => {

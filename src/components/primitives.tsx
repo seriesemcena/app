@@ -1,11 +1,10 @@
 'use client';
-import { CSSProperties, ReactNode, forwardRef, useEffect, useRef, useState } from 'react';
+import { CSSProperties, ReactNode, forwardRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { T } from '@/lib/tokens';
 import { Icon } from './Icon';
 import { useTheme } from '@/context/ThemeContext';
 import { STREAMING_COLORS, streamingLogoAsset } from '@/lib/streamingPlatforms';
-import { nativeIOSUIAvailable, presentNativeActionSheet } from '@/lib/nativeIOS';
 
 // size >= 20 → Greed (H1/H2 level); size < 20 → Area (H3/H4/body)
 // size >= 20 → Greed (H1/H2); size < 20 → Area (H3/H4/body)
@@ -222,79 +221,14 @@ export const Toast = ({ msg, visible, icon = 'check' }: { msg?: string | false |
   </div>
 );
 
-export const BottomSheet = ({
-  visible,
-  onClose,
-  title,
-  children,
-  nativeActionSheet = false,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  title?: string;
-  children?: ReactNode;
-  /**
-   * Use only for a flat list of choices/actions. Forms, pickers and rich
-   * editors deliberately keep the web sheet because UIAlertController cannot
-   * represent their content without losing functionality.
-   */
-  nativeActionSheet?: boolean;
-}) => {
+export const BottomSheet = ({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children?: ReactNode }) => {
   const [mounted, setMounted] = useState(false);
-  const nativeActionHostRef = useRef<HTMLDivElement>(null);
-  const nativeRequestOpenRef = useRef(false);
   useEffect(() => { setMounted(true); }, []);
-  const useNativeActionSheet = mounted
-    && visible
-    && nativeActionSheet
-    && nativeIOSUIAvailable();
-
   useEffect(() => {
-    if (!visible) {
-      nativeRequestOpenRef.current = false;
-      return;
-    }
-    if (!useNativeActionSheet || nativeRequestOpenRef.current) return;
-
-    const buttons = Array.from(
-      nativeActionHostRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-    );
-    if (buttons.length === 0) return;
-
-    const request = presentNativeActionSheet({
-      title,
-      cancelTitle: document.documentElement.lang.startsWith('en') ? 'Cancel' : 'Cancelar',
-      actions: buttons.map((button, index) => ({
-        id: `action-${index}`,
-        title: button.dataset.nativeTitle || button.textContent?.trim() || `Opção ${index + 1}`,
-        role: button.dataset.nativeRole === 'destructive' ? 'destructive' : 'default',
-        disabled: button.disabled || button.getAttribute('aria-disabled') === 'true',
-      })),
-    });
-    if (!request) return;
-
-    nativeRequestOpenRef.current = true;
-    void request.then((actionID) => {
-      nativeRequestOpenRef.current = false;
-      if (!actionID || actionID === '__cancel__') {
-        onClose();
-        return;
-      }
-      const index = Number(actionID.replace('action-', ''));
-      const button = buttons[index];
-      if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') {
-        onClose();
-        return;
-      }
-      button.click();
-    });
-  }, [onClose, title, useNativeActionSheet, visible]);
-
-  useEffect(() => {
-    if (!visible || useNativeActionSheet) return;
+    if (!visible) return;
     document.documentElement.dataset.modalOpen = 'true';
     return () => { delete document.documentElement.dataset.modalOpen; };
-  }, [useNativeActionSheet, visible]);
+  }, [visible]);
 
   const sheet = (
     <>
@@ -317,13 +251,6 @@ export const BottomSheet = ({
   );
 
   if (!mounted) return null;
-  if (useNativeActionSheet) {
-    return (
-      <div ref={nativeActionHostRef} hidden aria-hidden="true">
-        {children}
-      </div>
-    );
-  }
   const root = document.getElementById('modal-root');
   return root ? createPortal(sheet, root) : sheet;
 };
