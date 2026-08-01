@@ -7,6 +7,7 @@ import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthGate } from '@/components/AuthGateSheet';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRevStore } from '@/lib/db';
 import { navigateBack } from '@/lib/navigation';
@@ -40,6 +41,7 @@ function AddCommentPageInner() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2200); };
+  const { promptSignIn, authGate } = useAuthGate();
 
   useEffect(() => {
     if (!showGif) return;
@@ -68,6 +70,7 @@ function AddCommentPageInner() {
   };
 
   const submitComment = async () => {
+    if (!user) { promptSignIn('comment'); return; }
     if (!comment.trim() && !selectedGif) {
       showToast('Escreva um comentário ou adicione um GIF');
       return;
@@ -256,6 +259,7 @@ function AddCommentPageInner() {
         </div>
 
         <Toast msg={toast} visible={!!toast} />
+        {authGate}
       </Screen>
     </Frame>
   );

@@ -41,6 +41,7 @@ import {
   seasonPremiereNotifyAt,
 } from '@/lib/seasonPremiere';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
+import { useAuthGate } from '@/components/AuthGateSheet';
 import { GiphyImage } from '@/components/GiphyImage';
 import { useTranslation } from 'react-i18next';
 import { fetchGiphyGifs, giphyDisplayUrl, type GiphyGif } from '@/lib/giphy';
@@ -217,6 +218,10 @@ export default function TitleDetailPage() {
     return () => window.removeEventListener('maratonou:sync', readListStatus);
   }, [readListStatus]);
 
+  // Must stay above the loading/error early returns below: hooks have to run
+  // in the same order on every render, and this one sits inside the component.
+  const { requireAuth, promptSignIn, authGate } = useAuthGate();
+
   if (loading) {
     return (
       <Frame>
@@ -300,6 +305,9 @@ export default function TitleDetailPage() {
   };
 
   const toggleFav = async () => {
+    // Visitors may browse the catalogue, but anything that writes to an
+    // account asks them to sign in first (see useAuthGate).
+    if (!user) { promptSignIn('favorite'); return; }
     const item = { id: detail.id, title, type: isTV ? 'tv' : 'movie', poster_path: detail.poster_path };
     if (isFav) {
       listStore.remove('favorites', detail.id);
@@ -347,7 +355,7 @@ export default function TitleDetailPage() {
   };
 
   const toggleLike = async (reviewId: string) => {
-    if (!user) { showToast('Faça login para curtir.'); return; }
+    if (!user) { promptSignIn('like'); return; }
     // Optimistic local update
     const updated = revStore.toggleLike(itemKey, reviewId);
     setReviews([...updated]);
@@ -511,7 +519,7 @@ export default function TitleDetailPage() {
                   : '0 5px 18px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,1)';
                 return (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" onClick={() => setListSheet(true)}
+                <button type="button" onClick={() => requireAuth('list', () => setListSheet(true))}
                   style={{
                     position: 'relative', isolation: 'isolate', overflow: 'hidden',
                     minWidth: 174, minHeight: 48,
@@ -707,7 +715,7 @@ export default function TitleDetailPage() {
                 reviews={reviews}
                 avgRating={avgRating}
                 totalRatings={ratingSummary?.total ?? ratedReviews.length}
-                onAddReview={() => appSettings.reviewsEnabled ? setShowForm(true) : showToast('As avaliações estão temporariamente desativadas.')}
+                onAddReview={() => requireAuth('rate', () => appSettings.reviewsEnabled ? setShowForm(true) : showToast('As avaliações estão temporariamente desativadas.'))}
                 onViewComments={() => appSettings.commentsEnabled ? router.push(`/comments?key=${encodeURIComponent(itemKey)}&title=${encodeURIComponent(title)}&showName=${encodeURIComponent(title)}`) : showToast('Os comentários estão temporariamente desativados.')}
                 onLike={toggleLike}
               />
@@ -750,6 +758,7 @@ export default function TitleDetailPage() {
 
         <Toast msg={toast} visible={!!toast} />
         <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
+        {authGate}
 
         {/* ── Modal de avaliação (filmes) ── */}
         {showForm && !isTV && reportTarget === null && (
@@ -1002,7 +1011,7 @@ export default function TitleDetailPage() {
           <BottomSheet visible onClose={() => setMaisSheet(false)} title={t('moreOptions')}>
             {([
               { icon: 'play'     as const, label: t('viewTrailer'),  action: openTrailer, disabled: !trailerUrl },
-              { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); setListSheet(true); }, disabled: false },
+              { icon: 'bookmark' as const, label: t('addToList'),    action: () => { setMaisSheet(false); requireAuth('list', () => setListSheet(true)); }, disabled: false },
               { icon: 'share'    as const, label: t('shareTitle'),   action: () => { if (typeof navigator !== 'undefined' && navigator.share) navigator.share({ title, url: window.location.href }).catch(() => {}); setMaisSheet(false); }, disabled: false },
               { icon: 'flag'     as const, label: t('reportIssue'),  action: openProblemReport, disabled: false },
             ]).map(({ icon, label, action, disabled }, idx, arr) => (

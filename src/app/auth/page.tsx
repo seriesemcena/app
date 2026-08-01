@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
@@ -74,8 +74,9 @@ const GoogleIconDark = () => (
   </svg>
 );
 
-export default function AuthPage() {
+function AuthPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useTranslation('auth');
   const { user, loading: sessionLoading, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, offline } = useAuth();
   const { country, setCountry, setLocale } = useLocale();
@@ -100,9 +101,16 @@ export default function AuthPage() {
     let saved = false;
     try { saved = localStorage.getItem(REGION_SELECTED_KEY) === '1'; } catch {}
     if (!saved) return;
-    const frame = requestAnimationFrame(() => setView('landing'));
+    // ?mode=register comes from the auth gate ("Criar conta"): open the email
+    // form already on the sign-up tab instead of making the visitor navigate
+    // there again after being interrupted mid-action.
+    const wantsRegister = searchParams.get('mode') === 'register';
+    const frame = requestAnimationFrame(() => {
+      setView(wantsRegister ? 'email' : 'landing');
+      if (wantsRegister) setMode('register');
+    });
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -515,5 +523,15 @@ export default function AuthPage() {
         </div>
       </Screen>
     </Frame>
+  );
+}
+
+/* useSearchParams (?mode=register, vindo do AuthGateSheet) exige um limite de
+   Suspense no App Router. */
+export default function AuthPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuthPageInner />
+    </Suspense>
   );
 }

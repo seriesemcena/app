@@ -12,6 +12,7 @@ import {
   type SeasonProgressRecord,
 } from '@/lib/seasonProgress';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthGate } from '@/components/AuthGateSheet';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRatingSummaryStore, dbRevStore, dbSeasonProgressStore, type RatingSummary } from '@/lib/db';
 import { useTranslation } from 'react-i18next';
@@ -141,12 +142,15 @@ function EpisodePageInner() {
     }).catch(() => {});
   }, [storageKey]);
 
+  const { promptSignIn, authGate } = useAuthGate();
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(false), 2000);
   };
 
   const toggleWatched = async () => {
+    if (!user) { promptSignIn('watch'); return; }
     const seriesId = Number(tvId);
     const seasonNumber = Number(season);
     const episodeNumber = Number(epNum);
@@ -250,7 +254,7 @@ function EpisodePageInner() {
   };
 
   const toggleLike = async (id: string) => {
-    if (!user) { showToast('Faça login para curtir.'); return; }
+    if (!user) { promptSignIn('like'); return; }
     // Optimistic local update
     const updated = reviews.map(r => {
       if (r.id !== id) return r;
@@ -556,6 +560,7 @@ function EpisodePageInner() {
         </div>
 
         <Toast msg={toast} visible={!!toast} />
+        {authGate}
 
         {/* ── Review modal ── */}
         {modalOpen && (

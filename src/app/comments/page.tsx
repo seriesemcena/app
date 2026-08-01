@@ -14,6 +14,7 @@ import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbNotifStore, dbProfileStore, type ReviewPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
+import { useAuthGate } from '@/components/AuthGateSheet';
 import { GiphyImage } from '@/components/GiphyImage';
 import { useTranslation } from 'react-i18next';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
@@ -82,8 +83,10 @@ function CommentsPageInner() {
   const openedReplyTargetRef = useRef('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2200); };
+  const { promptSignIn, authGate } = useAuthGate();
 
   const openComposer = () => {
+    if (!user) { promptSignIn('comment'); return; }
     setReplyOpenId(null);
     setComposerExpanded(true);
     setTimeout(() => composerRef.current?.focus(), 80);
@@ -390,7 +393,7 @@ function CommentsPageInner() {
   const toggleLike = async (id: string) => {
     // Anonymous likes shared one identity ('anon') — one visitor's like
     // removed another's. Liking now requires a signed-in account.
-    if (!user) { showToast('Faça login para curtir.'); return; }
+    if (!user) { promptSignIn('like'); return; }
     const reviewToLike = reviews.find(r => r.id === id);
     const isNewLike = reviewToLike ? !reviewToLike.likedBy?.includes(user.uid) : false;
     const previous = reviews;
@@ -821,6 +824,7 @@ function CommentsPageInner() {
 
         <Toast msg={toast} visible={!!toast} />
         <ReportSheet target={reportTarget} onClose={() => setReportTarget(null)} />
+        {authGate}
 
       </Screen>
     </Frame>

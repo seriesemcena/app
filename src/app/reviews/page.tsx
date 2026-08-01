@@ -8,6 +8,7 @@ import { GlassHeader } from '@/components/primitives';
 import { T } from '@/lib/tokens';
 import { revStore, profileStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthGate } from '@/components/AuthGateSheet';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbRatingSummaryStore, dbRevStore, type RatingSummary, type ReviewPageCursor } from '@/lib/db';
 import { navigateBack } from '@/lib/navigation';
@@ -40,6 +41,7 @@ function ReviewsPageInner() {
   const [comment, setComment]         = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(false), 2200); };
+  const { promptSignIn, authGate } = useAuthGate();
 
   useEffect(() => {
     if (!storageKey) return;
@@ -107,7 +109,7 @@ function ReviewsPageInner() {
   };
 
   const toggleLike = async (id: string) => {
-    if (!user) { showToast('Faça login para curtir.'); return; }
+    if (!user) { promptSignIn('like'); return; }
     const updated = reviews.map(r => {
       if (r.id !== id) return r;
       const wasLiked = !!(r as any).liked;
@@ -260,6 +262,7 @@ function ReviewsPageInner() {
         </div>
 
         <Toast msg={toast} visible={!!toast} />
+        {authGate}
 
         {/* ── Modal de avaliação ── */}
         {modalOpen && (

@@ -107,7 +107,7 @@ function timeAgo(dateStr: string): string {
 export default function FeedPage() {
   const router = useRouter();
   const { t } = useTranslation('navigation');
-  const { user } = useAuth();
+  const { user, loading: sessionLoading } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [feedTab, setFeedTab]         = useState<FeedTab>('para_voce');
@@ -120,6 +120,14 @@ export default function FeedPage() {
   const [scrolled, setScrolled]       = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /* A atividade é social: sem conta não há feed a mostrar. Espera a sessão
+     terminar de restaurar para não expulsar quem já está logado. */
+  useEffect(() => {
+    if (sessionLoading || user) return;
+    router.replace('/auth');
+  }, [router, sessionLoading, user]);
+
 
   useEffect(() => {
     setUnreadNotifs(user ? notifInboxStore.unreadCount(user.uid) : 0);
