@@ -183,6 +183,7 @@
   "markAsWatched": "Marcar como visto",
   "markedWatched": "Marcado como visto ✓",
   "unmarkWatched": "Desmarcado",
+  "syncError": "No se pudo sincronizar. Inténtalo de nuevo.",
   "yourRatingValue": "Tu valoración: {{value}}/10",
   "noGifFound": "No se encontraron GIFs"
 }

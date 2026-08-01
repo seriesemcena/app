@@ -54,6 +54,47 @@ test('scheduled series cards only show real TMDB episodes and open the episode d
   assert.ok(!watchingSection.includes('router.push(`/title/${item.type}/${item.id}`)'));
 });
 
+test('scheduled episode check uses the canonical Firestore season progress and account gate', async () => {
+  const [source, rules] = await Promise.all([
+    readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8'),
+    readFile(new URL('firestore.rules', projectRoot), 'utf8'),
+  ]);
+  const watchingSection = source.match(
+    /\{\/\* ══ TAB: Maratonando ══ \*\/\}([\s\S]*?)\{\/\* ══ TAB: Atrasadas ══ \*\/\}/,
+  )?.[1] || '';
+
+  assert.match(source, /const \{ user, loading: authLoading \} = useAuthContext\(\)/);
+  assert.match(source, /const \{ promptSignIn, authGate \} = useAuthGate\(\)/);
+  assert.match(source, /if \(!user\) \{\s*promptSignIn\('watch'\)/);
+  assert.match(source, /dbSeasonProgressStore\.setEpisode\(getDB\(\), user\.uid/);
+  assert.match(source, /seasonProgressStore\.replace\(saved\)/);
+  assert.match(source, /window\.dispatchEvent\(new Event\('maratonou:sync'\)\)/);
+  assert.match(source, /nextEpisodeWatched: Boolean\(/);
+  assert.match(watchingSection, /aria-label=\{t\(item\.nextEpisodeWatched \? 'unmarkWatched' : 'markAsWatched'/);
+  assert.match(watchingSection, /event\.stopPropagation\(\)/);
+  assert.match(watchingSection, /name="check"/);
+  assert.match(source, /\{authGate\}/);
+
+  // This is the same already-published owner-only path used by episode detail.
+  assert.match(rules, /match \/seasonProgress\/\{progressId\}/);
+  assert.match(rules, /allow read: if request\.auth != null && request\.auth\.uid == uid/);
+  assert.match(rules, /allow create, update: if activeUser\(\)[\s\S]*?request\.auth\.uid == uid/);
+});
+
+test('series list card titles match the home watchlist typography', async () => {
+  const [series, home] = await Promise.all([
+    readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8'),
+    readFile(new URL('src/app/home/page.tsx', projectRoot), 'utf8'),
+  ]);
+  const watchingSection = series.match(
+    /\{\/\* ══ TAB: Maratonando ══ \*\/\}([\s\S]*?)\{\/\* ══ TAB: Atrasadas ══ \*\/\}/,
+  )?.[1] || '';
+
+  assert.match(home, /<Txt size=\{15\} weight=\{800\} color=\{T\.t1\}/);
+  assert.match(watchingSection, /<Txt size=\{15\} weight=\{800\} color=\{T\.t1\}/);
+  assert.match(watchingSection, /<Txt size=\{12\} weight=\{400\} color=\{T\.t2\}/);
+});
+
 test('today episode cards use the animated gradient border with reduced-motion support', async () => {
   const [page, styles] = await Promise.all([
     readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8'),

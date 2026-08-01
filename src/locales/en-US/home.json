@@ -10,6 +10,7 @@
   "popular": "Popular",
   "searchPlaceholder": "Search series, movies, people...",
   "emptyWatching": "No series in progress",
+  "loadingWatching": "Loading your list",
   "emptyWant": "Your list is empty",
   "emptyWatched": "You haven't watched anything yet",
   "episodes_one": "{{count}} episode",
@@ -198,6 +199,16 @@
     "perWeekUnit": "PER WEEK · {{unit}}",
     "episodesUnit": "episodes",
     "hrsTooltip": "Hours: {{hours}}"
+  },
+  "ratingsPage": {
+    "title": "My ratings",
+    "seriesTab": "Series",
+    "moviesTab": "Movies",
+    "emptySeries": "You have not rated any series or episode yet.",
+    "emptyMovies": "You have not rated any movie yet.",
+    "ratingAccessibility": "Your rating: {{rating}} out of 10",
+    "back": "Back",
+    "notifications": "Notifications"
   },
   "streamingPage": {
     "tagline": "Featured series and movies",

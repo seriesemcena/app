@@ -69,7 +69,7 @@ function HomeSectionGrid({
   title, items, loading, limit = 10, loadMoreLabel, onItem, onLoadMore,
 }: HomeSectionGridProps) {
   const { t } = useTranslation('home');
-  const [view, setView] = useState<HomeSectionView>('grid');
+  const [view, setView] = useState<HomeSectionView>('list');
   const uniqueItems = (items || []).filter((item, idx, all) =>
     all.findIndex((candidate) =>
       candidate.id === item.id
@@ -189,7 +189,7 @@ export default function HomePage() {
   const router = useRouter();
   const { t, i18n } = useTranslation('home');
   const { theme } = useTheme();
-  const { user } = useAuth();
+  const { user, loading: sessionLoading } = useAuth();
   const isDark = theme === 'dark';
 
   /* ── Streaming card: liquid glass por tema ── */
@@ -235,6 +235,7 @@ export default function HomePage() {
   const [newsItems, setNewsItems]       = useState<NewsPost[]>([]);
   const [customSlider, setCustomSlider] = useState<SliderItem[]>([]);
   const [watchingItems, setWatchingItems] = useState<WatchingItem[]>([]);
+  const [watchingLoading, setWatchingLoading] = useState(true);
   const [heroTitles, setHeroTitles]     = useState<Record<number, string>>({});
   const [trendFilter, setTrendFilter]   = useState<'series' | 'movies'>('series');
   const [novFilter, setNovFilter]       = useState<'series' | 'movies'>('series');
@@ -293,56 +294,87 @@ export default function HomePage() {
 
   /* ── fetch watching series with next episode info ── */
   useEffect(() => {
-    const watching = listStore.get('watching').filter((i) => i.type === 'tv');
-    if (watching.length === 0) { setWatchingItems([]); return; }
+    if (sessionLoading) {
+      setWatchingLoading(true);
+      return;
+    }
 
-    Promise.all(
-      watching.slice(0, 10).map(async (item) => {
-        try {
-          const detail = await tmdb.tvDetail(item.id);
-          const next = detail?.next_episode_to_air;
-          const last = detail?.last_episode_to_air;
-          const lastAirDate  = last?.air_date ?? null;
-          const nextAirDate  = next?.air_date ?? null;
-          const now = Date.now();
+    let active = true;
+    let requestRevision = 0;
 
-          // ── Tag logic ──────────────────────────────────────────
-          // EM BREVE: próximo episódio existe e ainda não estreou
-          // NOVO: último ep já estreou há ≤ 14 dias (ainda não assistido)
-          // NÃO ASSISTIDO: 15-30 dias sem assistir
-          // ATRASADO: > 30 dias sem assistir
-          let tag: WatchingTag | undefined;
-          const nextIsFuture = nextAirDate && new Date(nextAirDate).getTime() > now;
-          if (nextIsFuture) {
-            tag = 'em_breve';
-          } else if (lastAirDate) {
-            const diffDays = (now - new Date(lastAirDate).getTime()) / 86_400_000;
-            if (diffDays <= 14)      tag = 'novo';
-            else if (diffDays > 30)  tag = 'atrasado';
-            else                     tag = 'nao_assistido';
-          }
+    const refreshWatching = async () => {
+      const revision = ++requestRevision;
+      setWatchingLoading(true);
+      const watching = listStore.get('watching').filter((i) => i.type === 'tv');
 
-          return {
-            ...item,
-            title: detail?.name || detail?.title || item.title,
-            backdrop_path: detail?.backdrop_path ?? (item as WatchingItem).backdrop_path ?? null,
-            // próximo ep (EM BREVE)
-            nextSeason:   next?.season_number  ?? undefined,
-            nextEpisode:  next?.episode_number ?? undefined,
-            nextAirDate,
-            // último ep já ao ar (NOVO / NÃO ASSISTIDO / ATRASADO)
-            lastSeason:   last?.season_number  ?? undefined,
-            lastEpisode:  last?.episode_number ?? undefined,
-            lastAirDate,
-            tag,
-          } as WatchingItem;
-        } catch {
-          return { ...item } as WatchingItem;
+      if (watching.length === 0) {
+        if (active && revision === requestRevision) {
+          setWatchingItems([]);
+          setWatchingLoading(false);
         }
-      })
-    ).then(setWatchingItems);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [i18n.language]);
+        return;
+      }
+
+      const hydratedItems = await Promise.all(
+        watching.slice(0, 10).map(async (item) => {
+          try {
+            const detail = await tmdb.tvDetail(item.id);
+            const next = detail?.next_episode_to_air;
+            const last = detail?.last_episode_to_air;
+            const lastAirDate  = last?.air_date ?? null;
+            const nextAirDate  = next?.air_date ?? null;
+            const now = Date.now();
+
+            // ── Tag logic ──────────────────────────────────────────
+            // EM BREVE: próximo episódio existe e ainda não estreou
+            // NOVO: último ep já estreou há ≤ 14 dias (ainda não assistido)
+            // NÃO ASSISTIDO: 15-30 dias sem assistir
+            // ATRASADO: > 30 dias sem assistir
+            let tag: WatchingTag | undefined;
+            const nextIsFuture = nextAirDate && new Date(nextAirDate).getTime() > now;
+            if (nextIsFuture) {
+              tag = 'em_breve';
+            } else if (lastAirDate) {
+              const diffDays = (now - new Date(lastAirDate).getTime()) / 86_400_000;
+              if (diffDays <= 14)      tag = 'novo';
+              else if (diffDays > 30)  tag = 'atrasado';
+              else                     tag = 'nao_assistido';
+            }
+
+            return {
+              ...item,
+              title: detail?.name || detail?.title || item.title,
+              backdrop_path: detail?.backdrop_path ?? (item as WatchingItem).backdrop_path ?? null,
+              // próximo ep (EM BREVE)
+              nextSeason:   next?.season_number  ?? undefined,
+              nextEpisode:  next?.episode_number ?? undefined,
+              nextAirDate,
+              // último ep já ao ar (NOVO / NÃO ASSISTIDO / ATRASADO)
+              lastSeason:   last?.season_number  ?? undefined,
+              lastEpisode:  last?.episode_number ?? undefined,
+              lastAirDate,
+              tag,
+            } as WatchingItem;
+          } catch {
+            return { ...item } as WatchingItem;
+          }
+        })
+      );
+
+      if (active && revision === requestRevision) {
+        setWatchingItems(hydratedItems);
+        setWatchingLoading(false);
+      }
+    };
+
+    void refreshWatching();
+    window.addEventListener('maratonou:sync', refreshWatching);
+    return () => {
+      active = false;
+      requestRevision += 1;
+      window.removeEventListener('maratonou:sync', refreshWatching);
+    };
+  }, [i18n.language, sessionLoading, user?.uid]);
 
   /* ── fetch news ── */
   useEffect(() => {
@@ -647,7 +679,68 @@ export default function HomePage() {
                   </button>
                 </div>
 
-                {watchingItems.length === 0 ? (
+                {watchingLoading ? (
+                  isDesktop ? (
+                    <div
+                      aria-label={t('loadingWatching')}
+                      style={{
+                        display: 'flex',
+                        gap: 14,
+                        overflow: 'hidden',
+                        paddingBottom: 4,
+                      }}
+                    >
+                      {[0, 1, 2].map((item) => (
+                        <div
+                          key={item}
+                          style={{
+                            flexShrink: 0,
+                            width: 280,
+                            overflow: 'hidden',
+                            borderRadius: 18,
+                            background: T.card,
+                            border: `1px solid ${T.border}`,
+                          }}
+                        >
+                          <div className="img-skeleton" style={{ width: '100%', height: 157 }} />
+                          <div style={{ padding: '12px 14px 14px' }}>
+                            <div className="img-skeleton" style={{ width: '68%', height: 14, borderRadius: 7, marginBottom: 9 }} />
+                            <div className="img-skeleton" style={{ width: '44%', height: 11, borderRadius: 6 }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      className="home-watching-list"
+                      aria-label={t('loadingWatching')}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+                    >
+                      {[0, 1, 2].map((item) => (
+                        <div
+                          key={item}
+                          style={{
+                            width: '100%',
+                            minHeight: 101,
+                            display: 'flex',
+                            alignItems: 'stretch',
+                            gap: 14,
+                            overflow: 'hidden',
+                            background: T.card,
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 16,
+                          }}
+                        >
+                          <div className="img-skeleton" style={{ width: 148, minHeight: 101, flexShrink: 0 }} />
+                          <div style={{ flex: 1, padding: '25px 14px 18px 0' }}>
+                            <div className="img-skeleton" style={{ width: '72%', height: 14, borderRadius: 7, marginBottom: 10 }} />
+                            <div className="img-skeleton" style={{ width: '56%', height: 11, borderRadius: 6 }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : watchingItems.length === 0 ? (
                   <div style={{ padding: '20px 16px', borderRadius: 16, background: T.card, border: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
                     <Icon name="tv" size={28} color={T.t3} />
                     <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.4 }}>

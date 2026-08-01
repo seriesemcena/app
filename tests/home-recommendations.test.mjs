@@ -43,7 +43,7 @@ test('mobile recommendation grids keep complete pairs after deduplication', asyn
   assert.doesNotMatch(css, /\.masonry-cols\s*\{\s*columns:\s*2/);
 });
 
-test('recommended sections switch independently between grid and horizontal list', async () => {
+test('recommended sections default to horizontal scrolling and switch independently', async () => {
   const [home, pt, en, es] = await Promise.all([
     read('src/app/home/page.tsx'),
     read('src/locales/pt-BR/home.json'),
@@ -51,7 +51,7 @@ test('recommended sections switch independently between grid and horizontal list
     read('src/locales/es-ES/home.json'),
   ]);
 
-  assert.match(home, /useState<HomeSectionView>\('grid'\)/);
+  assert.match(home, /useState<HomeSectionView>\('list'\)/);
   assert.match(home, /aria-pressed=\{active\}/);
   assert.match(home, /view === 'grid' \|\| !title/);
   assert.match(home, /scrollSnapType:\s*'x mandatory'/);

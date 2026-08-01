@@ -10,6 +10,7 @@
   "popular": "Popular",
   "searchPlaceholder": "Buscar series, películas, personas...",
   "emptyWatching": "Sin series en progreso",
+  "loadingWatching": "Cargando tu lista",
   "emptyWant": "Tu lista está vacía",
   "emptyWatched": "Todavía no has visto nada",
   "episodes_one": "{{count}} episodio",
@@ -198,6 +199,16 @@
     "perWeekUnit": "POR SEMANA · {{unit}}",
     "episodesUnit": "episodios",
     "hrsTooltip": "Horas: {{hours}}"
+  },
+  "ratingsPage": {
+    "title": "Mis valoraciones",
+    "seriesTab": "Series",
+    "moviesTab": "Películas",
+    "emptySeries": "Todavía no has valorado ninguna serie ni episodio.",
+    "emptyMovies": "Todavía no has valorado ninguna película.",
+    "ratingAccessibility": "Tu nota: {{rating}} de 10",
+    "back": "Volver",
+    "notifications": "Notificaciones"
   },
   "streamingPage": {
     "tagline": "Series y películas destacadas",

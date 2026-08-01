@@ -737,16 +737,48 @@ export default function StatsPage() {
           {/* ── 3. Mini stats row ── */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, margin:'10px 16px 0' }}>
             {[
-              { value: active?.watchedCount ?? 0, label: tab === 'series' ? t('statsPage.seriesWatched') : t('statsPage.moviesWatched') },
-              { value: tab === 'series' ? ratingCounts.series : ratingCounts.filmes, label: t('statsPage.reviewsCount') },
+              {
+                value: active?.watchedCount ?? 0,
+                label: tab === 'series' ? t('statsPage.seriesWatched') : t('statsPage.moviesWatched'),
+                onClick: tab === 'series'
+                  ? () => router.push('/series?tab=finalizadas')
+                  : undefined,
+              },
+              {
+                value: tab === 'series' ? ratingCounts.series : ratingCounts.filmes,
+                label: t('statsPage.reviewsCount'),
+                onClick: () => router.push(`/ratings?tab=${tab}&from=stats`),
+              },
               { value: avgRating > 0 ? avgRating : '—', label: t('statsPage.avgRating') },
-            ].map((s, i) => (
-              <div key={i} style={{ background: isDark ? '#141416' : 'var(--c-card)', borderRadius: 16, border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid var(--c-border)', padding: '14px 10px', textAlign:'center', position:'relative', overflow:'hidden' }}>
+            ].map((s, i) => {
+              const cardStyle: React.CSSProperties = {
+                background: isDark ? '#141416' : 'var(--c-card)',
+                borderRadius: 16,
+                border: isDark ? '1px solid rgba(255,255,255,0.07)' : '1px solid var(--c-border)',
+                padding: '14px 10px',
+                textAlign: 'center',
+                position: 'relative',
+                overflow: 'hidden',
+                width: '100%',
+                appearance: 'none',
+                fontFamily: 'inherit',
+                cursor: s.onClick ? 'pointer' : 'default',
+              };
+              const content = (
+                <>
                 <div style={{ position:'absolute', inset:0, backgroundImage:`radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.04)'} 1px, transparent 1px)`, backgroundSize:'18px 18px', pointerEvents:'none' }} />
                 <Txt size={22} weight={900} color={T.t1} style={{ display:'block', lineHeight:1, position:'relative' }}>{s.value}</Txt>
                 <Txt size={8} weight={700} color={statLabelColor} style={{ display:'block', textTransform:'uppercase', letterSpacing:0.8, marginTop:6, position:'relative' }}>{s.label}</Txt>
-              </div>
-            ))}
+                </>
+              );
+              return s.onClick ? (
+                <button key={i} type="button" onClick={s.onClick} aria-label={s.label} style={cardStyle}>
+                  {content}
+                </button>
+              ) : (
+                <div key={i} style={cardStyle}>{content}</div>
+              );
+            })}
           </div>
 
           {/* ── 4. Gêneros prediletos ── */}

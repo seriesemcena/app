@@ -2,11 +2,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, GlassHeader } from '@/components/primitives';
+import { Screen, Txt, GlassHeader, Toast } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
+import { useAuthGate } from '@/components/AuthGateSheet';
 import { T } from '@/lib/tokens';
 import { tmdb, tmdbImg, type TMDBItem } from '@/lib/tmdb';
 import { epWatchedStore, listStore, seasonProgressStore } from '@/lib/store';
+import { dbSeasonProgressStore } from '@/lib/db';
+import { firebaseConfigured, getDB } from '@/lib/firebase';
 import {
   classifySeries,
   summarizeSeriesCompletion,
@@ -30,8 +33,10 @@ type WatchingItem = {
   nextAirDate?: string | null;
   nextEpisodeName?: string;
   nextEpisodeRuntime?: number;
+  nextSeasonEpisodeCount?: number;
   nextEpisodeOverview?: string;
   nextEpisodeStill?: string | null;
+  nextEpisodeWatched?: boolean;
   overdueSeason?: number;
   overdueEpisode?: number;
   overdueEpisodeName?: string;
@@ -84,7 +89,8 @@ export default function SeriesPage() {
   const router = useRouter();
   const { t } = useTranslation('home');
   const { theme } = useTheme();
-  const { loading: authLoading } = useAuthContext();
+  const { user, loading: authLoading } = useAuthContext();
+  const { promptSignIn, authGate } = useAuthGate();
 
   function formatDate(dateStr: string): DateResult {
     const d = new Date(dateStr + 'T00:00:00');
@@ -101,7 +107,26 @@ export default function SeriesPage() {
   const [loading, setLoading] = useState(true);
   const [finishedList, setFinishedList] = useState<FinishedItem[]>([]);
   const [scrolled, setScrolled] = useState(false);
+  const [watchedPending, setWatchedPending] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | false>(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    if (
+      requestedTab === 'maratonando'
+      || requestedTab === 'atrasadas'
+      || requestedTab === 'emProgresso'
+      || requestedTab === 'finalizadas'
+    ) {
+      setTab(requestedTab);
+    }
+  }, []);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(false), 2200);
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -152,6 +177,12 @@ export default function SeriesPage() {
             : (watched.some((entry) => entry.id === item.id) ? 'finished' : 'unstarted');
           const completion = summarizeSeriesCompletion(catalog, progress);
           const next = detail?.next_episode_to_air as any;
+          const nextSeasonCatalog = catalog.find(
+            (season) => season.seasonNumber === Number(next?.season_number),
+          );
+          const nextSeasonProgress = progress.find(
+            (record) => record.seasonNumber === Number(next?.season_number),
+          );
           const seasonNumber = currentAiredSeason(detail || {});
           let overdue: ReturnType<typeof overdueEpisodes> = [];
 
@@ -176,8 +207,13 @@ export default function SeriesPage() {
             nextAirDate: next?.air_date ?? null,
             nextEpisodeName: next?.name ?? '',
             nextEpisodeRuntime: Number(next?.runtime) || undefined,
+            nextSeasonEpisodeCount: nextSeasonCatalog?.episodeCount,
             nextEpisodeOverview: next?.overview ?? '',
             nextEpisodeStill: next?.still_path ?? null,
+            nextEpisodeWatched: Boolean(
+              next?.episode_number
+              && nextSeasonProgress?.watchedEpisodeNumbers.includes(Number(next.episode_number)),
+            ),
             overdueSeason: latestOverdue?.season_number ?? seasonNumber ?? undefined,
             overdueEpisode: latestOverdue?.episode_number ?? undefined,
             overdueEpisodeName: latestOverdue?.name ?? '',
@@ -254,6 +290,51 @@ export default function SeriesPage() {
     () => finishedList.filter((item) => item.status === 'finished'),
     [finishedList],
   );
+
+  const toggleScheduledEpisodeWatched = async (item: WatchingItem) => {
+    if (!user) {
+      promptSignIn('watch');
+      return;
+    }
+    if (!firebaseConfigured || !item.nextSeason || !item.nextEpisode) {
+      showToast(t('syncError', { ns: 'title' }));
+      return;
+    }
+
+    const key = `${item.id}_s${item.nextSeason}_e${item.nextEpisode}`;
+    if (watchedPending.has(key)) return;
+    setWatchedPending((current) => new Set(current).add(key));
+
+    try {
+      const saved = await dbSeasonProgressStore.setEpisode(getDB(), user.uid, {
+        seriesId: item.id,
+        seasonNumber: item.nextSeason,
+        episodeNumber: item.nextEpisode,
+        watched: !item.nextEpisodeWatched,
+        runtime: item.nextEpisodeRuntime,
+        episodeCount: item.nextSeasonEpisodeCount,
+      });
+
+      // Firestore is authoritative. These stores are updated only after the
+      // transaction succeeds, and remain a fast cache for this device.
+      seasonProgressStore.replace(saved);
+      if (item.nextEpisodeWatched) {
+        epWatchedStore.unmarkWatched(item.id, item.nextSeason, item.nextEpisode);
+      } else {
+        epWatchedStore.markWatched(item.id, item.nextSeason, item.nextEpisode);
+      }
+      window.dispatchEvent(new Event('maratonou:sync'));
+      showToast(t(item.nextEpisodeWatched ? 'unmarkWatched' : 'markedWatched', { ns: 'title' }));
+    } catch {
+      showToast(t('syncError', { ns: 'title' }));
+    } finally {
+      setWatchedPending((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
 
   return (
     <Frame>
@@ -344,11 +425,21 @@ export default function SeriesPage() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                             {group.items.map((item) => {
                               const thumb = tmdbImg(item.backdrop_path ?? item.poster_path, 'w342');
+                              const watchKey = `${item.id}_s${item.nextSeason}_e${item.nextEpisode}`;
+                              const isPending = watchedPending.has(watchKey);
                               return (
-                                <button
+                                <div
                                   key={item.id}
                                   className={groupDate.isToday ? 'series-episode-card-today' : undefined}
                                   onClick={() => router.push(episodeHref(item))}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                      event.preventDefault();
+                                      router.push(episodeHref(item));
+                                    }
+                                  }}
+                                  role="link"
+                                  tabIndex={0}
                                   style={{ width: '100%', minHeight: 112, display: 'flex', alignItems: 'stretch', gap: 14, padding: 0, overflow: 'hidden', background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, cursor: 'pointer', textAlign: 'left' }}>
                                   <div style={{ width: 148, minHeight: 112, overflow: 'hidden', flexShrink: 0, background: T.surface2 }}>
                                     {thumb
@@ -356,15 +447,51 @@ export default function SeriesPage() {
                                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="tv" size={20} color={T.t4} /></div>
                                     }
                                   </div>
-                                  <div style={{ flex: 1, minWidth: 0, padding: '14px 16px 14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                    <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
+                                  <div style={{ flex: 1, minWidth: 0, padding: '14px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                    <Txt size={15} weight={800} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 6 }}>
                                       {item.title}
                                     </Txt>
-                                    <Txt size={12} color={T.t3}>
+                                    <Txt size={12} weight={400} color={T.t2} style={{ display: 'block', lineHeight: 1.35 }}>
                                       {t('season', { number: item.nextSeason, ns: 'title' })} · {t('episode', { number: item.nextEpisode, ns: 'title' })}
                                     </Txt>
                                   </div>
-                                </button>
+                                  <button
+                                    type="button"
+                                    aria-label={t(item.nextEpisodeWatched ? 'unmarkWatched' : 'markAsWatched', { ns: 'title' })}
+                                    title={t(item.nextEpisodeWatched ? 'unmarkWatched' : 'markAsWatched', { ns: 'title' })}
+                                    disabled={isPending}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void toggleScheduledEpisodeWatched(item);
+                                    }}
+                                    style={{
+                                      width: 38,
+                                      height: 38,
+                                      borderRadius: 19,
+                                      alignSelf: 'center',
+                                      flexShrink: 0,
+                                      marginRight: 14,
+                                      border: item.nextEpisodeWatched
+                                        ? '1px solid rgba(52,199,89,0.55)'
+                                        : `1px solid ${T.border}`,
+                                      background: item.nextEpisodeWatched
+                                        ? 'rgba(52,199,89,0.18)'
+                                        : T.surface2,
+                                      color: item.nextEpisodeWatched ? '#34c759' : T.t2,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: isPending ? 'wait' : 'pointer',
+                                      opacity: isPending ? 0.55 : 1,
+                                    }}
+                                  >
+                                    <Icon
+                                      name="check"
+                                      size={18}
+                                      color={item.nextEpisodeWatched ? '#34c759' : T.t2}
+                                    />
+                                  </button>
+                                </div>
                               );
                             })}
                           </div>
@@ -419,7 +546,7 @@ export default function SeriesPage() {
                           </div>
                           {/* Info */}
                           <div style={{ flex: 1, minWidth: 0, padding: '12px 16px 12px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 5 }}>
+                            <Txt size={15} weight={800} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 5 }}>
                               {item.title}
                             </Txt>
                             <Txt size={12} color={T.t2} style={{ display: 'block', marginBottom: 6 }}>
@@ -482,7 +609,7 @@ export default function SeriesPage() {
                             }
                           </div>
                           <div style={{ flex: 1, minWidth: 0, padding: '13px 16px 13px 0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                            <Txt size={14} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 5 }}>
+                            <Txt size={15} weight={800} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 5 }}>
                               {item.title}
                             </Txt>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
@@ -546,6 +673,8 @@ export default function SeriesPage() {
             <div style={{ height: 24 }} />
           </div>
         </div>
+        {authGate}
+        <Toast msg={toast} visible={!!toast} />
       </Screen>
     </Frame>
   );
