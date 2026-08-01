@@ -52,6 +52,16 @@
         { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
       ]
     },
+    {
+      "collectionGroup": "userRatings",
+      "fieldPath": "authorUid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
     { "collectionGroup": "activity", "fieldPath": "text", "indexes": [] },
     { "collectionGroup": "activity", "fieldPath": "mediaUrl", "indexes": [] },
     { "collectionGroup": "items", "fieldPath": "text", "indexes": [] },

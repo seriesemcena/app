@@ -27,6 +27,45 @@ test('ratings page loads account ratings and separates series from movies', asyn
   assert.match(ratings, /router\.push\(title\.href\)/);
 });
 
+test('userRatings collection-group query is backed by a COLLECTION_GROUP index', async () => {
+  // dbRatingStore.listForUser runs collectionGroup('userRatings').where('authorUid', ...),
+  // which fails with failed-precondition unless authorUid has a COLLECTION_GROUP index.
+  // Without it the stats and ratings pages silently show zeros.
+  const indexes = JSON.parse(await read('firestore.indexes.json'));
+  const override = (indexes.fieldOverrides ?? []).find(
+    (entry) => entry.collectionGroup === 'userRatings' && entry.fieldPath === 'authorUid',
+  );
+  assert.ok(override, 'missing fieldOverride for userRatings.authorUid');
+  const scopes = (override.indexes ?? []).map((idx) => idx.queryScope);
+  assert.ok(
+    scopes.includes('COLLECTION_GROUP'),
+    'authorUid needs a COLLECTION_GROUP index for listForUser',
+  );
+});
+
+test('stats falls back to local reviews when the authoritative ratings query fails', async () => {
+  const stats = await read('src/app/stats/page.tsx');
+  const block = stats.slice(
+    stats.indexOf('dbRatingStore.listForUser(getDB(), user.uid)'),
+    stats.indexOf('/* ── Firestore activity ── */'),
+  );
+  assert.match(block, /\.catch\(/);
+  // On failure only (not on an empty success), rebuild ratings from local reviews.
+  assert.match(block, /revStore\.getByAuthor\(user\.uid, myName\)/);
+  assert.match(block, /review\.rating > 0/);
+});
+
+test('stats counts fully-finished series like the finalizadas tab, not just the watched list', async () => {
+  const stats = await read('src/app/stats/page.tsx');
+  // Series known only through episode progress must be considered, as the Séries page does.
+  assert.match(stats, /canonicalProgress\.forEach\(\(record\) => \{/);
+  assert.match(stats, /trackedMap\.set\(key,/);
+  // The count uses classifySeries === 'finished', not the length of the watched list.
+  assert.match(stats, /classifySeries\(catalog, storedRecords\) === 'finished'/);
+  assert.match(stats, /if \(isFinished\) finishedSeriesCount \+= 1/);
+  assert.match(stats, /watchedCount:finishedSeriesCount/);
+});
+
 test('ratings page copy is available in all full locales', async () => {
   for (const locale of ['pt-BR', 'en-US', 'es-ES']) {
     const copy = JSON.parse(await read(`src/locales/${locale}/home.json`));

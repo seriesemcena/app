@@ -11,8 +11,10 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRatingStore, dbUserStatsStore } from '@/lib/db';
 import {
   calculateWatchedDuration,
+  classifySeries,
   legacyHistoryToSeasonProgress,
   uniqueEpisodeNumbers,
+  type SeasonCatalogEntry,
 } from '@/lib/seasonProgress';
 import { useAuth } from '@/hooks/useAuth';
 import { navigateBack } from '@/lib/navigation';
@@ -404,11 +406,22 @@ export default function StatsPage() {
         .map((review) => ({ titleId: review.itemKey, rating: review.rating })));
     }
 
-    const allTracked = Array.from(new Map(
+    const trackedMap = new Map(
       [...tvWatched, ...tvWatching, ...movieWatched, ...mvWatching]
         .map((item) => [`${item.type}_${item.id}`, item]),
-    ).values());
+    );
+    // Series tracked only through episode progress never enter the watched or
+    // watching lists, yet the Séries "finalizadas" tab counts them. Include them
+    // so hours, genres and the finished-series count match that tab.
+    canonicalProgress.forEach((record) => {
+      const key = `tv_${record.seriesId}`;
+      if (!trackedMap.has(key)) {
+        trackedMap.set(key, { id: record.seriesId, title: '', type: 'tv', poster_path: null });
+      }
+    });
+    const allTracked = Array.from(trackedMap.values());
     const mvWatchedIds  = new Set(movieWatched.map(w => w.id));
+    const tvWatchedIds  = new Set(tvWatched.map(w => w.id));
 
     if (allTracked.length === 0) {
       const empty: SplitStats = {
@@ -432,6 +445,7 @@ export default function StatsPage() {
       let tvMins = 0; let mvMins = 0;
       let completedTvMins = 0; let watchingTvMins = 0;
       let completedSeasonCount = 0; let watchingSeasonCount = 0;
+      let finishedSeriesCount = 0;
       const tvGenre: Record<string,number> = {}; const mvGenre: Record<string,number> = {};
 
       results.forEach(r => {
@@ -480,6 +494,22 @@ export default function StatsPage() {
               watchingSeasonCount += 1;
             }
           });
+
+          // Count fully-finished series so "Séries vistas" matches the Séries
+          // "finalizadas" tab this stat links to. With progress, every released
+          // season must be complete; without progress, watched-list membership
+          // counts — the same rule classifySeries applies on the Séries page.
+          const catalog: SeasonCatalogEntry[] = (d.seasons ?? [])
+            .filter((season: { season_number?: number }) => Number(season?.season_number) > 0)
+            .map((season: { season_number?: number; episode_count?: number; air_date?: string | null }) => ({
+              seasonNumber: Number(season.season_number),
+              episodeCount: Number(season.episode_count) || 0,
+              airDate: season.air_date ?? null,
+            }));
+          const isFinished = storedRecords.length > 0
+            ? classifySeries(catalog, storedRecords) === 'finished'
+            : tvWatchedIds.has(Number(item.id));
+          if (isFinished) finishedSeriesCount += 1;
         }
         const idx = marathons.findIndex(m => m.id === String(item.id));
         if (idx >= 0 && d.poster_path) marathons[idx].poster = tmdbImg(d.poster_path, 'w92') ?? undefined;
@@ -494,7 +524,7 @@ export default function StatsPage() {
         hoursTotal:Math.round(tvMins/60), minutesTotal:tvMins,
         completedMinutes:completedTvMins, watchingMinutes:watchingTvMins,
         completedSeasonCount, watchingSeasonCount,
-        watchedCount:tvWatched.length, watchingCount:tvWatching.length, wantCount:tvWant.length,
+        watchedCount:finishedSeriesCount, watchingCount:tvWatching.length, wantCount:tvWant.length,
         genres:toGenreList(tvGenre), platforms:streams, reviewsCount:tvRevs.length,
         likesReceived:tvLikes, marathons, totalEpisodes,
       });
@@ -520,6 +550,18 @@ export default function StatsPage() {
       if (!cancelled) applyRatings(ratings);
     }).catch((error) => {
       console.warn('[Stats] Could not load authoritative ratings', error);
+      // The account-wide query failed — most often a Firestore index still
+      // building. Fall back to this device's own reviews so the user sees their
+      // ratings instead of zeros; the Firestore path resumes once it recovers.
+      // Only a genuine error triggers this; an empty success still clears totals.
+      if (cancelled) return;
+      const profile = profileStore.get(user.uid);
+      const myName = profile.username || profile.name || '';
+      applyRatings(
+        revStore.getByAuthor(user.uid, myName)
+          .filter((review) => review.rating > 0)
+          .map((review) => ({ titleId: review.itemKey, rating: review.rating })),
+      );
     });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
