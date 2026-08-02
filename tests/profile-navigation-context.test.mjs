@@ -21,3 +21,17 @@ test('profile-origin pages keep the profile tab active', async () => {
   assert.match(settingsPage, /vip\.accountStats'\),\s+onClick: \(\) => router\.push\(withProfileOrigin\('\/stats'\)\)/);
   assert.doesNotMatch(settingsPage, /vip\.accountStats'[\s\S]{0,120}myProfileUrl/);
 });
+
+test('the profile summary stat cards link to stats, ratings and ranking (owner only)', async () => {
+  const profilePage = await readFile(new URL('src/app/user/[username]/page.tsx', projectRoot), 'utf8');
+
+  // Each card carries its own route; ratings only exists on the owner's profile
+  // and hours/ranking navigate only when it's the owner (these pages show the
+  // signed-in user's own data).
+  assert.match(profilePage, /icon: 'clock' as const, href: isMe \? '\/stats' : null/);
+  assert.match(profilePage, /icon: 'star' as const, href: '\/ratings'/);
+  assert.match(profilePage, /icon: 'award' as const, href: isMe \? '\/ranking' : null/);
+  // A card with a route renders as a button that navigates; otherwise a static div.
+  assert.match(profilePage, /onClick=\{\(\) => router\.push\(withProfileOrigin\(href\)\)\}/);
+  assert.match(profilePage, /: <div key=\{label\} style=\{boxStyle\}>\{inner\}<\/div>/);
+});

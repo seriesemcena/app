@@ -718,14 +718,14 @@ function UserProfileInner() {
             </button>
           </div>
 
-          {/* ── Boxes de stats ── */}
+          {/* ── Boxes de stats (clicáveis no próprio perfil) ── */}
           <div style={{ display: 'flex', gap: 12, padding: '28px 16px 0' }}>
             {[
-              { value: `${realStats?.totalHours ?? 0}h`, label: t('stats.hoursLabel'),   icon: 'clock' as const },
-              ...(isMe ? [{ value: String(reviewCount), label: t('stats.ratingsLabel'), icon: 'star' as const }] : []),
-              ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: t('stats.rankingLabel'), icon: 'award' as const }] : []),
-            ].map(({ value, label, icon }) => (
-              <div key={label} style={{
+              { value: `${realStats?.totalHours ?? 0}h`, label: t('stats.hoursLabel'),   icon: 'clock' as const, href: isMe ? '/stats' : null },
+              ...(isMe ? [{ value: String(reviewCount), label: t('stats.ratingsLabel'), icon: 'star' as const, href: '/ratings' as string | null }] : []),
+              ...(topPct !== null ? [{ value: `Top ${topPct}%`, label: t('stats.rankingLabel'), icon: 'award' as const, href: isMe ? '/ranking' : null }] : []),
+            ].map(({ value, label, icon, href }) => {
+              const boxStyle: React.CSSProperties = {
                 flex: 1,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 padding: '14px 8px',
@@ -733,12 +733,30 @@ function UserProfileInner() {
                 background: 'var(--c-card)',
                 border: '1px solid var(--c-border)',
                 gap: 4,
-              }}>
-                <Icon name={icon} size={16} color={proAccent} />
-                <Txt size={18} weight={900} color={T.t1}>{value}</Txt>
-                <Txt size={10} weight={600} color={T.t3} style={{ textAlign: 'center' }}>{label}</Txt>
-              </div>
-            ))}
+              };
+              const inner = (
+                <>
+                  <Icon name={icon} size={16} color={proAccent} />
+                  <Txt size={18} weight={900} color={T.t1}>{value}</Txt>
+                  <Txt size={10} weight={600} color={T.t3} style={{ textAlign: 'center' }}>{label}</Txt>
+                </>
+              );
+              // These stat pages show the signed-in user's own data, so only the
+              // owner's cards navigate; a visitor's profile keeps them static.
+              return href
+                ? (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-label={label}
+                    onClick={() => router.push(withProfileOrigin(href))}
+                    style={{ ...boxStyle, cursor: 'pointer', fontFamily: 'inherit', color: 'inherit', textAlign: 'center' }}
+                  >
+                    {inner}
+                  </button>
+                )
+                : <div key={label} style={boxStyle}>{inner}</div>;
+            })}
           </div>
 
           {nextProReminder && (
