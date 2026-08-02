@@ -39,6 +39,17 @@ test('watching and finished tabs use the season-aware reconciled collections', a
   assert.doesNotMatch(source, /`T\$\{item\.nextSeason\} · Ep \$\{item\.nextEpisode\}`/);
 });
 
+test('a series in the watching list never falls out of the watching bucket when tracking is empty', async () => {
+  const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
+  // A show the user explicitly put in "Maratonando" must stay in the watching
+  // bucket even when episode progress is missing or only covers a not-yet-watched
+  // season — otherwise classifySeries returns 'unstarted' and it vanishes from
+  // Maratonando/Atrasadas/Em progresso despite being in the watching list.
+  assert.match(source, /classification === 'unstarted' \|\| classification === 'upcoming-only'/);
+  assert.match(source, /watching\.some\(\(entry\) => entry\.id === item\.id\)/);
+  assert.match(source, /classification = 'watching'/);
+});
+
 test('scheduled series cards only show real TMDB episodes and open the episode detail page', async () => {
   const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
   const watchingSection = source.match(

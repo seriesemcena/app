@@ -172,9 +172,19 @@ export default function SeriesPage() {
               episodeCount: Number(season.episode_count) || 0,
               airDate: season.air_date ?? null,
             }));
-          const classification = progress.length > 0
+          let classification: ReturnType<typeof classifySeries> = progress.length > 0
             ? classifySeries(catalog, progress)
             : (watched.some((entry) => entry.id === item.id) ? 'finished' : 'unstarted');
+          // A series the user explicitly put in "Maratonando" (the watching
+          // list) must not vanish just because episode tracking is empty or only
+          // covers a season with nothing watched yet. Keep it in the watching
+          // bucket unless the progress actually proves the series finished.
+          if (
+            (classification === 'unstarted' || classification === 'upcoming-only')
+            && watching.some((entry) => entry.id === item.id)
+          ) {
+            classification = 'watching';
+          }
           const completion = summarizeSeriesCompletion(catalog, progress);
           const next = detail?.next_episode_to_air as any;
           const nextSeasonCatalog = catalog.find(
