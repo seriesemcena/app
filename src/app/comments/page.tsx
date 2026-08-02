@@ -10,6 +10,7 @@ import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
 import { revStore, profileStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
+import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
 import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbNotifStore, dbProfileStore, type ReviewPageCursor } from '@/lib/db';
@@ -1056,47 +1057,30 @@ function ReplyEditor({
   );
 }
 
-function ReplyItem({ reply, timeAgo, onReport }: { reply: Reply; timeAgo: (date: string) => string; onReport?: () => void }) {
+function ReplyItem({ reply, timeAgo, onReport, onProfile }: { reply: Reply; timeAgo: (date: string) => string; onReport?: () => void; onProfile?: (username: string) => void }) {
   const { t } = useTranslation('title');
-  const { user } = useAuth();
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState(reply.photoUrl || '');
+  // Same live-avatar resolution as the feed and top-level comments, so a reply
+  // shows the author's current picture instead of a stale snapshot (or the
+  // letter fallback when the reply was stored without one).
+  const avatarUrl = useResolvedAvatar(reply.uid, reply.photoUrl, reply.user);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const mediaUrl = reply.gifUrl || reply.imageUrl || '';
   const spoilerHidden = !!reply.spoiler && !spoilerRevealed;
+  const openProfile = onProfile ? () => onProfile(reply.user) : undefined;
 
-  useEffect(() => {
-    let cancelled = false;
-    const localProfile = profileStore.get(user?.uid);
-    const belongsToCurrentUser = !!user && (
-      reply.uid === user.uid
-      || (!reply.uid && !!localProfile.username && reply.user === localProfile.username)
-    );
-    const localAvatar = belongsToCurrentUser
-      ? localProfile.avatarThumbImage || localProfile.avatarImage || user.photoURL || ''
-      : '';
-
-    setAvatarUrl(localAvatar || reply.photoUrl || '');
-    setAvatarFailed(false);
-
-    if (!reply.uid || !firebaseConfigured) return () => { cancelled = true; };
-
-    void dbProfileStore.getOptional(getDB(), reply.uid).then(profile => {
-      if (cancelled || !profile) return;
-      const currentAvatar = profile.avatarThumbImage || profile.avatarImage || '';
-      if (currentAvatar) {
-        setAvatarUrl(currentAvatar);
-        setAvatarFailed(false);
-      }
-    });
-
-    return () => { cancelled = true; };
-  }, [reply.photoUrl, reply.uid, reply.user, user]);
+  useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 20, background: T.surface2, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+        <button
+          type="button"
+          onClick={openProfile}
+          disabled={!openProfile}
+          aria-label={openProfile ? `Abrir perfil de ${reply.user}` : undefined}
+          style={{ width: 40, height: 40, borderRadius: 20, background: T.surface2, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', padding: 0, cursor: openProfile ? 'pointer' : 'default' }}
+        >
           {avatarUrl && !avatarFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -1108,8 +1092,15 @@ function ReplyItem({ reply, timeAgo, onReport }: { reply: Reply; timeAgo: (date:
           ) : (
             <Txt size={14} weight={800} color={T.t2}>{reply.avatar}</Txt>
           )}
-        </div>
-        <Txt size={14} weight={800}>{reply.user}</Txt>
+        </button>
+        <button
+          type="button"
+          onClick={openProfile}
+          disabled={!openProfile}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: openProfile ? 'pointer' : 'default', textAlign: 'left' }}
+        >
+          <Txt size={14} weight={800}>{reply.user}</Txt>
+        </button>
         <Txt size={11} color={T.t3}>{timeAgo(reply.date)}</Txt>
         {onReport && (
           <button
@@ -1165,6 +1156,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
 }) {
   const { t }         = useTranslation('title');
   const liked         = !!currentUserId && !!rev.likedBy?.includes(currentUserId);
+  const resolvedAvatar = useResolvedAvatar(rev.uid, rev.photoUrl, rev.user);
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
   const [repliesExpanded, setRepliesExpanded] = useState(replyOpen);
   const replyCount    = rev.replies?.length ?? 0;
@@ -1184,7 +1176,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
           name={rev.user}
           time={timeAgo(rev.date)}
           avatar={rev.avatar}
-          photoUrl={rev.photoUrl}
+          photoUrl={resolvedAvatar}
           timeColor={T.t3}
           onClick={() => onProfile(rev.user)}
         />
@@ -1270,6 +1262,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
                   key={r.id}
                   reply={r}
                   timeAgo={timeAgo}
+                  onProfile={onProfile}
                   onReport={r.uid !== currentUserId ? () => onReportReply?.(r) : undefined}
                 />
               ))}

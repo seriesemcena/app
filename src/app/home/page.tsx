@@ -326,15 +326,19 @@ export default function HomePage() {
             const now = Date.now();
 
             // ── Tag logic ──────────────────────────────────────────
-            // EM BREVE: próximo episódio existe e ainda não estreou
+            // EM BREVE: próximo episódio existe e ainda não estreou (inclui hoje)
             // NOVO: último ep já estreou há ≤ 14 dias
             // NÃO ASSISTIDO: 15-30 dias desde o último ep no ar
             // Nada acima de 30 dias: o estado "atrasado" real é baseado em
             // progresso (assistido ou não) e vive na aba Atrasadas de Séries;
             // esta lista só olha datas, então não marca falso atraso aqui.
             let tag: WatchingTag | undefined;
-            const nextIsFuture = nextAirDate && new Date(nextAirDate).getTime() > now;
-            if (nextIsFuture) {
+            // Compara por dia de calendário: um episódio datado hoje ainda está
+            // por vir (o TMDB só o lista como next_episode_to_air até ir ao ar),
+            // então conta como EM BREVE em vez de cair para "sem tag".
+            const todayStr = new Date(now).toISOString().slice(0, 10);
+            const nextIsUpcoming = nextAirDate && nextAirDate.slice(0, 10) >= todayStr;
+            if (nextIsUpcoming) {
               tag = 'em_breve';
             } else if (lastAirDate) {
               const diffDays = (now - new Date(lastAirDate).getTime()) / 86_400_000;

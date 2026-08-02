@@ -11,6 +11,7 @@ import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
 import { profileStore, notifInboxStore, reactionStore, revStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
+import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbReactionStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
@@ -355,6 +356,10 @@ function FeedCard({ item, onDelete }: {
     (item.uid ? item.uid === user.uid : false) ||
     (!!myName && item.user === myName)
   );
+  // Use the author's current avatar, not the one snapshotted when the activity
+  // was written — otherwise a member who changed their picture shows two
+  // different avatars across older and newer posts.
+  const resolvedAvatar = useResolvedAvatar(item.uid, item.photoUrl, item.user);
 
   const goToProfile = () => router.push(`/user/${encodeURIComponent(item.user)}`);
 
@@ -614,7 +619,7 @@ function FeedCard({ item, onDelete }: {
           name={item.user}
           time=""
           avatar={item.avatar}
-          photoUrl={item.photoUrl}
+          photoUrl={resolvedAvatar}
           color={item.color}
           endPadding={72}
           contextOnSecondLine

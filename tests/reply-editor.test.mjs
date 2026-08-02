@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const comments = readFileSync(new URL('../src/app/comments/page.tsx', import.meta.url), 'utf8');
 const store = readFileSync(new URL('../src/lib/store.ts', import.meta.url), 'utf8');
+const resolvedAvatarHook = readFileSync(new URL('../src/hooks/useResolvedAvatar.ts', import.meta.url), 'utf8');
 
 test('comment replies use the full composer with GIF, image and spoiler controls', () => {
   assert.match(comments, /function ReplyEditor\(/);
@@ -30,11 +31,28 @@ test('reply media and spoiler metadata are persisted and rendered', () => {
   assert.match(store, /replies\?: Array<\{[\s\S]*gifUrl\?: string;[\s\S]*imageUrl\?: string;[\s\S]*spoiler\?: boolean;/);
 });
 
-test('reply avatars fall back to the current public profile by uid', () => {
-  assert.match(comments, /dbProfileStore\.getOptional\(getDB\(\), reply\.uid\)/);
-  assert.match(comments, /profile\.avatarThumbImage \|\| profile\.avatarImage/);
-  assert.match(comments, /localProfile\.avatarThumbImage \|\| localProfile\.avatarImage \|\| user\.photoURL/);
+test('reply avatars resolve the current public profile by uid via the shared hook', () => {
+  // The resolution lives in a shared hook reused by the feed, top-level comments
+  // and replies, so a member's current picture wins over a stale snapshot.
+  assert.match(resolvedAvatarHook, /export function useResolvedAvatar/);
+  assert.match(resolvedAvatarHook, /dbProfileStore\.getOptional\(getDB\(\), uid\)/);
+  assert.match(resolvedAvatarHook, /profile\.avatarThumbImage \|\| profile\.avatarImage/);
+  assert.match(resolvedAvatarHook, /localProfile\.avatarThumbImage \|\| localProfile\.avatarImage \|\| user\.photoURL/);
+  // Replies consume it and keep the broken-image fallback to the letter avatar.
+  assert.match(comments, /useResolvedAvatar\(reply\.uid, reply\.photoUrl, reply\.user\)/);
   assert.match(comments, /onError=\{\(\) => setAvatarFailed\(true\)\}/);
+});
+
+test('feed and top-level comments also resolve the live avatar by uid', () => {
+  const feed = readFileSync(new URL('../src/app/feed/page.tsx', import.meta.url), 'utf8');
+  assert.match(feed, /useResolvedAvatar\(item\.uid, item\.photoUrl, item\.user\)/);
+  assert.match(feed, /photoUrl=\{resolvedAvatar\}/);
+  assert.match(comments, /useResolvedAvatar\(rev\.uid, rev\.photoUrl, rev\.user\)/);
+});
+
+test('reply author name and avatar link to the profile', () => {
+  assert.match(comments, /const openProfile = onProfile \? \(\) => onProfile\(reply\.user\) : undefined/);
+  assert.match(comments, /onProfile=\{onProfile\}/);
 });
 
 test('published replies stay in the card dropdown while the reply composer is docked', () => {
