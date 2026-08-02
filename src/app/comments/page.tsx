@@ -1376,7 +1376,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
           ) : (
             <button onClick={() => setConfirmDelete(true)} aria-label="Excluir comentário"
               style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '7px 4px' }}>
-              <Icon name="close" size={14} color={T.red ?? '#ff4444'} />
+              <Icon name="trash" size={15} color={T.red ?? '#ff4444'} />
             </button>
           )
         )}
