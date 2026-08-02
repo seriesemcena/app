@@ -196,7 +196,13 @@ export default function SeriesPage() {
           const seasonNumber = currentAiredSeason(detail || {});
           let overdue: ReturnType<typeof overdueEpisodes> = [];
 
-          if (seasonNumber && classification === 'watching') {
+          // "Atrasadas" means you fell behind on a series you're tracking. A show
+          // with no episode ever marked hasn't been started, so it can't be
+          // behind — skip it here even though it stays in "Maratonando".
+          const hasTrackedEpisode = progress.some((record) => (record.watchedEpisodeNumbers?.length ?? 0) > 0)
+            || Object.values(epWatchedStore.getShow(item.id)).some((episodes) => (episodes?.length ?? 0) > 0);
+
+          if (seasonNumber && classification === 'watching' && hasTrackedEpisode) {
             const season = await tmdb.season(item.id, seasonNumber);
             const watchedEpisodes = progress.find((record) => record.seasonNumber === seasonNumber)
               ?.watchedEpisodeNumbers

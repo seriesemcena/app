@@ -134,6 +134,9 @@ test('behind tab checks current-season episode history after the 72-hour window'
   assert.match(page, /epWatchedStore\.getShow\(item\.id\)\[String\(seasonNumber\)\]/);
   assert.match(page, /overdueEpisodes\(season\?\.episodes \|\| \[\], watchedEpisodes\)/);
   assert.match(page, /items\.filter\(\(item\) => \(item\.overdueCount \?\? 0\) > 0\)/);
+  // A series with nothing marked yet is not "behind" — the overdue scan is gated.
+  assert.match(page, /const hasTrackedEpisode = progress\.some/);
+  assert.match(page, /classification === 'watching' && hasTrackedEpisode/);
 });
 
 test('behind cards share the watching card dimensions and side-image layout', async () => {
