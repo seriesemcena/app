@@ -22,7 +22,7 @@ type HomeTab = 'para_voce' | 'em_alta' | 'novidades';
 
 type NewsPost = { id: number; title: string; image: string | null; link: string; date: string };
 
-type WatchingTag = 'em_breve' | 'novo' | 'nao_assistido' | 'atrasado';
+type WatchingTag = 'em_breve' | 'novo' | 'nao_assistido';
 
 type WatchingItem = {
   id: number; title: string; type: string;
@@ -327,9 +327,11 @@ export default function HomePage() {
 
             // ── Tag logic ──────────────────────────────────────────
             // EM BREVE: próximo episódio existe e ainda não estreou
-            // NOVO: último ep já estreou há ≤ 14 dias (ainda não assistido)
-            // NÃO ASSISTIDO: 15-30 dias sem assistir
-            // ATRASADO: > 30 dias sem assistir
+            // NOVO: último ep já estreou há ≤ 14 dias
+            // NÃO ASSISTIDO: 15-30 dias desde o último ep no ar
+            // Nada acima de 30 dias: o estado "atrasado" real é baseado em
+            // progresso (assistido ou não) e vive na aba Atrasadas de Séries;
+            // esta lista só olha datas, então não marca falso atraso aqui.
             let tag: WatchingTag | undefined;
             const nextIsFuture = nextAirDate && new Date(nextAirDate).getTime() > now;
             if (nextIsFuture) {
@@ -337,8 +339,7 @@ export default function HomePage() {
             } else if (lastAirDate) {
               const diffDays = (now - new Date(lastAirDate).getTime()) / 86_400_000;
               if (diffDays <= 14)      tag = 'novo';
-              else if (diffDays > 30)  tag = 'atrasado';
-              else                     tag = 'nao_assistido';
+              else if (diffDays <= 30) tag = 'nao_assistido';
             }
 
             return {
@@ -761,7 +762,6 @@ export default function HomePage() {
                         em_breve:      { bg: '#D92FFF',  color: '#fff', label: t('tags.em_breve') },
                         novo:          { bg: '#CCFF84',  color: '#000', label: t('tags.novo') },
                         nao_assistido: { bg: '#FB772D',  color: '#fff', label: t('tags.nao_assistido') },
-                        atrasado:      { bg: '#e0352b',  color: '#fff', label: t('tags.atrasado') },
                       };
                       const epLabel = item.tag === 'em_breve' && item.nextSeason && item.nextEpisode
                         ? `T${item.nextSeason} · Ep ${item.nextEpisode}`
@@ -804,7 +804,6 @@ export default function HomePage() {
                         em_breve:      { bg: '#D92FFF', color: '#fff', label: t('tags.em_breve') },
                         novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo') },
                         nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido') },
-                        atrasado:      { bg: '#e0352b', color: '#fff', label: t('tags.atrasado') },
                       };
                       const seasonNumber = item.tag === 'em_breve' && item.nextSeason
                         ? item.nextSeason
