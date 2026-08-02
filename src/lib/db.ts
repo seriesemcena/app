@@ -338,6 +338,8 @@ export const dbListStore = {
 // ever touch the subcollection.
 
 const revCol = (db: Firestore, titleKey: string) => collection(db, 'reviews', titleKey, 'items');
+const replyCol = (db: Firestore, titleKey: string, reviewId: string) =>
+  collection(doc(revCol(db, titleKey), reviewId), 'replies');
 const reviewIsVisible = (review: Review) => !(review as Review & { moderation?: { hidden?: boolean } }).moderation?.hidden;
 
 export type ReviewPageCursor =
@@ -506,17 +508,63 @@ export const dbRevStore = {
     return 'legacy';
   },
 
-  /** Append a reply to a review (possibly someone else's — the rules allow
-      third parties to touch only likes/replies). False → legacy-only review. */
+  /** Store a reply as its own document under the review. Each reply is owned by
+      its author (uid), so likes and deletions are secured per reply instead of
+      rewriting the whole array. False → write failed / signed out. */
   async addReply(
     db: Firestore, titleKey: string, reviewId: string,
     reply: NonNullable<Review['replies']>[number],
   ): Promise<boolean> {
+    if (!reply.uid) return false;
     try {
-      const ref = doc(revCol(db, titleKey), reviewId);
-      await updateDoc(ref, { replies: arrayUnion(stripUndefined(reply)) });
+      await setDoc(
+        doc(replyCol(db, titleKey, reviewId), reply.id),
+        stripUndefined({ ...reply, authorUid: reply.uid, likes: reply.likes ?? 0, likedBy: reply.likedBy ?? [] }),
+      );
       return true;
     } catch { return false; }
+  },
+
+  /** All replies for a review, oldest first, from the per-reply subcollection.
+      An unordered fallback keeps them visible if the date index is missing. */
+  async getReplies(
+    db: Firestore, titleKey: string, reviewId: string,
+  ): Promise<NonNullable<Review['replies']>> {
+    try {
+      const snap = await getDocs(query(replyCol(db, titleKey, reviewId), orderBy('date', 'asc')));
+      return snap.docs.map((entry) => entry.data() as NonNullable<Review['replies']>[number]);
+    } catch {
+      try {
+        const snap = await getDocs(replyCol(db, titleKey, reviewId));
+        return snap.docs
+          .map((entry) => entry.data() as NonNullable<Review['replies']>[number])
+          .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      } catch { return []; }
+    }
+  },
+
+  /** Toggle the caller's like on a reply. Returns the new count and state, or
+      null when the reply doc is missing (e.g. legacy, not yet migrated). */
+  async toggleReplyLike(
+    db: Firestore, titleKey: string, reviewId: string, replyId: string, userId: string,
+  ): Promise<{ likes: number; liked: boolean } | null> {
+    const ref = doc(replyCol(db, titleKey, reviewId), replyId);
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      if (!snap.exists()) return null;
+      const likedBy = ((snap.data().likedBy as string[]) ?? []).slice();
+      const idx = likedBy.indexOf(userId);
+      if (idx >= 0) likedBy.splice(idx, 1); else likedBy.push(userId);
+      transaction.update(ref, { likedBy, likes: likedBy.length });
+      return { likes: likedBy.length, liked: idx < 0 };
+    });
+  },
+
+  /** Delete a reply document. The rules allow only its author or a moderator. */
+  async removeReply(
+    db: Firestore, titleKey: string, reviewId: string, replyId: string,
+  ): Promise<void> {
+    await deleteDoc(doc(replyCol(db, titleKey, reviewId), replyId));
   },
 
   /** Toggle a like. Null → legacy-only review, caller keeps its local state. */

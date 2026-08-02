@@ -11,6 +11,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { revStore, profileStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
+import { useModerator } from '@/hooks/useModerator';
 import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, dbNotifStore, dbProfileStore, type ReviewPageCursor } from '@/lib/db';
@@ -40,6 +41,7 @@ function CommentsPageInner() {
   const { theme } = useTheme();
   const { t }    = useTranslation('title');
   const isDark = theme === 'dark';
+  const isModerator = useModerator();
 
   const storageKey = sp.get('key')      || '';
   const title      = sp.get('title')    || 'Comentários';
@@ -119,6 +121,12 @@ function CommentsPageInner() {
       revStore.set(storageKey, merged);
       setPageCursor(page.cursor);
       setHasMoreComments(page.hasMore);
+      // Second pass: replace the embedded legacy replies with the real per-reply
+      // subcollection docs so likes and deletions act on the migrated documents.
+      const hydrated = await hydrateReplies(merged);
+      if (generation !== requestGeneration.current) return;
+      setReviews(hydrated);
+      revStore.set(storageKey, hydrated);
     }).catch(() => {
       if (generation === requestGeneration.current) setPageError('Não foi possível atualizar os comentários.');
     }).finally(() => {
@@ -458,6 +466,79 @@ function CommentsPageInner() {
   const goToProfile = (username: string) =>
     router.push(`/user/${encodeURIComponent(username)}`);
 
+  /** Fold each review's per-reply subcollection into rev.replies, merged over
+      any legacy array reply, so the card renders the real reply docs (with
+      likes and per-reply deletion). */
+  const hydrateReplies = async (list: Review[]): Promise<Review[]> => {
+    if (!firebaseConfigured || !storageKey) return list;
+    return Promise.all(list.map(async (review) => {
+      const subReplies = await dbRevStore.getReplies(getDB(), storageKey, review.id);
+      if (subReplies.length === 0) return review;
+      const subIds = new Set(subReplies.map((reply) => reply.id));
+      const legacyOnly = (review.replies || []).filter((reply) => !subIds.has(reply.id));
+      return {
+        ...review,
+        replies: [...subReplies, ...legacyOnly].sort((a, b) => (a.date || '').localeCompare(b.date || '')),
+      };
+    }));
+  };
+
+  const toggleReplyLike = async (reviewId: string, replyId: string) => {
+    if (!user) { promptSignIn('like'); return; }
+    const previous = reviews;
+    const updated = reviews.map((review) => {
+      if (review.id !== reviewId) return review;
+      return {
+        ...review,
+        replies: (review.replies || []).map((reply) => {
+          if (reply.id !== replyId) return reply;
+          const likedBy = [...(reply.likedBy || [])];
+          const index = likedBy.indexOf(user.uid);
+          if (index >= 0) likedBy.splice(index, 1); else likedBy.push(user.uid);
+          return { ...reply, likedBy, likes: likedBy.length };
+        }),
+      };
+    });
+    setReviews(updated);
+    revStore.set(storageKey, updated);
+    if (!firebaseConfigured) return;
+    try {
+      const result = await dbRevStore.toggleReplyLike(getDB(), storageKey, reviewId, replyId, user.uid);
+      // A null result means the reply doc does not exist yet (legacy, not
+      // migrated); revert so we never show a like the backend did not store.
+      if (result === null) {
+        setReviews(previous);
+        revStore.set(storageKey, previous);
+        showToast('Esta resposta ainda está sendo sincronizada. Tente em instantes.');
+      }
+    } catch {
+      setReviews(previous);
+      revStore.set(storageKey, previous);
+      showToast('Não foi possível atualizar a curtida.');
+    }
+  };
+
+  const deleteReply = async (reviewId: string, replyId: string) => {
+    if (!user) return;
+    if (!window.confirm('Excluir esta resposta?')) return;
+    const previous = reviews;
+    const updated = reviews.map((review) => (
+      review.id === reviewId
+        ? { ...review, replies: (review.replies || []).filter((reply) => reply.id !== replyId) }
+        : review
+    ));
+    setReviews(updated);
+    revStore.set(storageKey, updated);
+    if (!firebaseConfigured) return;
+    try {
+      await dbRevStore.removeReply(getDB(), storageKey, reviewId, replyId);
+    } catch {
+      setReviews(previous);
+      revStore.set(storageKey, previous);
+      showToast('Não foi possível excluir a resposta.');
+    }
+  };
+
   function timeAgo(dateStr: string): string {
     try {
       const diff = Date.now() - new Date(dateStr).getTime();
@@ -594,6 +675,7 @@ function CommentsPageInner() {
                       onProfile={goToProfile}
                       replyOpen={replyOpenId === rev.id}
                       currentUserId={user?.uid}
+                      isModerator={isModerator}
                       onToggleReply={() => {
                         setReplyOpenId(id => id === rev.id ? null : rev.id);
                       }}
@@ -602,6 +684,8 @@ function CommentsPageInner() {
                         : undefined}
                       onReport={rev.uid !== user?.uid ? () => reportComment(rev) : undefined}
                       onReportReply={(reply) => reportReply(rev, reply)}
+                      onReplyLike={(reply) => toggleReplyLike(rev.id, reply.id)}
+                      onReplyDelete={(reply) => deleteReply(rev.id, reply.id)}
                     />
                   </div>
                 ))}
@@ -1057,7 +1141,15 @@ function ReplyEditor({
   );
 }
 
-function ReplyItem({ reply, timeAgo, onReport, onProfile }: { reply: Reply; timeAgo: (date: string) => string; onReport?: () => void; onProfile?: (username: string) => void }) {
+function ReplyItem({ reply, timeAgo, onReport, onProfile, onLike, onDelete, currentUserId }: {
+  reply: Reply;
+  timeAgo: (date: string) => string;
+  onReport?: () => void;
+  onProfile?: (username: string) => void;
+  onLike?: () => void;
+  onDelete?: () => void;
+  currentUserId?: string;
+}) {
   const { t } = useTranslation('title');
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
   // Same live-avatar resolution as the feed and top-level comments, so a reply
@@ -1068,6 +1160,8 @@ function ReplyItem({ reply, timeAgo, onReport, onProfile }: { reply: Reply; time
   const mediaUrl = reply.gifUrl || reply.imageUrl || '';
   const spoilerHidden = !!reply.spoiler && !spoilerRevealed;
   const openProfile = onProfile ? () => onProfile(reply.user) : undefined;
+  const liked = !!currentUserId && !!reply.likedBy?.includes(currentUserId);
+  const likeCount = reply.likes ?? reply.likedBy?.length ?? 0;
 
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
 
@@ -1102,16 +1196,28 @@ function ReplyItem({ reply, timeAgo, onReport, onProfile }: { reply: Reply; time
           <Txt size={14} weight={800}>{reply.user}</Txt>
         </button>
         <Txt size={11} color={T.t3}>{timeAgo(reply.date)}</Txt>
-        {onReport && (
-          <button
-            type="button"
-            onClick={onReport}
-            aria-label="Denunciar resposta"
-            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: 'none', borderRadius: 16, background: 'transparent', cursor: 'pointer' }}
-          >
-            <Icon name="flag" size={14} color={T.t4} />
-          </button>
-        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Excluir resposta"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: 'none', borderRadius: 16, background: 'transparent', cursor: 'pointer' }}
+            >
+              <Icon name="trash" size={14} color={T.red ?? '#ff4444'} />
+            </button>
+          )}
+          {onReport && (
+            <button
+              type="button"
+              onClick={onReport}
+              aria-label="Denunciar resposta"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: 'none', borderRadius: 16, background: 'transparent', cursor: 'pointer' }}
+            >
+              <Icon name="flag" size={14} color={T.t4} />
+            </button>
+          )}
+        </div>
       </div>
       <div style={{ position: 'relative', minHeight: spoilerHidden ? 76 : undefined, overflow: 'hidden', borderRadius: 16 }}>
         <div style={{ filter: spoilerHidden ? 'blur(11px)' : 'none', transform: spoilerHidden ? 'scale(1.025)' : 'none', pointerEvents: spoilerHidden ? 'none' : 'auto', userSelect: spoilerHidden ? 'none' : 'auto' }}>
@@ -1134,18 +1240,27 @@ function ReplyItem({ reply, timeAgo, onReport, onProfile }: { reply: Reply; time
           </button>
         )}
       </div>
+      {onLike && (
+        <div style={{ marginTop: 10 }}>
+          <SocialAction icon={liked ? 'heart' : 'heartO'} active={liked} onClick={onLike} ariaLabel="Curtir resposta">
+            {likeCount > 0 && <Txt size={13} weight={700} color={liked ? T.pink : T.t3}>{likeCount}</Txt>}
+          </SocialAction>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── Comment card ── */
-function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId, onToggleReply, onDelete, onReport, onReportReply }: {
+function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId, isModerator, onToggleReply, onDelete, onReport, onReportReply, onReplyLike, onReplyDelete }: {
   rev: Review;
   timeAgo: (d: string) => string;
   onLike: () => void;
   onProfile: (username: string) => void;
   replyOpen: boolean;
   currentUserId?: string;
+  /** Whether the signed-in user may delete any reply (moderation). */
+  isModerator?: boolean;
   onToggleReply: () => void;
   /** Present only for the author. Moderators act through the separate panel. */
   onDelete?: () => void;
@@ -1153,6 +1268,10 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
   onReport?: () => void;
   /** Structured moderation target for a reply. */
   onReportReply?: (reply: Reply) => void;
+  /** Toggle the current user's like on a reply. */
+  onReplyLike?: (reply: Reply) => void;
+  /** Delete a reply (author or moderator). */
+  onReplyDelete?: (reply: Reply) => void;
 }) {
   const { t }         = useTranslation('title');
   const liked         = !!currentUserId && !!rev.likedBy?.includes(currentUserId);
@@ -1262,8 +1381,15 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
                   key={r.id}
                   reply={r}
                   timeAgo={timeAgo}
+                  currentUserId={currentUserId}
                   onProfile={onProfile}
                   onReport={r.uid !== currentUserId ? () => onReportReply?.(r) : undefined}
+                  onLike={onReplyLike ? () => onReplyLike(r) : undefined}
+                  onDelete={
+                    onReplyDelete && ((!!r.uid && r.uid === currentUserId) || !!isModerator)
+                      ? () => onReplyDelete(r)
+                      : undefined
+                  }
                 />
               ))}
             </div>

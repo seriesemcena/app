@@ -95,6 +95,59 @@ service cloud.firestore {
         ]);
     }
 
+    // A reply lives in its own document, so a like only flips the caller's own
+    // uid in likedBy (with the matching count) and touches nothing else.
+    function togglesOwnReplyLike() {
+      let before = resource.data.get('likedBy', []);
+      let after = request.resource.data.get('likedBy', []);
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+
+      return changed.hasOnly(['likedBy', 'likes'])
+        && request.resource.data.likes is int
+        && request.resource.data.likes == after.size()
+        && (
+          (
+            !before.hasAny([request.auth.uid])
+            && after.hasAny([request.auth.uid])
+            && after.hasAll(before)
+            && after.size() == before.size() + 1
+          )
+          ||
+          (
+            before.hasAny([request.auth.uid])
+            && !after.hasAny([request.auth.uid])
+            && before.hasAll(after)
+            && after.size() == before.size() - 1
+          )
+        );
+    }
+
+    // A new reply is owned by its author and starts with no likes. It must
+    // carry text or media so empty replies cannot be spammed.
+    function isOwnNewReply() {
+      let reply = request.resource.data;
+      return reply.get('uid', '') == request.auth.uid
+        && reply.get('id', '') is string
+        && reply.get('id', '').size() > 0
+        && reply.get('user', '') is string
+        && reply.get('avatar', '') is string
+        && reply.get('text', '') is string
+        && reply.get('text', '').size() <= 5000
+        && reply.get('date', '') is string
+        && reply.get('likes', 0) == 0
+        && reply.get('likedBy', []).size() == 0
+        && (
+          reply.get('text', '').size() > 0
+          || reply.get('gifUrl', '').size() > 0
+          || reply.get('imageUrl', '').size() > 0
+        )
+        && reply.keys().hasAll(['id', 'uid', 'user', 'avatar', 'date'])
+        && reply.keys().hasOnly([
+          'id', 'uid', 'authorUid', 'user', 'avatar', 'photoUrl', 'text',
+          'gifUrl', 'imageUrl', 'spoiler', 'date', 'likes', 'likedBy'
+        ]);
+    }
+
     function isProMember(data) {
       return data.get('profile', {}).get('proMember', false) == true;
     }
@@ -349,6 +402,18 @@ service cloud.firestore {
                            )
                            || appendsOwnReviewReply()
                          );
+
+        // Replies are their own documents so likes and removals are secured
+        // per reply. Anyone signed in may add a reply they own; a like flips
+        // only the caller's uid; the reply's author or a moderator may delete.
+        match /replies/{replyId} {
+          allow read:   if true;
+          allow create: if activeUser() && isOwnNewReply();
+          allow update: if activeUser() && togglesOwnReplyLike();
+          allow delete: if activeUser()
+                        && (resource.data.get('uid', '') == request.auth.uid
+                            || canModerateCommunity());
+        }
       }
     }
 

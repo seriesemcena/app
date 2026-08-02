@@ -719,6 +719,48 @@ exports.createSocialNotification = onCall({
   return { created: true };
 });
 
+/** One-time migration: fold legacy in-document reply arrays into the per-reply
+ * subcollection (reviews/{key}/items/{id}/replies/{replyId}) so likes and
+ * deletions are secured per reply. Idempotent — safe to re-run; it copies each
+ * reply and clears the source array so replies are never counted twice. */
+exports.migrateRepliesToSubcollection = onCall({
+  timeoutSeconds: 540,
+  memory: '512MiB',
+}, async (request) => {
+  const token = request.auth?.token;
+  if (token?.admin !== true || !['super_admin', 'admin'].includes(String(token?.role))) {
+    throw new HttpsError('permission-denied', 'Apenas administradores podem migrar respostas.');
+  }
+
+  const items = await db.collectionGroup('items').get();
+  let migratedReviews = 0;
+  let migratedReplies = 0;
+
+  for (const itemDoc of items.docs) {
+    const replies = Array.isArray(itemDoc.data().replies) ? itemDoc.data().replies : [];
+    const valid = replies.filter((reply) => reply && typeof reply.id === 'string' && reply.id);
+    if (valid.length === 0) continue;
+
+    const batch = db.batch();
+    for (const reply of valid) {
+      batch.set(itemDoc.ref.collection('replies').doc(reply.id), {
+        ...reply,
+        authorUid: reply.uid || reply.authorUid || '',
+        likes: Number(reply.likes) || (Array.isArray(reply.likedBy) ? reply.likedBy.length : 0),
+        likedBy: Array.isArray(reply.likedBy) ? reply.likedBy : [],
+      }, { merge: true });
+      migratedReplies += 1;
+    }
+    // Clear the legacy array so replies count once and client deletions stick.
+    batch.update(itemDoc.ref, { replies: [] });
+    await batch.commit();
+    migratedReviews += 1;
+  }
+
+  logger.info('[migrateReplies] complete', { migratedReviews, migratedReplies });
+  return { migratedReviews, migratedReplies };
+});
+
 async function forEachUserPage(handler) {
   let cursor = null;
   let total = 0;
