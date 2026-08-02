@@ -13,6 +13,7 @@ import {
   calculateWatchedDuration,
   classifySeries,
   legacyHistoryToSeasonProgress,
+  mergeSeasonProgress,
   uniqueEpisodeNumbers,
   type SeasonCatalogEntry,
 } from '@/lib/seasonProgress';
@@ -506,8 +507,21 @@ export default function StatsPage() {
               episodeCount: Number(season.episode_count) || 0,
               airDate: season.air_date ?? null,
             }));
-          const isFinished = storedRecords.length > 0
-            ? classifySeries(catalog, storedRecords) === 'finished'
+          // Merge canonical progress with the legacy per-episode store so
+          // imported shows (whose watches only live in epWatched) count as
+          // finished, matching the Séries "finalizadas" tab.
+          const legacyRecords = legacyHistoryToSeasonProgress(
+            user?.uid ?? 'local',
+            { [String(item.id)]: epAll[String(item.id)] ?? {} },
+          );
+          const finishBySeason = new Map(storedRecords.map((record) => [record.seasonNumber, record]));
+          legacyRecords.forEach((record) => {
+            const existing = finishBySeason.get(record.seasonNumber);
+            finishBySeason.set(record.seasonNumber, existing ? mergeSeasonProgress(existing, record) : record);
+          });
+          const mergedForFinish = Array.from(finishBySeason.values());
+          const isFinished = mergedForFinish.length > 0
+            ? classifySeries(catalog, mergedForFinish) === 'finished'
             : tvWatchedIds.has(Number(item.id));
           if (isFinished) finishedSeriesCount += 1;
         }

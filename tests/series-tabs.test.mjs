@@ -39,6 +39,24 @@ test('watching and finished tabs use the season-aware reconciled collections', a
   assert.doesNotMatch(source, /`T\$\{item\.nextSeason\} · Ep \$\{item\.nextEpisode\}`/);
 });
 
+test('classification merges legacy episode history so imported shows are not misfiled', async () => {
+  const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
+  // TV Time imports land only in the legacy per-episode store. Classification
+  // must merge it with canonical season progress, or a fully-watched imported
+  // series looks unwatched — shown as "Atrasadas" instead of "Finalizadas".
+  assert.match(source, /legacyHistoryToSeasonProgress\(\s*user\?\.uid \?\? 'local',\s*\{ \[String\(item\.id\)\]: epWatchedStore\.getShow\(item\.id\) \}/);
+  assert.match(source, /existing \? mergeSeasonProgress\(existing, record\) : record/);
+});
+
+test('the TV Time import writes canonical season progress, not only the legacy store', async () => {
+  const source = await readFile(new URL('src/app/settings/import/page.tsx', projectRoot), 'utf8');
+  // The one-time epWatched→seasonProgress migration already ran, so an import
+  // afterwards must populate the canonical store itself.
+  assert.match(source, /legacyHistoryToSeasonProgress\(user\?\.uid \?\? 'local', \{ \[String\(resolved\.tmdbId\)\]: bySeasonMap \}\)/);
+  assert.match(source, /seasonProgressStore\.upsert\(record\)/);
+  assert.match(source, /dbSeasonProgressStore\.merge\(getDB\(\), user\.uid, record\)/);
+});
+
 test('a series in the watching list never falls out of the watching bucket when tracking is empty', async () => {
   const source = await readFile(new URL('src/app/series/page.tsx', projectRoot), 'utf8');
   // A show the user explicitly put in "Maratonando" must stay in the watching

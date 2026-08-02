@@ -7,9 +7,10 @@ import { Screen, ScrollArea, Txt } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { SettingsHeader } from '@/components/SettingsLayout';
 import { T } from '@/lib/tokens';
-import { listStore, revStore, profileStore, epWatchedStore, type Review } from '@/lib/store';
+import { listStore, revStore, profileStore, epWatchedStore, seasonProgressStore, type Review } from '@/lib/store';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbListStore, dbRevStore, dbEpWatchedStore } from '@/lib/db';
+import { dbListStore, dbRevStore, dbEpWatchedStore, dbSeasonProgressStore } from '@/lib/db';
+import { legacyHistoryToSeasonProgress } from '@/lib/seasonProgress';
 import { navigateBack, withProfileOrigin } from '@/lib/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { tmdbImg } from '@/lib/tmdb';
@@ -415,6 +416,11 @@ export default function ImportPage() {
     setImportedReviews(savedReviews);
 
     // ── Save watched episodes ─────────────────────────────────
+    // Season progress is the canonical source the Séries tabs classify from.
+    // Writing only the legacy per-episode store (as this used to) left imported
+    // shows looking unwatched — misfiled as "Atrasadas" instead of "Finalizadas".
+    // Mirror both stores here; classifySeries derives completion from the TMDB
+    // catalog, so raw watched numbers (episodeCount 0) are enough.
     for (const pe of parsedEps) {
       const resolved = resolveTmdbId(pe.showName, 'tv');
       if (!resolved) continue;
@@ -425,6 +431,14 @@ export default function ImportPage() {
         if (!bySeasonMap[s].includes(ep)) bySeasonMap[s].push(ep);
       }
       epWatchedStore.setShow(resolved.tmdbId, bySeasonMap);
+
+      const records = legacyHistoryToSeasonProgress(user?.uid ?? 'local', { [String(resolved.tmdbId)]: bySeasonMap });
+      records.forEach((record) => seasonProgressStore.upsert(record));
+      if (firebaseConfigured && user) {
+        for (const record of records) {
+          try { await dbSeasonProgressStore.merge(getDB(), user.uid, record); } catch {}
+        }
+      }
     }
     if (firebaseConfigured && user) {
       try { await dbEpWatchedStore.set(getDB(), user.uid, epWatchedStore.getAll()); } catch {}

@@ -165,6 +165,41 @@ test('migração legada cria um registro por temporada sem duplicatas', () => {
   assert.deepEqual(uniqueEpisodeNumbers([2, 2, 1, 0, '3']), [1, 2, 3]);
 });
 
+// Merge canonical season records with legacy per-episode history the same way
+// the Séries page and stats do, so imported watches count toward completion.
+const mergeCanonicalAndLegacy = (canonical, legacy) => {
+  const bySeason = new Map(canonical.map((record) => [record.seasonNumber, record]));
+  legacy.forEach((record) => {
+    const existing = bySeason.get(record.seasonNumber);
+    bySeason.set(record.seasonNumber, existing ? mergeSeasonProgress(existing, record) : record);
+  });
+  return Array.from(bySeason.values());
+};
+
+test('série de temporada única importada (só no histórico legado) é finalizada', () => {
+  // TV Time imports write watched episodes only to the legacy per-episode store.
+  const seasons = [{ seasonNumber: 1, episodeCount: 6, airDate: '2026-04-28' }];
+  const legacy = legacyHistoryToSeasonProgress('u1', { 257994: { 1: [1, 2, 3, 4, 5, 6] } });
+  assert.equal(classifySeries(seasons, legacy, NOW), 'finished');
+});
+
+test('temporadas importadas mesclam com o progresso canônico e finalizam a série', () => {
+  // Only the last season lives in canonical progress; the rest came from import.
+  const seasons = [1, 2, 3, 4].map((seasonNumber) => ({
+    seasonNumber, episodeCount: 10, airDate: `202${seasonNumber + 1}-01-01`,
+  }));
+  const canonical = [completed(4, 10)];
+  const legacy = legacyHistoryToSeasonProgress('u1', {
+    124364: {
+      1: Array.from({ length: 10 }, (_, index) => index + 1),
+      2: Array.from({ length: 10 }, (_, index) => index + 1),
+      3: Array.from({ length: 10 }, (_, index) => index + 1),
+    },
+  });
+  const merged = mergeCanonicalAndLegacy(canonical, legacy);
+  assert.equal(classifySeries(seasons, merged, NOW), 'finished');
+});
+
 test('horas são separadas entre temporadas concluídas e em andamento', () => {
   const partial = {
     ...completed(2),

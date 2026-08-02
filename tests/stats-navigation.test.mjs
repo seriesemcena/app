@@ -71,10 +71,17 @@ test('stats counts fully-finished series like the finalizadas tab, not just the 
   // Series known only through episode progress must be considered, as the Séries page does.
   assert.match(stats, /canonicalProgress\.forEach\(\(record\) => \{/);
   assert.match(stats, /trackedMap\.set\(key,/);
-  // The count uses classifySeries === 'finished', not the length of the watched list.
-  assert.match(stats, /classifySeries\(catalog, storedRecords\) === 'finished'/);
+  // The count uses classifySeries === 'finished' on merged progress, not the watched list.
+  assert.match(stats, /classifySeries\(catalog, mergedForFinish\) === 'finished'/);
   assert.match(stats, /if \(isFinished\) finishedSeriesCount \+= 1/);
   assert.match(stats, /watchedCount:finishedSeriesCount/);
+});
+
+test('stats merges legacy episode history so imported shows count as finished', async () => {
+  const stats = await read('src/app/stats/page.tsx');
+  // Imported watches live only in epWatched; merge them before classifying.
+  assert.match(stats, /const mergedForFinish = Array\.from\(finishBySeason\.values\(\)\)/);
+  assert.match(stats, /existing \? mergeSeasonProgress\(existing, record\) : record/);
 });
 
 test('ratings page copy is available in all full locales', async () => {

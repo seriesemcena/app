@@ -13,6 +13,8 @@ import { firebaseConfigured, getDB } from '@/lib/firebase';
 import {
   classifySeries,
   summarizeSeriesCompletion,
+  mergeSeasonProgress,
+  legacyHistoryToSeasonProgress,
   type SeasonCatalogEntry,
 } from '@/lib/seasonProgress';
 import { currentAiredSeason, overdueEpisodes } from '@/lib/seriesSchedule';
@@ -164,7 +166,21 @@ export default function SeriesPage() {
       const loaded = await Promise.all(Array.from(candidates.values()).map(async (item) => {
         try {
           const detail = await tmdb.tvDetail(item.id);
-          const progress = seasonProgressStore.getSeries(item.id);
+          // Episode history imported from TV Time lands only in the legacy
+          // per-episode store; the canonical season records stay empty. Merge
+          // both so classification and completion see imported watches instead
+          // of treating a fully-watched series as unstarted.
+          const canonicalProgress = seasonProgressStore.getSeries(item.id);
+          const legacyProgress = legacyHistoryToSeasonProgress(
+            user?.uid ?? 'local',
+            { [String(item.id)]: epWatchedStore.getShow(item.id) },
+          );
+          const progressBySeason = new Map(canonicalProgress.map((record) => [record.seasonNumber, record]));
+          legacyProgress.forEach((record) => {
+            const existing = progressBySeason.get(record.seasonNumber);
+            progressBySeason.set(record.seasonNumber, existing ? mergeSeasonProgress(existing, record) : record);
+          });
+          const progress = Array.from(progressBySeason.values());
           const catalog: SeasonCatalogEntry[] = ((detail as any)?.seasons ?? [])
             .filter((season: any) => Number(season?.season_number) > 0)
             .map((season: any) => ({
