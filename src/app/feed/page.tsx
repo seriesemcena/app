@@ -9,11 +9,11 @@ import { Icon } from '@/components/Icon';
 import { SocialAction, SocialAuthor, SocialCard, SocialMedia } from '@/components/SocialCard';
 import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
-import { profileStore, notifInboxStore, reactionStore, revStore, blockStore, type Review } from '@/lib/store';
+import { profileStore, notifInboxStore, revStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
 import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
-import { dbActivityStore, dbRevStore, dbReactionStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
+import { dbActivityStore, dbRevStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
@@ -62,7 +62,6 @@ function findReviewForFeedItem(reviews: Review[], item: ActivityItem): Review | 
 }
 
 const POSTER_COLORS = ['#1a3a5c','#2a1a0a','#5c1a3a','#0a1a2a','#1a2a1a','#1a0a2a','#0a2a1a','#2a0a1a'];
-const EMOJIS = ['🔥', '❤️', '😮', '😂', '👏'];
 
 function posterColorFor(key: string) {
   const hash = [...key].reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 0);
@@ -381,11 +380,10 @@ function FeedCard({ item, onDelete }: {
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
   const spoilerHidden = !!item.spoiler && !spoilerRevealed;
 
-  /* ── Emoji reactions (persisted to Firestore) ── */
-  const [reactions, setReactions]       = useState<Record<string, number>>({});
-  const [myReaction, setMyReaction]     = useState<string | null>(null);
-  const [showEmojis, setShowEmojis]     = useState(false);
-  const [showReactors, setShowReactors] = useState(false);
+  /* ── Like — a single heart mirroring the source review's likedBy, i.e. the
+     same like shown on /comments. Emoji reactions were removed. ── */
+  const [liked, setLiked]         = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
   const sourceReviewRef = useRef<Review | null>(null);
   const heartSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -428,75 +426,37 @@ function FeedCard({ item, onDelete }: {
     return heartSyncQueueRef.current;
   };
 
-  /* Apply a { uid: emoji } map to the counts + my-reaction UI state */
-  const applyReactionMap = (map: Record<string, string>) => {
-    const counts: Record<string, number> = {};
-    Object.values(map).forEach(e => { if (e) counts[e] = (counts[e] || 0) + 1; });
-    setReactions(counts);
-    setMyReaction(user && map[user.uid] ? map[user.uid] : null);
-  };
-
-  /* Load persisted reactions: localStorage first, then merge Firestore */
-  useEffect(() => {
-    const localMap = reactionStore.getMap(item.id);
-    applyReactionMap(localMap);
-    if (!firebaseConfigured) return;
-    let alive = true;
-    dbReactionStore.get(getDB(), item.id).then(cloudMap => {
-      if (!alive) return;
-      // Cloud holds other users' reactions; local keeps mine if the cloud
-      // write was blocked. Cloud wins on conflicts for a shared uid.
-      const mergedMap = { ...localMap, ...cloudMap };
-      applyReactionMap(mergedMap);
-      // One-time compatibility migration for hearts created by older builds.
-      if (user && mergedMap[user.uid] === '❤️') void syncHeartToSourceReview(true);
-    }).catch(() => {});
-    return () => { alive = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, user]);
-
-  const react = async (emoji: string) => {
-    setShowEmojis(false);
+  /* Toggle my like on the source review. Optimistic; the like count and state
+     are hydrated from the review by the reply-count effect below. */
+  const toggleLike = () => {
     if (!user) return;
-    const prev = myReaction;
-    const nextEmoji = prev === emoji ? null : emoji;
-    // Optimistic update
-    setReactions(cur => {
-      const next = { ...cur };
-      if (prev)      next[prev]      = Math.max(0, (next[prev] || 0) - 1);
-      if (nextEmoji) next[nextEmoji] = (next[nextEmoji] || 0) + 1;
-      return next;
-    });
-    setMyReaction(nextEmoji);
-    // Persist locally (survives refresh) + best-effort shared cloud write
-    reactionStore.set(item.id, user.uid, nextEmoji);
-    if (firebaseConfigured) {
-      try { await dbReactionStore.set(getDB(), item.id, user.uid, nextEmoji); } catch {}
-      if ((prev === '❤️') !== (nextEmoji === '❤️')) {
-        await syncHeartToSourceReview(nextEmoji === '❤️');
-      }
-    }
+    const next = !liked;
+    setLiked(next);
+    setLikeCount((count) => Math.max(0, count + (next ? 1 : -1)));
+    void syncHeartToSourceReview(next);
   };
-
-  const totalReactions  = Object.values(reactions).reduce((a, b) => a + b, 0);
-  const reactionEntries = Object.entries(reactions).filter(([, c]) => c > 0);
 
   /* ── Reply count for this exact root comment/review ── */
   const [replyCount, setReplyCount] = useState(0);
   useEffect(() => {
     if (!firebaseConfigured || !item.titleKey) return;
     let alive = true;
-    dbRevStore.get(getDB(), item.titleKey).then(list => {
+    const reviewKey = item.reviewTitleKey || item.titleKey;
+    dbRevStore.get(getDB(), reviewKey).then(async list => {
       if (!alive) return;
       const exact = findReviewForFeedItem(list, item);
-      setReplyCount(exact?.replies?.length ?? 0);
-      if (exact?.id) {
-        sourceReviewRef.current = exact;
-        setResolvedReviewId(exact.id);
-      }
+      if (!exact?.id) { setReplyCount(0); return; }
+      sourceReviewRef.current = exact;
+      setResolvedReviewId(exact.id);
+      // Hydrate the like from the source review (same like as /comments).
+      setLiked(!!(user && exact.likedBy?.includes(user.uid)));
+      setLikeCount(exact.likes ?? exact.likedBy?.length ?? 0);
+      // Replies now live in a subcollection, so count those, not the legacy array.
+      const replies = await dbRevStore.getReplies(getDB(), reviewKey, exact.id);
+      if (alive) setReplyCount(replies.length || (exact.replies?.length ?? 0));
     }).catch(() => {});
     return () => { alive = false; };
-  }, [item.rating, item.rawDate, item.reviewId, item.text, item.titleKey, item.uid, item.user]);
+  }, [item.rating, item.rawDate, item.reviewId, item.reviewTitleKey, item.text, item.titleKey, item.uid, item.user, user]);
 
   /* ── Three-dot menu ── */
   const [showMenu,   setShowMenu]   = useState(false);
@@ -659,58 +619,27 @@ function FeedCard({ item, onDelete }: {
       {/* ── Actions bar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
 
-        {/* Reacts: emoji picker trigger + count que abre popup de quem reagiu */}
-        <div style={{ position: 'relative', width: 58, height: 40, display: 'flex', alignItems: 'center', background: myReaction ? 'rgba(192,105,255,0.14)' : actionBackground, border: 'none', borderRadius: 20, overflow: 'visible' }}>
-          {/* Emoji trigger — ícone coração por padrão */}
-          <button
-            onClick={() => setShowEmojis(v => !v)}
-            style={{ width: 28, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: myReaction ? T.pink : T.t3 }}>
-            {myReaction
-              ? <span style={{ fontSize: 18, lineHeight: 1 }}>{myReaction}</span>
-              : <Icon name="heartO" size={16} color="currentColor" />
-            }
-          </button>
-
-          {/* Count — abre popup de quem reagiu */}
-          <button
-            onClick={() => totalReactions > 0 ? setShowReactors(true) : setShowEmojis(v => !v)}
-            style={{ width: 30, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 5px' }}>
-            <Txt size={12} weight={700} color={myReaction ? T.pink : T.t3}>{totalReactions}</Txt>
-          </button>
-
-          {/* Emoji picker */}
-          {showEmojis && (
-            <>
-              <div onClick={() => setShowEmojis(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
-              <div style={{ position: 'absolute', bottom: 40, left: 0, zIndex: 20, background: T.card, borderRadius: 20, padding: '8px 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.20)', border: `1px solid ${T.border}`, display: 'flex', gap: 4 }}>
-                {EMOJIS.map(e => (
-                  <button key={e} onClick={() => react(e)} style={{ fontSize: 22, background: myReaction === e ? 'rgba(192,105,255,0.12)' : 'transparent', border: 'none', borderRadius: 10, padding: '4px 6px', cursor: 'pointer', transform: myReaction === e ? 'scale(1.2)' : 'scale(1)', transition: 'transform 0.15s' }}>{e}</button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* Reactors popup */}
-          {showReactors && (
-            <>
-              <div onClick={() => setShowReactors(false)} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
-              <div style={{ position: 'absolute', bottom: 44, left: 0, zIndex: 30, background: T.card, borderRadius: 16, padding: '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.22)', border: `1px solid ${T.border}`, minWidth: 200 }}>
-                <Txt size={12} weight={700} color={T.t3} style={{ display: 'block', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Reações</Txt>
-                {reactionEntries.map(([emoji, count]) => (
-                  <div key={emoji} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 18 }}>{emoji}</span>
-                    <Txt size={13} color={T.t2}>{count} pessoa{count !== 1 ? 's' : ''}</Txt>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        {/* Curtir — heart único ligado ao like do comentário (sem emojis) */}
+        <SocialAction
+          icon={liked ? 'heart' : 'heartO'}
+          active={liked}
+          width={52}
+          height={34}
+          iconSize={15}
+          background={actionBackground}
+          border="none"
+          ariaLabel="Curtir comentário"
+          onClick={toggleLike}
+        >
+          <Txt size={12} weight={700} color="currentColor">{likeCount}</Txt>
+        </SocialAction>
 
         {/* Respostas recebidas por este comentário principal */}
         <SocialAction
           icon="message"
-          width={58}
+          width={52}
+          height={34}
+          iconSize={15}
           background={actionBackground}
           border="none"
           ariaLabel="Abrir respostas"

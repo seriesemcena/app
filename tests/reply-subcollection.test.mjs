@@ -55,6 +55,18 @@ test('comments page loads replies from the subcollection and wires like + delete
   assert.match(comments, /\(!!r\.uid && r\.uid === currentUserId\) \|\| !!isModerator/);
 });
 
+test('delete uses an in-app two-tap confirm, not the webview-blocked window.confirm', () => {
+  // window.confirm is suppressed inside the PWA/native webview and silently
+  // aborted deletions — reply and comment delete now confirm in-app.
+  assert.doesNotMatch(comments, /window\.confirm\('Excluir esta resposta\?'\)/);
+  assert.doesNotMatch(comments, /window\.confirm\('Excluir este comentário\?'\)/);
+  assert.match(comments, /const \[confirmDelete, setConfirmDelete\] = useState\(false\)/);
+  assert.match(comments, /aria-label="Confirmar exclusão da resposta"/);
+  assert.match(comments, /aria-label="Confirmar exclusão do comentário"/);
+  // The armed state auto-resets so a stray first tap does not linger.
+  assert.match(comments, /setTimeout\(\(\) => setConfirmDelete\(false\), 3500\)/);
+});
+
 test('reply items render a single heart like, not a reaction picker', () => {
   const replyItem = comments.slice(comments.indexOf('function ReplyItem('), comments.indexOf('/* ── Comment card ── */'));
   assert.match(replyItem, /icon=\{liked \? 'heart' : 'heartO'\}/);

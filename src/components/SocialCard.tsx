@@ -130,6 +130,8 @@ export function SocialAction({
   width,
   background,
   border,
+  height = 40,
+  iconSize = 16,
 }: {
   icon: IconName;
   active?: boolean;
@@ -139,6 +141,8 @@ export function SocialAction({
   width?: number;
   background?: string;
   border?: string;
+  height?: number;
+  iconSize?: number;
 }) {
   return (
     <button
@@ -146,15 +150,15 @@ export function SocialAction({
       onClick={onClick}
       aria-label={ariaLabel}
       style={{
-        width: width ?? (children === undefined ? 40 : undefined), height: 40,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        padding: width || children === undefined ? 0 : '0 12px',
-        borderRadius: 20, background: active ? 'rgba(192,105,255,0.14)' : (background ?? T.surface2),
+        width: width ?? (children === undefined ? height : undefined), height,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+        padding: width || children === undefined ? 0 : '0 11px',
+        borderRadius: height / 2, background: active ? 'rgba(192,105,255,0.14)' : (background ?? T.surface2),
         border: border ?? `1px solid ${active ? 'rgba(192,105,255,0.24)' : T.border}`,
         cursor: 'pointer', color: active ? T.pink : T.t3,
       }}
     >
-      <Icon name={icon} size={16} color="currentColor" />
+      <Icon name={icon} size={iconSize} color="currentColor" />
       {children}
     </button>
   );

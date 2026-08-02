@@ -98,7 +98,7 @@ test('feed action controls use theme-aware gray and load-more uses white with bl
   assert.match(feed, /color-mix\(in srgb, var\(--c-surface2\) 64%, #000 36%\)/);
   assert.match(feed, /: '#D1D1D6'/);
   assert.match(feed, /background=\{actionBackground\}/);
-  assert.match(feed, /background: myReaction[\s\S]*?border: 'none'/);
+  // The like (heart) and reply actions share the theme-aware gray, borderless.
   assert.match(feed, /background=\{actionBackground\}[\s\S]*?border="none"/);
   assert.match(component, /border:\s*border \?\?/);
   assert.match(component, /background:\s*active\s*\?[\s\S]*?:\s*\(background \?\? T\.surface2\)/);

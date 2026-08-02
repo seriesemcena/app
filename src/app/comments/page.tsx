@@ -367,7 +367,8 @@ function CommentsPageInner() {
   /* Author or admin — the Firestore rules enforce the same pair server-side,
      so the doc really goes away for every user and device. */
   const deleteComment = async (id: string) => {
-    if (!window.confirm('Excluir este comentário?')) return;
+    // Confirmation is the in-app two-tap step in CommentCard — window.confirm is
+    // suppressed inside the PWA/native webview and silently aborted the delete.
     const target = reviews.find(review => review.id === id);
     if (firebaseConfigured) {
       try {
@@ -519,8 +520,9 @@ function CommentsPageInner() {
   };
 
   const deleteReply = async (reviewId: string, replyId: string) => {
+    // Confirmation is an in-app two-tap step in ReplyItem — window.confirm is
+    // suppressed inside the PWA/native webview, which silently aborted deletes.
     if (!user) return;
-    if (!window.confirm('Excluir esta resposta?')) return;
     const previous = reviews;
     const updated = reviews.map((review) => (
       review.id === reviewId
@@ -1162,8 +1164,16 @@ function ReplyItem({ reply, timeAgo, onReport, onProfile, onLike, onDelete, curr
   const openProfile = onProfile ? () => onProfile(reply.user) : undefined;
   const liked = !!currentUserId && !!reply.likedBy?.includes(currentUserId);
   const likeCount = reply.likes ?? reply.likedBy?.length ?? 0;
+  // Two-tap in-app confirmation for deletion (native confirm() is unreliable in
+  // the PWA/native webview). The armed state auto-resets after a few seconds.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const timer = setTimeout(() => setConfirmDelete(false), 3500);
+    return () => clearTimeout(timer);
+  }, [confirmDelete]);
 
   return (
     <div>
@@ -1198,23 +1208,34 @@ function ReplyItem({ reply, timeAgo, onReport, onProfile, onLike, onDelete, curr
         <Txt size={11} color={T.t3}>{timeAgo(reply.date)}</Txt>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
           {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label="Excluir resposta"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: 'none', borderRadius: 16, background: 'transparent', cursor: 'pointer' }}
-            >
-              <Icon name="trash" size={14} color={T.red ?? '#ff4444'} />
-            </button>
+            confirmDelete ? (
+              <button
+                type="button"
+                onClick={() => { setConfirmDelete(false); onDelete(); }}
+                aria-label="Confirmar exclusão da resposta"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 26, padding: '0 9px', border: 'none', borderRadius: 13, background: T.red ?? '#ff4444', cursor: 'pointer' }}
+              >
+                <Txt size={11} weight={800} color="#fff">Excluir?</Txt>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                aria-label="Excluir resposta"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 13, background: 'transparent', cursor: 'pointer' }}
+              >
+                <Icon name="trash" size={13} color={T.red ?? '#ff4444'} />
+              </button>
+            )
           )}
           {onReport && (
             <button
               type="button"
               onClick={onReport}
               aria-label="Denunciar resposta"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, border: 'none', borderRadius: 16, background: 'transparent', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 13, background: 'transparent', cursor: 'pointer' }}
             >
-              <Icon name="flag" size={14} color={T.t4} />
+              <Icon name="flag" size={13} color={T.t4} />
             </button>
           )}
         </div>
@@ -1241,9 +1262,17 @@ function ReplyItem({ reply, timeAgo, onReport, onProfile, onLike, onDelete, curr
         )}
       </div>
       {onLike && (
-        <div style={{ marginTop: 10 }}>
-          <SocialAction icon={liked ? 'heart' : 'heartO'} active={liked} onClick={onLike} ariaLabel="Curtir resposta">
-            {likeCount > 0 && <Txt size={13} weight={700} color={liked ? T.pink : T.t3}>{likeCount}</Txt>}
+        <div style={{ marginTop: 8 }}>
+          <SocialAction
+            icon={liked ? 'heart' : 'heartO'}
+            active={liked}
+            onClick={onLike}
+            ariaLabel="Curtir resposta"
+            height={26}
+            iconSize={13}
+            width={likeCount > 0 ? 42 : 26}
+          >
+            {likeCount > 0 && <Txt size={11} weight={700} color={liked ? T.pink : T.t3}>{likeCount}</Txt>}
           </SocialAction>
         </div>
       )}
@@ -1278,6 +1307,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
   const resolvedAvatar = useResolvedAvatar(rev.uid, rev.photoUrl, rev.user);
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
   const [repliesExpanded, setRepliesExpanded] = useState(replyOpen);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const replyCount    = rev.replies?.length ?? 0;
   const mediaUrl      = rev.gifUrl || rev.imageUrl || '';
   const spoilerHidden = !!rev.spoiler && !spoilerRevealed;
@@ -1285,6 +1315,11 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
   useEffect(() => {
     if (replyOpen) setRepliesExpanded(true);
   }, [replyOpen]);
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const timer = setTimeout(() => setConfirmDelete(false), 3500);
+    return () => clearTimeout(timer);
+  }, [confirmDelete]);
 
   return (
     <SocialCard edgeToEdge>
@@ -1333,10 +1368,17 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
           <Txt size={12} weight={700} color="currentColor">{rev.likedBy?.length ?? rev.likes ?? 0}</Txt>
         </SocialAction>
         {onDelete && (
-          <button onClick={onDelete} aria-label="Excluir comentário"
-            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '7px 4px' }}>
-            <Icon name="close" size={14} color={T.red ?? '#ff4444'} />
-          </button>
+          confirmDelete ? (
+            <button onClick={() => { setConfirmDelete(false); onDelete(); }} aria-label="Confirmar exclusão do comentário"
+              style={{ display: 'flex', alignItems: 'center', height: 30, padding: '0 10px', background: T.red ?? '#ff4444', border: 'none', borderRadius: 15, cursor: 'pointer' }}>
+              <Txt size={12} weight={800} color="#fff">Excluir?</Txt>
+            </button>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} aria-label="Excluir comentário"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '7px 4px' }}>
+              <Icon name="close" size={14} color={T.red ?? '#ff4444'} />
+            </button>
+          )
         )}
         {onReport && (
           <button onClick={onReport} aria-label="Denunciar comentário"

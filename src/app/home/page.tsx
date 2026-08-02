@@ -32,6 +32,8 @@ type WatchingItem = {
   // last aired episode (NOVO / NÃO ASSISTIDO / ATRASADO)
   lastSeason?: number; lastEpisode?: number; lastAirDate?: string | null;
   tag?: WatchingTag;
+  // true when the card should point at the next episode (premieres today / soon)
+  showsNextEpisode?: boolean;
 };
 
 /* título localizado + poster textless dos heroes, por `${type}_${id}_${lang}` —
@@ -333,32 +335,41 @@ export default function HomePage() {
             // progresso (assistido ou não) e vive na aba Atrasadas de Séries;
             // esta lista só olha datas, então não marca falso atraso aqui.
             let tag: WatchingTag | undefined;
-            // Compara por dia de calendário: um episódio datado hoje ainda está
-            // por vir (o TMDB só o lista como next_episode_to_air até ir ao ar),
-            // então conta como EM BREVE em vez de cair para "sem tag".
+            // Compara por dia de calendário. O TMDB só lista um episódio como
+            // next_episode_to_air até ele ir ao ar:
+            //   • estreia HOJE → NOVO (o episódio novo já está disponível);
+            //   • estreia no FUTURO → EM BREVE;
+            //   • senão, olha o último episódio no ar.
             const todayStr = new Date(now).toISOString().slice(0, 10);
-            const nextIsUpcoming = nextAirDate && nextAirDate.slice(0, 10) >= todayStr;
-            if (nextIsUpcoming) {
+            const nextDay = nextAirDate ? nextAirDate.slice(0, 10) : null;
+            const premieresToday = nextDay === todayStr;
+            if (premieresToday) {
+              tag = 'novo';
+            } else if (nextDay && nextDay > todayStr) {
               tag = 'em_breve';
             } else if (lastAirDate) {
               const diffDays = (now - new Date(lastAirDate).getTime()) / 86_400_000;
               if (diffDays <= 14)      tag = 'novo';
               else if (diffDays <= 30) tag = 'nao_assistido';
             }
+            // Quando aponta para o próximo episódio (estreia hoje ou em breve),
+            // o card mostra esse episódio; caso contrário, o último no ar.
+            const showsNextEpisode = !!(nextDay && nextDay >= todayStr);
 
             return {
               ...item,
               title: detail?.name || detail?.title || item.title,
               backdrop_path: detail?.backdrop_path ?? (item as WatchingItem).backdrop_path ?? null,
-              // próximo ep (EM BREVE)
+              // próximo ep (EM BREVE / estreia hoje)
               nextSeason:   next?.season_number  ?? undefined,
               nextEpisode:  next?.episode_number ?? undefined,
               nextAirDate,
-              // último ep já ao ar (NOVO / NÃO ASSISTIDO / ATRASADO)
+              // último ep já ao ar (NOVO recente / NÃO ASSISTIDO)
               lastSeason:   last?.season_number  ?? undefined,
               lastEpisode:  last?.episode_number ?? undefined,
               lastAirDate,
               tag,
+              showsNextEpisode,
             } as WatchingItem;
           } catch {
             return { ...item } as WatchingItem;
@@ -767,7 +778,7 @@ export default function HomePage() {
                         novo:          { bg: '#CCFF84',  color: '#000', label: t('tags.novo') },
                         nao_assistido: { bg: '#FB772D',  color: '#fff', label: t('tags.nao_assistido') },
                       };
-                      const epLabel = item.tag === 'em_breve' && item.nextSeason && item.nextEpisode
+                      const epLabel = item.showsNextEpisode && item.nextSeason && item.nextEpisode
                         ? `T${item.nextSeason} · Ep ${item.nextEpisode}`
                         : item.lastSeason && item.lastEpisode
                           ? `T${item.lastSeason} · Ep ${item.lastEpisode}`
@@ -809,10 +820,10 @@ export default function HomePage() {
                         novo:          { bg: '#CCFF84', color: '#000', label: t('tags.novo') },
                         nao_assistido: { bg: '#FB772D', color: '#fff', label: t('tags.nao_assistido') },
                       };
-                      const seasonNumber = item.tag === 'em_breve' && item.nextSeason
+                      const seasonNumber = item.showsNextEpisode && item.nextSeason
                         ? item.nextSeason
                         : item.lastSeason;
-                      const episodeNumber = item.tag === 'em_breve' && item.nextEpisode
+                      const episodeNumber = item.showsNextEpisode && item.nextEpisode
                         ? item.nextEpisode
                         : item.lastEpisode;
                       return (
