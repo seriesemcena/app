@@ -23,9 +23,8 @@ export default function SplashPage() {
       return;
     }
 
-    // Logged in — check if onboarding was ever completed
-    const onboardingDone = localStorage.getItem('onboarding_done');
-    router.replace(onboardingDone ? '/home' : '/onboarding');
+    // Logged in — go straight to home (onboarding flow was removed)
+    router.replace('/home');
   }, [user, loading, offline, router]);
 
   return (

@@ -349,6 +349,15 @@ body { overflow: hidden; }
 input, button, textarea { -webkit-appearance: none; }
 button:focus, input:focus, textarea:focus { outline: none; }
 
+/* Auth landing poster marquee. Kept in the global stylesheet (not an inline
+   <style> in the React component) so the keyframes are always registered in the
+   native WebView — an inline style injected at render time was not applying
+   there, leaving the poster columns static in the installed app. */
+@keyframes posterScrollUp   { 0% { transform: translateY(0);    } 100% { transform: translateY(-50%); } }
+@keyframes posterScrollDown { 0% { transform: translateY(-50%); } 100% { transform: translateY(0);    } }
+.poster-col-up   { animation: posterScrollUp   30s linear infinite; will-change: transform; }
+.poster-col-down { animation: posterScrollDown 36s linear infinite; will-change: transform; }
+
 /* ── MobileFrame: full-screen on real devices, mockup on desktop ── */
 
 /* Mobile / real device: fills entire screen */
@@ -733,6 +742,31 @@ html[data-has-tabbar="true"] .offline-banner {
   color: var(--c-t1);
   font: inherit;
   cursor: pointer;
+}
+
+/* "Confirme seu e-mail" — mesmo pouso da offline-banner (safe-area + acima da
+   tab bar). Fica logo abaixo dela no z-index; nunca aparecem juntas porque o
+   banner de verificação se esconde quando está offline. */
+.verify-email-banner {
+  position: fixed;
+  left: max(12px, var(--safe-area-left));
+  right: max(12px, var(--safe-area-right));
+  bottom: calc(var(--safe-area-bottom) + 10px);
+  z-index: 119;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, #C069FF 42%, var(--c-border));
+  background: color-mix(in srgb, var(--c-card) 92%, transparent);
+  box-shadow: 0 8px 26px rgba(0,0,0,.24);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-family: 'Area', 'Inter', sans-serif;
+}
+html[data-has-tabbar="true"] .verify-email-banner {
+  bottom: calc(var(--toolbar-height) + 10px);
 }
 
 @media (prefers-reduced-motion: reduce) {

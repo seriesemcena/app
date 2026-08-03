@@ -6,6 +6,7 @@ import '@/lib/i18n';
 import { Frame } from '@/components/Frame';
 import { BottomSheet, Screen, Logo } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
+import { Turnstile, TURNSTILE_ENABLED } from '@/components/Turnstile';
 import { useAuth } from '@/hooks/useAuth';
 import { SUPPORTED_LOCALES, useLocale } from '@/context/LocaleContext';
 import { getDefaultLocaleForCountry } from '@/lib/locale-utils';
@@ -13,14 +14,6 @@ import { getRegion, REGION_OPTIONS, REGION_SELECTED_KEY } from '@/lib/regions';
 import { prefsStore } from '@/lib/store';
 import { tmdb, tmdbImg, useTMDB, type TMDBItem } from '@/lib/tmdb';
 import { T } from '@/lib/tokens';
-
-const ANIM_CSS = `
-  @keyframes scrollUp   { 0% { transform: translateY(0);    } 100% { transform: translateY(-50%); } }
-  @keyframes scrollDown { 0% { transform: translateY(-50%); } 100% { transform: translateY(0);    } }
-  .poster-col-up   { animation: scrollUp   30s linear infinite; }
-  .poster-col-down { animation: scrollDown 36s linear infinite; }
-  @keyframes spin{to{transform:rotate(360deg)}}
-`;
 
 function PosterCol({ items, animClass }: { items: TMDBItem[]; animClass: string }) {
   if (!items.length) return null;
@@ -95,6 +88,7 @@ function AuthPageInner() {
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
   const [regionPickerOpen, setRegionPickerOpen] = useState(false);
 
   useEffect(() => {
@@ -119,8 +113,7 @@ function AuthPageInner() {
       return;
     }
     if (user) {
-      const done = localStorage.getItem('onboarding_done');
-      router.replace(done ? '/home' : '/onboarding');
+      router.replace('/home');
     }
   }, [offline, router, sessionLoading, user]);
 
@@ -165,8 +158,26 @@ function AuthPageInner() {
 
   const handleEmail = async () => {
     if (!email || !pass) { setError(t('errors.fillAll')); return; }
+    // Anti-spam gate on new accounts. No-op unless Turnstile is configured.
+    if (mode === 'register' && TURNSTILE_ENABLED && !captchaToken) {
+      setError(t('errors.captchaRequired')); return;
+    }
     setLoading(true); setError('');
     try {
+      if (mode === 'register' && TURNSTILE_ENABLED) {
+        const res = await fetch('/api/verify-turnstile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: captchaToken }),
+        });
+        const data = await res.json().catch(() => ({ success: false }));
+        if (!data.success) {
+          setError(t('errors.captchaFailed'));
+          setCaptchaToken('');
+          setLoading(false);
+          return;
+        }
+      }
       if (mode === 'login') await signInWithEmail(email, pass);
       else                  await registerWithEmail(name, email, pass);
     } catch (e: any) {
@@ -227,7 +238,6 @@ function AuthPageInner() {
     return (
       <Frame>
         <Screen style={{ background: '#0D0D0F', flexDirection: 'column' } as React.CSSProperties}>
-          <style>{ANIM_CSS}</style>
 
           <div style={{ flex: 1, minHeight: 250, position: 'relative', overflow: 'hidden', background: '#0D0D0F' }}>
             {posters.length > 0 && (
@@ -319,7 +329,6 @@ function AuthPageInner() {
     return (
       <Frame>
         <Screen style={{ background: '#0D0D0F', flexDirection: 'column' } as React.CSSProperties}>
-          <style>{ANIM_CSS}</style>
 
           {/* ── Hero: poster columns ── */}
           <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#0D0D0F' }}>
@@ -384,6 +393,11 @@ function AuthPageInner() {
                 {t('landing.alreadyHaveAccount')}
               </button>
 
+              {/* "Ou continuar com:" divider above the social providers */}
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.42)', fontFamily: "'Area','Inter',sans-serif", textAlign: 'center', marginBottom: 12 }}>
+                {t('orContinueWith')}
+              </div>
+
               {/* Social row */}
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={handleApple} disabled={loading} style={{ flex: 1, padding: '13px 0', borderRadius: 50, background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, cursor: 'pointer' }}>
@@ -412,7 +426,6 @@ function AuthPageInner() {
   return (
     <Frame>
       <Screen style={{ background: '#0D0D0F' }}>
-        <style>{ANIM_CSS}</style>
 
         {/* Compact hero */}
         <div style={{ height: 160, flexShrink: 0, position: 'relative', overflow: 'hidden', background: '#0D0D0F' }}>
@@ -484,6 +497,14 @@ function AuthPageInner() {
               <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 10, background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)' }}>
                 <span style={{ fontSize: 12, color: '#4ade80', fontFamily: "'Area','Inter',sans-serif" }}>{t('errors.resetSent')}</span>
               </div>
+            )}
+
+            {/* Anti-spam challenge (register only; renders nothing until configured) */}
+            {mode === 'register' && (
+              <Turnstile
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken('')}
+              />
             )}
 
             {/* Primary CTA */}

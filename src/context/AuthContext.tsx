@@ -5,7 +5,7 @@
    (e.g. local dev without .env.local configured yet).
    ───────────────────────────────────────────────────────────── */
 import {
-  createContext, useContext, useEffect, useState,
+  createContext, useCallback, useContext, useEffect, useState,
   type ReactNode,
 } from 'react';
 import type { User } from 'firebase/auth';
@@ -32,6 +32,13 @@ interface AuthState {
   /** True when Firebase is not configured — app runs in local-only mode */
   offline: boolean;
   initializationError: Error | null;
+  /** Whether the current account's e-mail is confirmed. Social logins
+      (Google/Apple) are always verified by the provider; only e-mail/senha
+      signups start unverified until they click the confirmation link. */
+  emailVerified: boolean;
+  /** Re-fetch the Firebase user and return the fresh verified flag. Used after
+      the user confirms the e-mail so the gate/banner update without a reload. */
+  refreshUser: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -39,12 +46,30 @@ const AuthContext = createContext<AuthState>({
   loading: true,
   offline: false,
   initializationError: null,
+  emailVerified: false,
+  refreshUser: async () => false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [initializationError, setInitializationError] = useState<Error | null>(null);
+
+  /** Reload the Firebase user (picks up an e-mail confirmation done elsewhere)
+      and publish the fresh verified flag. Returns the new value so callers can
+      react immediately without waiting for the state update to flush. */
+  const refreshUser = useCallback(async (): Promise<boolean> => {
+    if (!firebaseConfigured) return false;
+    const auth = getFirebaseAuth();
+    const current = auth.currentUser;
+    if (!current) return false;
+    try { await current.reload(); } catch {}
+    const verified = !!auth.currentUser?.emailVerified;
+    setEmailVerified(verified);
+    setUser(auth.currentUser);
+    return verified;
+  }, []);
 
   useEffect(() => {
     if (!firebaseConfigured) {
@@ -93,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // pull, because their local cache is absent or has just been cleared.
         const canRenderCachedSession = !!u && cacheOwner === u.uid;
         setUser(u);
+        setEmailVerified(!!u?.emailVerified);
         if (active) setLoading(!canRenderCachedSession);
 
         // Firebase local persistence restores the cached account first and
@@ -262,8 +288,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // While the account is unverified, re-check when the user returns to the app
+  // (they likely just clicked the confirmation link in another tab/app). Only
+  // attached in that state, so it detaches the moment the e-mail is confirmed.
+  useEffect(() => {
+    if (!user || emailVerified || !firebaseConfigured) return;
+    const recheck = () => { if (document.visibilityState === 'visible') void refreshUser(); };
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('focus', recheck);
+    return () => {
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('focus', recheck);
+    };
+  }, [user, emailVerified, refreshUser]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, offline: !firebaseConfigured, initializationError }}>
+    <AuthContext.Provider value={{ user, loading, offline: !firebaseConfigured, initializationError, emailVerified, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

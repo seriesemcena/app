@@ -14,6 +14,7 @@ import { initializeFirebaseAppCheck } from '@/lib/firebase';
 import { AI_CURATION_ENABLED } from '@/lib/features';
 import { PushAlert } from '@/components/PushAlert';
 import { PopupBanner } from '@/components/PopupBanner';
+import { VerifyEmailBanner } from '@/components/VerifyEmailBanner';
 import { useDeepLinks } from '@/hooks/useDeepLinks';
 
 export function AppBootstrap({ children }: { children: ReactNode }) {
@@ -64,6 +65,7 @@ export function AppBootstrap({ children }: { children: ReactNode }) {
       {children}
       <PushAlert />
       <PopupBanner />
+      <VerifyEmailBanner />
       {!isOnline && !isKeyboardOpen && (
         <div className="offline-banner" role="status" aria-live="polite">
           <Icon name="wifi" size={16} color={T.t2} />

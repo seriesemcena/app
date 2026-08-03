@@ -7,10 +7,15 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 test('auth gate offers sign in and sign up without leaving the action behind', () => {
   const gate = read('src/components/AuthGateSheet.tsx');
   assert.match(gate, /export function useAuthGate\(\)/);
-  // requireAuth runs the action for members; promptSignIn covers early returns.
+  // requireAuth runs the action for confirmed members; promptSignIn covers early returns.
   assert.match(gate, /const requireAuth = useCallback/);
   assert.match(gate, /const promptSignIn = useCallback/);
-  assert.match(gate, /if \(user\) \{ action\(\); return; \}/);
+  // Visitors get the sign-in sheet.
+  assert.match(gate, /if \(!user\) \{ setReason\(next\); return; \}/);
+  // Unverified accounts are held at the confirm-email sheet; the pending action
+  // is stashed and replayed after confirmation — never silently dropped.
+  assert.match(gate, /if \(!emailVerified\) \{ pendingRef\.current = action;.*setVerifyOpen\(true\); return; \}/);
+  assert.match(gate, /const act = pendingRef\.current;[\s\S]*act\?\.\(\);/);
   // "Criar conta" must land on the sign-up tab, not the generic landing.
   assert.match(gate, /'\/auth\?mode=register'/);
 });
@@ -75,5 +80,34 @@ test('gate copy exists in every supported locale', () => {
     for (const reason of ['comment', 'reply', 'rate', 'react', 'like', 'list', 'watch', 'favorite', 'report']) {
       assert.ok(auth.gate?.reason?.[reason], `${locale} is missing gate.reason.${reason}`);
     }
+    // E-mail confirmation gate + banner copy.
+    for (const key of ['title', 'message', 'resend', 'resent', 'confirmed']) {
+      assert.ok(auth.gate?.verify?.[key], `${locale} is missing gate.verify.${key}`);
+    }
+    for (const key of ['text', 'resend', 'resent']) {
+      assert.ok(auth.verifyBanner?.[key], `${locale} is missing verifyBanner.${key}`);
+    }
   }
+});
+
+test('e-mail confirmation is sent on signup and can be resent, and gates writes', () => {
+  const useAuth = read('src/hooks/useAuth.ts');
+  // Signup fires the confirmation e-mail (best-effort, never blocking).
+  assert.match(useAuth, /sendEmailVerification\b/);
+  assert.match(useAuth, /const resendVerification = async/);
+  assert.match(useAuth, /resendVerification[,}]/); // exported from the hook
+
+  // Context publishes the verified flag and a reload helper.
+  const ctx = read('src/context/AuthContext.tsx');
+  assert.match(ctx, /emailVerified: boolean/);
+  assert.match(ctx, /refreshUser: \(\) => Promise<boolean>/);
+  assert.match(ctx, /setEmailVerified\(!!u\?\.emailVerified\)/);
+
+  // The gate blocks unconfirmed accounts on write actions.
+  const gate = read('src/components/AuthGateSheet.tsx');
+  assert.match(gate, /if \(!emailVerified\)/);
+
+  // A persistent banner nudges confirmation and is wired into the shell.
+  const bootstrap = read('src/components/AppBootstrap.tsx');
+  assert.match(bootstrap, /<VerifyEmailBanner \/>/);
 });

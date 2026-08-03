@@ -53,10 +53,10 @@ export function useAuth() {
   const router = useRouter();
   const { settings } = useAppSettings();
 
-  /** After login, send new users to onboarding and returning users to home */
+  /** After login, go straight to home. The streaming/genre/notification
+      onboarding was removed — accounts start with default preferences. */
   const postLoginRoute = () => {
-    const done = typeof window !== 'undefined' && localStorage.getItem('onboarding_done');
-    router.replace(done ? '/home' : '/onboarding');
+    router.replace('/home');
   };
 
   /**
@@ -154,9 +154,12 @@ export function useAuth() {
   const registerWithEmail = async (name: string, email: string, password: string) => {
     if (!settings.registrationsEnabled) throw Object.assign(new Error('Novos cadastros estão temporariamente desativados.'), { code: 'auth/registrations-disabled' });
     if (!firebaseConfigured) throw new Error('Firebase not configured');
-    const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
+    const { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } = await import('firebase/auth');
     const { user: newUser } = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
     await updateProfile(newUser, { displayName: name });
+    // Fire off the confirmation e-mail. Never block signup on it — a transient
+    // send failure shouldn't strand the user; they can resend from the banner.
+    try { await sendEmailVerification(newUser); } catch {}
     // Create the Firestore profile immediately so the account is discoverable.
     // The username is the slug of the Name: "João Miguel" → joao-miguel
     try {
@@ -169,6 +172,15 @@ export function useAuth() {
       await dbProfileStore.set(db, newUser.uid, { name, username, usernameMigrated: true });
     } catch {}
     postLoginRoute();
+  };
+
+  /** Re-send the e-mail confirmation link to the signed-in unverified account. */
+  const resendVerification = async () => {
+    if (!firebaseConfigured) throw new Error('Firebase not configured');
+    const current = getFirebaseAuth().currentUser;
+    if (!current) throw new Error('auth/no-current-user');
+    const { sendEmailVerification } = await import('firebase/auth');
+    await sendEmailVerification(current);
   };
 
   const resetPassword = async (email: string) => {
@@ -274,5 +286,5 @@ export function useAuth() {
     router.replace('/auth');
   };
 
-  return { user, loading, offline, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, deleteAccount, signOut };
+  return { user, loading, offline, signInWithGoogle, signInWithApple, signInWithEmail, registerWithEmail, resetPassword, resendVerification, deleteAccount, signOut };
 }
