@@ -20,7 +20,15 @@ import {
   type Firestore, type Unsubscribe, type QueryDocumentSnapshot, type DocumentData,
   type QueryConstraint,
 } from 'firebase/firestore';
-import { EMPTY_PROFILE_COUNTERS, type Profile, type Review, type SliderItem, type Prefs, type ProSettings } from './store';
+import {
+  DEFAULT_PRO_THEME,
+  EMPTY_PROFILE_COUNTERS,
+  type Profile,
+  type Review,
+  type SliderItem,
+  type Prefs,
+  type ProSettings,
+} from './store';
 import type { InboxNotif } from './store';
 import {
   DEFAULT_NOTIFICATION_TEMPLATES,
@@ -49,6 +57,30 @@ type ListItem = { id: number; title: string; type: string; poster_path?: string 
 const PRIVATE_DATA_SCHEMA_VERSION = 1;
 
 // ── helpers ─────────────────────────────────────────────────
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Firestore data can outlive several client schemas. Normalize the legacy
+ * episode map at the boundary so stale or partially-written documents never
+ * crash Home, Series or Profile during session restore. */
+function normalizeLegacyEpisodeHistory(value: unknown): LegacyEpisodeHistory {
+  if (!isPlainRecord(value)) return {};
+  const normalized: LegacyEpisodeHistory = {};
+  Object.entries(value).forEach(([seriesId, seasons]) => {
+    if (!isPlainRecord(seasons)) return;
+    const normalizedSeasons: Record<string, number[]> = {};
+    Object.entries(seasons).forEach(([seasonNumber, episodes]) => {
+      if (!Array.isArray(episodes)) return;
+      normalizedSeasons[seasonNumber] = uniqueEpisodeNumbers(
+        episodes.map(Number).filter((episode) => Number.isInteger(episode) && episode > 0),
+      );
+    });
+    normalized[seriesId] = normalizedSeasons;
+  });
+  return normalized;
+}
 
 async function getField<T>(db: Firestore, path: string[], field: string, fallback: T): Promise<T> {
   try {
@@ -103,9 +135,68 @@ const PROFILE_DEFAULT: Profile = {
   streamings: [], genres: [],
   followers: 0, following: 0,
   proMember: false,
+  proTheme: DEFAULT_PRO_THEME,
   proBadges: [],
   counters: EMPTY_PROFILE_COUNTERS,
 };
+
+function normalizePublicProfile(profileValue: unknown, countersValue?: unknown): Profile {
+  const profile = isPlainRecord(profileValue) ? profileValue : {};
+  const social = isPlainRecord(profile.social) ? profile.social : {};
+  const counters = isPlainRecord(countersValue) ? countersValue : {};
+  const proTheme = isPlainRecord(profile.proTheme) ? profile.proTheme : {};
+  return {
+    ...PROFILE_DEFAULT,
+    ...profile,
+    name: typeof profile.name === 'string' ? profile.name : '',
+    username: typeof profile.username === 'string' ? profile.username : '',
+    bio: typeof profile.bio === 'string' ? profile.bio : '',
+    avatarLetter: typeof profile.avatarLetter === 'string' ? profile.avatarLetter : '',
+    avatarGradient: typeof profile.avatarGradient === 'string' ? profile.avatarGradient : '',
+    avatarImage: typeof profile.avatarImage === 'string' ? profile.avatarImage : '',
+    avatarThumbImage: typeof profile.avatarThumbImage === 'string' ? profile.avatarThumbImage : '',
+    coverImage: typeof profile.coverImage === 'string' ? profile.coverImage : '',
+    social: {
+      instagram: typeof social.instagram === 'string' ? social.instagram : '',
+      twitter: typeof social.twitter === 'string' ? social.twitter : '',
+      tiktok: typeof social.tiktok === 'string' ? social.tiktok : '',
+    },
+    streamings: Array.isArray(profile.streamings)
+      ? profile.streamings.filter((item): item is string => typeof item === 'string')
+      : [],
+    genres: Array.isArray(profile.genres)
+      ? profile.genres.filter((item): item is string => typeof item === 'string')
+      : [],
+    aliases: Array.isArray(profile.aliases)
+      ? profile.aliases.filter((item): item is string => typeof item === 'string')
+      : [],
+    proBadges: Array.isArray(profile.proBadges)
+      ? profile.proBadges.filter((item): item is string => typeof item === 'string')
+      : [],
+    followers: Number.isFinite(Number(profile.followers)) ? Number(profile.followers) : 0,
+    following: Number.isFinite(Number(profile.following)) ? Number(profile.following) : 0,
+    usernameMigrated: profile.usernameMigrated === true,
+    usernameCustom: profile.usernameCustom === true,
+    proMember: profile.proMember === true,
+    proTheme: {
+      id: typeof proTheme.id === 'string' ? proTheme.id : DEFAULT_PRO_THEME.id,
+      title: typeof proTheme.title === 'string' ? proTheme.title : DEFAULT_PRO_THEME.title,
+      posterPath: typeof proTheme.posterPath === 'string' || proTheme.posterPath === null
+        ? proTheme.posterPath as string | null
+        : DEFAULT_PRO_THEME.posterPath,
+      accent: typeof proTheme.accent === 'string' ? proTheme.accent : DEFAULT_PRO_THEME.accent,
+      gradient: typeof proTheme.gradient === 'string' ? proTheme.gradient : DEFAULT_PRO_THEME.gradient,
+    },
+    counters: {
+      followersCount: Number(counters.followersCount) || 0,
+      followingCount: Number(counters.followingCount) || 0,
+      commentsCount: Number(counters.commentsCount) || 0,
+      ratingsCount: Number(counters.ratingsCount) || 0,
+      listsCount: Number(counters.listsCount) || 0,
+      watchedCount: Number(counters.watchedCount) || 0,
+    },
+  } as Profile;
+}
 
 export const dbProfileStore = {
   async getOptional(db: Firestore, uid: string): Promise<Profile | null> {
@@ -116,12 +207,7 @@ export const dbProfileStore = {
         const data = snap.data();
         const profile = data?.profile;
         return profile && typeof profile === 'object'
-          ? {
-              ...PROFILE_DEFAULT,
-              ...profile,
-              social: { ...PROFILE_DEFAULT.social, ...(profile.social ?? {}) },
-              counters: { ...EMPTY_PROFILE_COUNTERS, ...(data?.counters ?? {}) },
-            } as Profile
+          ? normalizePublicProfile(profile, data?.counters)
           : null;
       } catch { return null; }
     }, { staleIfError: true });
@@ -184,15 +270,7 @@ export async function getUserByUsername(
 ): Promise<{ uid: string; profile: Profile; followingCount: number } | null> {
   const build = (d: { id: string; data: () => any }) => ({
     uid: d.id,
-    profile: {
-      ...PROFILE_DEFAULT,
-      ...(d.data()?.profile ?? {}),
-      social: {
-        ...PROFILE_DEFAULT.social,
-        ...(d.data()?.profile?.social ?? {}),
-      },
-      counters: { ...EMPTY_PROFILE_COUNTERS, ...(d.data()?.counters ?? {}) },
-    } as Profile,
+    profile: normalizePublicProfile(d.data()?.profile, d.data()?.counters),
     followingCount: Number(
       d.data()?.counters?.followingCount
       ?? (d.data()?.following_list ?? []).length
@@ -310,7 +388,19 @@ export async function migrateUsernameToSlug(
 
 export const dbListStore = {
   async get(db: Firestore, uid: string, type: ListType): Promise<ListItem[]> {
-    return getField<ListItem[]>(db, ['users', uid], `lists_${type}`, []);
+    const value = await getField<unknown>(db, ['users', uid], `lists_${type}`, []);
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter(isPlainRecord)
+      .map((item) => ({
+        id: Number(item.id),
+        title: typeof item.title === 'string' ? item.title : '',
+        type: typeof item.type === 'string' ? item.type : '',
+        poster_path: typeof item.poster_path === 'string' || item.poster_path === null
+          ? item.poster_path as string | null
+          : null,
+      }))
+      .filter((item) => Number.isFinite(item.id) && item.id > 0 && item.title && item.type);
   },
   async add(db: Firestore, uid: string, type: ListType, item: ListItem) {
     const current = await dbListStore.get(db, uid, type);
@@ -1820,7 +1910,10 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
   try {
     const LIST_KEY = 'sec_lists_v1';
     const all: Record<string, ListItem[]> = (() => {
-      try { return JSON.parse(localStorage.getItem(LIST_KEY) || '{}'); } catch { return {}; }
+      try {
+        const parsed: unknown = JSON.parse(localStorage.getItem(LIST_KEY) || '{}');
+        return isPlainRecord(parsed) ? parsed as Record<string, ListItem[]> : {};
+      } catch { return {}; }
     })();
     // Firestore is authoritative: an empty list on the server must clear the
     // local cache too, otherwise a previous account's items survive here.
@@ -1839,11 +1932,11 @@ export async function syncFromFirestore(db: Firestore, uid: string, email?: stri
         'history',
         {},
       );
-      const legacyHistory = privateHistory.exists
+      const legacyHistory = normalizeLegacyEpisodeHistory(privateHistory.exists
         ? privateHistory.value
         : data?.ep_watched && typeof data.ep_watched === 'object'
           ? data.ep_watched as LegacyEpisodeHistory
-          : {};
+          : {});
       const canonical = await dbSeasonProgressStore.getAll(db, uid);
       const migrationSnap = await getDoc(doc(db, 'users', uid, 'private', 'migration_state'));
       const canonicalIsAuthoritative = migrationSnap.data()?.seasonProgressV1 === true;
@@ -2069,10 +2162,13 @@ export async function migrateLocalToFirestore(db: Firestore, uid: string) {
     // Merge legacy episode history instead of replacing the remote map.
     const localHistory = epWatchedStore.getAll();
     const privateHistory = await getPrivateValue<LegacyEpisodeHistory>(db, uid, 'history', {});
-    const remoteHistory = privateHistory.exists
+    const remoteHistory = normalizeLegacyEpisodeHistory(privateHistory.exists
       ? privateHistory.value
-      : await getField<LegacyEpisodeHistory>(db, ['users', uid], 'ep_watched', {});
-    const mergedHistory: LegacyEpisodeHistory = structuredClone(remoteHistory);
+      : await getField<LegacyEpisodeHistory>(db, ['users', uid], 'ep_watched', {}));
+    // Avoid structuredClone: it is unavailable in several Android System
+    // WebView releases still used by testers. The normalizer already returns
+    // a detached object containing only JSON-safe records and arrays.
+    const mergedHistory = normalizeLegacyEpisodeHistory(remoteHistory);
     for (const [seriesId, seasons] of Object.entries(localHistory)) {
       mergedHistory[seriesId] ??= {};
       for (const [seasonNumber, episodes] of Object.entries(seasons)) {

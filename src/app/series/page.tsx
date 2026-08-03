@@ -227,7 +227,10 @@ export default function SeriesPage() {
             overdue = overdueEpisodes(season?.episodes || [], watchedEpisodes);
           }
 
-          const latestOverdue = overdue.at(-1) as any;
+          // Keep this compatible with Android WebViews that predate
+          // Array.prototype.at. A failure here used to make every series fall
+          // through to the incomplete emergency card.
+          const latestOverdue = overdue.length > 0 ? overdue[overdue.length - 1] as any : undefined;
           return {
             id: item.id,
             title: detail?.name || item.title,

@@ -18,8 +18,11 @@ test('profile persistence uses TikTok across local and Firestore defaults', () =
   const db = read('src/lib/db.ts');
 
   assert.match(store, /social: \{ instagram: string; twitter: string; tiktok: string \}/);
-  assert.match(store, /social: \{ \.\.\.PROFILE_DEFAULT\.social, \.\.\.\(stored\?\.social \?\? \{\}\) \}/);
-  assert.match(db, /social: \{ \.\.\.PROFILE_DEFAULT\.social, \.\.\.\(profile\.social \?\? \{\}\) \}/);
+  // Persisted account data may outlive several client schemas. Each value is
+  // validated at the storage boundary instead of blindly spreading an
+  // arbitrary object into route-critical profile state.
+  assert.match(store, /tiktok: typeof social\.tiktok === 'string' \? social\.tiktok : ''/);
+  assert.match(db, /tiktok: typeof social\.tiktok === 'string' \? social\.tiktok : ''/);
   assert.doesNotMatch(store, /letterboxd/);
   assert.doesNotMatch(db, /letterboxd/);
 });

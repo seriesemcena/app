@@ -115,6 +115,18 @@
   --interactive-safe-bottom: var(--safe-area-bottom);
   --keyboard-offset: 0px;
   --ios-top-action-size: 40px;
+  /* Portable Liquid Glass approximation. The CodePen reference adds optical
+     displacement with an SVG backdrop filter, which is Chromium-only. These
+     tokens keep one composition on WebKit, Chromium and Android while falling
+     back to the translucent fill when backdrop-filter is unavailable. */
+  --glass-control-bg: rgba(31, 31, 36, 0.42);
+  --glass-control-border: rgba(255, 255, 255, 0.22);
+  --glass-control-highlight: rgba(255, 255, 255, 0.30);
+  --glass-control-lowlight: rgba(0, 0, 0, 0.18);
+  --glass-control-shadow:
+    0 5px 16px rgba(0, 0, 0, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 0.28),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.16);
   /* Shared top navigation geometry. The native iOS overlay uses the same
      44pt row, so titles and actions keep a single optical center everywhere. */
   --app-sticky-header-row-height: 44px;
@@ -166,14 +178,15 @@
   isolation: isolate;
   overflow: hidden;
   color: #fff;
-  background: rgba(38, 38, 42, 0.48) !important;
-  border: 1px solid rgba(255, 255, 255, 0.24) !important;
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.08) !important;
-  backdrop-filter: blur(22px) saturate(180%) contrast(106%) brightness(108%) !important;
-  -webkit-backdrop-filter: blur(22px) saturate(180%) contrast(106%) brightness(108%) !important;
+  background: var(--glass-control-bg) !important;
+  border: 1px solid var(--glass-control-border) !important;
+  box-shadow: var(--glass-control-shadow) !important;
+  /* Keep the filter list to the two functions consistently implemented by
+     WebKit and Chromium. Contrast/brightness make the whole declaration
+     invalid on some installed WebViews, which would revive inline legacy
+     values and break the universal material. */
+  backdrop-filter: blur(14px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(145%) !important;
   transition: transform 160ms cubic-bezier(.2,.8,.2,1), background 180ms ease, border-color 180ms ease, box-shadow 180ms ease !important;
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
@@ -190,8 +203,24 @@
   pointer-events: none;
   border-radius: inherit;
   background:
-    radial-gradient(circle at 28% 16%, rgba(255,255,255,.24), transparent 38%),
-    linear-gradient(145deg, rgba(255,255,255,.10), transparent 52%, rgba(255,255,255,.04));
+    radial-gradient(circle at 27% 13%, var(--glass-control-highlight), transparent 34%),
+    linear-gradient(145deg, rgba(255,255,255,.13) 0%, transparent 46%, rgba(255,255,255,.04) 72%);
+  mix-blend-mode: screen;
+  opacity: .92;
+}
+
+.ios-top-action::after,
+.glass-header-action-slot > button::after,
+.app-bar-action-slot > button::after,
+.landing-page-header > button::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(165deg, transparent 44%, var(--glass-control-lowlight) 100%);
 }
 
 .ios-top-action > *,
@@ -206,11 +235,13 @@
 .glass-header-action-slot > button:active,
 .app-bar-action-slot > button:active,
 .landing-page-header > button:active {
-  transform: scale(.94) translateZ(0);
-  background: rgba(62, 62, 68, 0.56) !important;
-  box-shadow:
+  --glass-control-shadow:
     0 2px 8px rgba(0,0,0,.14),
-    inset 0 1px 0 rgba(255,255,255,.22) !important;
+    inset 0 1px 1px rgba(255,255,255,.20),
+    inset 0 -1px 1px rgba(0,0,0,.14);
+  transform: scale(.94) translateZ(0);
+  background: rgba(58, 58, 64, 0.58) !important;
+  box-shadow: var(--glass-control-shadow) !important;
 }
 
 [data-theme="light"] .ios-top-action,
@@ -218,14 +249,19 @@
 [data-theme="light"] .app-bar-action-slot > button,
 [data-theme="light"] .landing-page-header > button {
   color: #111113;
-  background: rgba(255, 255, 255, 0.68) !important;
-  border-color: rgba(255, 255, 255, 0.86) !important;
-  box-shadow:
-    0 4px 14px rgba(31, 31, 38, 0.10),
-    inset 0 1px 0 rgba(255,255,255,.96),
-    inset 0 -1px 0 rgba(70,70,78,.08) !important;
-  backdrop-filter: blur(22px) saturate(170%) contrast(104%) brightness(104%) !important;
-  -webkit-backdrop-filter: blur(22px) saturate(170%) contrast(104%) brightness(104%) !important;
+  --glass-control-bg: rgba(255, 255, 255, 0.56);
+  --glass-control-border: rgba(255, 255, 255, 0.82);
+  --glass-control-highlight: rgba(255, 255, 255, 0.96);
+  --glass-control-lowlight: rgba(68, 68, 76, 0.10);
+  --glass-control-shadow:
+    0 5px 16px rgba(31, 31, 38, 0.10),
+    inset 0 1px 1px rgba(255,255,255,.94),
+    inset 0 -1px 1px rgba(70,70,78,.10);
+  background: var(--glass-control-bg) !important;
+  border-color: var(--glass-control-border) !important;
+  box-shadow: var(--glass-control-shadow) !important;
+  backdrop-filter: blur(14px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(135%) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -243,6 +279,16 @@
 .keyboard-aware-bottom button,
 #modal-root button {
   box-shadow: none !important;
+}
+
+/* Liquid Glass controls intentionally retain their optical depth. This comes
+   after the app-wide flat-button reset so every route uses one material. */
+.app-screen .ios-top-action,
+.app-screen .glass-header-action-slot > button,
+.app-screen .app-bar-action-slot > button,
+.app-screen .landing-page-header > button,
+#modal-root .ios-top-action {
+  box-shadow: var(--glass-control-shadow) !important;
 }
 
 @supports (height: 100svh) {
@@ -360,19 +406,15 @@ html[data-native-chrome="true"] .tab-bar-wrap {
   display: none !important;
 }
 
-/* Android uses a solid Material-like fallback rather than inheriting an iOS
-   glass imitation. Browser fallback is deliberately restrained as well. */
+/* Web, installed PWA and native webviews deliberately share the same material.
+   Android keeps the same fill, border, highlights and shadows, but disables
+   the live backdrop blur. Several Android System WebView/GPU combinations
+   repaint that filter on every scroll frame, causing jank and long route
+   transitions. This preserves the visual composition without that cost. */
 html[data-platform="android"] .ios-top-action,
 html[data-platform="android"] .glass-header-action-slot > button,
 html[data-platform="android"] .app-bar-action-slot > button,
-html[data-platform="android"] .landing-page-header > button,
-html[data-platform="web"] .ios-top-action,
-html[data-platform="web"] .glass-header-action-slot > button,
-html[data-platform="web"] .app-bar-action-slot > button,
-html[data-platform="web"] .landing-page-header > button {
-  background: var(--c-surface2) !important;
-  border-color: var(--c-border) !important;
-  box-shadow: none !important;
+html[data-platform="android"] .landing-page-header > button {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }

@@ -52,13 +52,21 @@ function platformName() {
 }
 
 function getSessionId() {
+  const createId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    // This identifier is only used to group anonymous popup metrics; it is
+    // not a credential and does not require cryptographic randomness.
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  };
   try {
     const current = sessionStorage.getItem(SESSION_ID_KEY);
     if (current) return current;
-    const created = crypto.randomUUID();
+    const created = createId();
     sessionStorage.setItem(SESSION_ID_KEY, created);
     return created;
-  } catch { return crypto.randomUUID(); }
+  } catch { return createId(); }
 }
 
 function excludedCampaigns(now = Date.now()) {

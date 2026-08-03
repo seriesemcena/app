@@ -22,6 +22,16 @@ export function isNotifEnabled(prefs: Prefs, key: NotifPrefKey): boolean {
 
 const PREFS_KEY = 'sec_prefs';
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
 /* ─── Account switching ───────────────────────────────────────
    These caches hold the signed-in user's *content* and are NOT
    uid-scoped, so they must be wiped when the account changes —
@@ -85,7 +95,22 @@ export function switchActiveUser(uid: string | null): boolean {
 export const prefsStore = {
   get(): Prefs {
     if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch { return {}; }
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      if (!isPlainRecord(value)) return {};
+      return {
+        genres: stringArray(value.genres),
+        streams: stringArray(value.streams),
+        notifications: stringArray(value.notifications),
+        locale: typeof value.locale === 'string' ? value.locale : undefined,
+        country: typeof value.country === 'string' ? value.country : undefined,
+        notifPrefs: isPlainRecord(value.notifPrefs)
+          ? Object.fromEntries(
+              Object.entries(value.notifPrefs).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+            )
+          : undefined,
+      };
+    } catch { return {}; }
   },
   set(p: Prefs) {
     if (typeof window === 'undefined') return;
@@ -146,7 +171,12 @@ const REV_KEY = 'sec_reviews_v1';
 export const revStore = {
   get(itemKey: string): Review[] {
     if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem(REV_KEY) || '{}')[itemKey] || []; } catch { return []; }
+    try {
+      const all: unknown = JSON.parse(localStorage.getItem(REV_KEY) || '{}');
+      if (!isPlainRecord(all)) return [];
+      const reviews = all[itemKey];
+      return Array.isArray(reviews) ? reviews.filter(isPlainRecord) as Review[] : [];
+    } catch { return []; }
   },
   set(itemKey: string, reviews: Review[]) {
     if (typeof window === 'undefined') return;
@@ -239,7 +269,22 @@ const EP_KEY = 'sec_ep_watched_v1';
 export const epWatchedStore = {
   getAll(): Record<string, Record<string, number[]>> {
     if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem(EP_KEY) || '{}'); } catch { return {}; }
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem(EP_KEY) || '{}');
+      if (!isPlainRecord(value)) return {};
+      const normalized: Record<string, Record<string, number[]>> = {};
+      Object.entries(value).forEach(([seriesId, seasons]) => {
+        if (!isPlainRecord(seasons)) return;
+        normalized[seriesId] = {};
+        Object.entries(seasons).forEach(([seasonNumber, episodes]) => {
+          if (!Array.isArray(episodes)) return;
+          normalized[seriesId][seasonNumber] = Array.from(new Set(
+            episodes.map(Number).filter((episode) => Number.isInteger(episode) && episode > 0),
+          ));
+        });
+      });
+      return normalized;
+    } catch { return {}; }
   },
   getShow(tvId: string | number): Record<string, number[]> {
     return epWatchedStore.getAll()[String(tvId)] ?? {};
@@ -430,11 +475,50 @@ export const profileStore = {
     if (typeof window === 'undefined') return PROFILE_DEFAULT;
     const key = profileKey(uid);
     try {
-      const stored = JSON.parse(localStorage.getItem(key) || '{}');
+      const parsed: unknown = JSON.parse(localStorage.getItem(key) || '{}');
+      const stored = isPlainRecord(parsed) ? parsed : {};
+      const social = isPlainRecord(stored.social) ? stored.social : {};
+      const counters = isPlainRecord(stored.counters) ? stored.counters : {};
+      const proTheme = isPlainRecord(stored.proTheme) ? stored.proTheme : {};
       return {
         ...PROFILE_DEFAULT,
         ...stored,
-        social: { ...PROFILE_DEFAULT.social, ...(stored?.social ?? {}) },
+        name: typeof stored.name === 'string' ? stored.name : '',
+        username: typeof stored.username === 'string' ? stored.username : '',
+        bio: typeof stored.bio === 'string' ? stored.bio : '',
+        avatarLetter: typeof stored.avatarLetter === 'string' ? stored.avatarLetter : '',
+        avatarGradient: typeof stored.avatarGradient === 'string' ? stored.avatarGradient : PROFILE_DEFAULT.avatarGradient,
+        avatarImage: typeof stored.avatarImage === 'string' ? stored.avatarImage : '',
+        avatarThumbImage: typeof stored.avatarThumbImage === 'string' ? stored.avatarThumbImage : '',
+        coverImage: typeof stored.coverImage === 'string' ? stored.coverImage : '',
+        social: {
+          instagram: typeof social.instagram === 'string' ? social.instagram : '',
+          twitter: typeof social.twitter === 'string' ? social.twitter : '',
+          tiktok: typeof social.tiktok === 'string' ? social.tiktok : '',
+        },
+        streamings: stringArray(stored.streamings),
+        genres: stringArray(stored.genres),
+        aliases: stringArray(stored.aliases),
+        proBadges: stringArray(stored.proBadges),
+        followers: Number.isFinite(Number(stored.followers)) ? Number(stored.followers) : 0,
+        following: Number.isFinite(Number(stored.following)) ? Number(stored.following) : 0,
+        proTheme: {
+          id: typeof proTheme.id === 'string' ? proTheme.id : DEFAULT_PRO_THEME.id,
+          title: typeof proTheme.title === 'string' ? proTheme.title : DEFAULT_PRO_THEME.title,
+          posterPath: typeof proTheme.posterPath === 'string' || proTheme.posterPath === null
+            ? proTheme.posterPath as string | null
+            : DEFAULT_PRO_THEME.posterPath,
+          accent: typeof proTheme.accent === 'string' ? proTheme.accent : DEFAULT_PRO_THEME.accent,
+          gradient: typeof proTheme.gradient === 'string' ? proTheme.gradient : DEFAULT_PRO_THEME.gradient,
+        },
+        counters: {
+          followersCount: Number(counters.followersCount) || 0,
+          followingCount: Number(counters.followingCount) || 0,
+          commentsCount: Number(counters.commentsCount) || 0,
+          ratingsCount: Number(counters.ratingsCount) || 0,
+          listsCount: Number(counters.listsCount) || 0,
+          watchedCount: Number(counters.watchedCount) || 0,
+        },
       };
     } catch { return PROFILE_DEFAULT; }
   },
@@ -575,7 +659,37 @@ const SLIDER_KEY = 'sec_admin_slider_v1';
 export const sliderStore = {
   get(): SliderItem[] {
     if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem(SLIDER_KEY) || '[]'); } catch { return []; }
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(SLIDER_KEY) || '[]');
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter(isPlainRecord)
+        .map((item) => {
+          const id = Number(item.id);
+          const type = item.type === 'movie' || item.type === 'tv' ? item.type : null;
+          if (!Number.isFinite(id) || !type) return null;
+          const category: SliderCategory = (
+            item.category === 'nos_cinemas'
+            || item.category === 'no_streaming'
+            || item.category === 'em_breve'
+          ) ? item.category : null;
+          return {
+            id,
+            title: typeof item.title === 'string' ? item.title : '',
+            type,
+            backdrop_path: typeof item.backdrop_path === 'string' || item.backdrop_path === null
+              ? item.backdrop_path
+              : null,
+            poster_path: typeof item.poster_path === 'string' || item.poster_path === null
+              ? item.poster_path
+              : null,
+            overview: typeof item.overview === 'string' ? item.overview : '',
+            buttonText: typeof item.buttonText === 'string' ? item.buttonText : '',
+            category,
+          } satisfies SliderItem;
+        })
+        .filter((item): item is SliderItem => item !== null);
+    } catch { return []; }
   },
   set(items: SliderItem[]) {
     if (typeof window === 'undefined') return;
@@ -616,7 +730,21 @@ const LIST_KEY = 'sec_lists_v1';
 export const listStore = {
   get(type: ListType): Array<{ id: number; title: string; type: string; poster_path?: string | null }> {
     if (typeof window === 'undefined') return [];
-    try { return JSON.parse(localStorage.getItem(LIST_KEY) || '{}')[type] || []; } catch { return []; }
+    try {
+      const all: unknown = JSON.parse(localStorage.getItem(LIST_KEY) || '{}');
+      if (!isPlainRecord(all) || !Array.isArray(all[type])) return [];
+      return all[type]
+        .filter(isPlainRecord)
+        .map((item) => ({
+          id: Number(item.id),
+          title: typeof item.title === 'string' ? item.title : '',
+          type: typeof item.type === 'string' ? item.type : '',
+          poster_path: typeof item.poster_path === 'string' || item.poster_path === null
+            ? item.poster_path as string | null
+            : null,
+        }))
+        .filter((item) => Number.isFinite(item.id) && item.id > 0 && item.title && item.type);
+    } catch { return []; }
   },
   add(type: ListType, item: { id: number; title: string; type: string; poster_path?: string | null }) {
     const all = (() => { try { return JSON.parse(localStorage.getItem(LIST_KEY) || '{}'); } catch { return {}; } })();

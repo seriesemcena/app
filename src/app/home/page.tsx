@@ -257,8 +257,13 @@ export default function HomePage() {
     const mq = window.matchMedia('(min-width: 768px)');
     setIsDesktop(mq.matches);
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', handler);
+      return () => mq.removeEventListener('change', handler);
+    }
+    // Legacy Android WebViews only implement addListener/removeListener.
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
   }, []);
 
   /* ── init: custom slider + offline-only notification fallback ── */

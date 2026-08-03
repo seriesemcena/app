@@ -177,7 +177,7 @@ async function sendNativePushTest(locale: string): Promise<PushTestResult> {
   if (!response.ok || payload?.error) {
     const status = String(payload?.error?.status || `http-${response.status}`)
       .toLowerCase()
-      .replaceAll('_', '-');
+      .replace(/_/g, '-');
     throw makePushCallableError(
       status,
       payload?.error?.message || 'Não foi possível concluir o teste de notificação.',

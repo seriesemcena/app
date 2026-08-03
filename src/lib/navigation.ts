@@ -29,7 +29,10 @@ function writeStack(stack: string[]) {
 export function recordInternalLocation(location: string) {
   if (typeof window === 'undefined') return;
   const stack = readStack();
-  if (stack.at(-1) === location) return;
+  // Array.prototype.at is missing in older Android System WebView versions.
+  // This function runs for every route, so using it here could crash the
+  // complete application shell before a page had a chance to render.
+  if (stack[stack.length - 1] === location) return;
 
   const previousIndex = stack.lastIndexOf(location);
   if (previousIndex >= 0) writeStack(stack.slice(0, previousIndex + 1));
