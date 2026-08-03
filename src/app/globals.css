@@ -415,6 +415,15 @@ html[data-native-chrome="true"] .tab-bar-wrap {
   display: none !important;
 }
 
+/* Android shell: the Material navigation bar sits flush at the bottom and
+   extends its background through the gesture-nav inset, so its gap is the full
+   safe-area (the iOS pill instead floats inside the home indicator). This keeps
+   --toolbar-height equal to the bar's painted height for a correct content
+   inset. Scoped to Android — iOS/web are untouched. */
+html[data-platform="android"] {
+  --toolbar-bottom-gap: var(--safe-area-bottom);
+}
+
 /* Web, installed PWA and native webviews deliberately share the same material.
    Android keeps the same fill, border, highlights and shadows, but disables
    the live backdrop blur. Several Android System WebView/GPU combinations

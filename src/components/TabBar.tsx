@@ -4,6 +4,7 @@ import { useRef, useState, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n';
 import { useTheme } from '@/context/ThemeContext';
+import { useAppRuntime } from '@/context/AppRuntimeContext';
 import { useMyProfileUrl } from '@/hooks/useMyProfileUrl';
 import { Icon } from './Icon';
 import type { IconName } from '@/lib/tokens';
@@ -157,6 +158,116 @@ const TAB_STYLES = `
   }
 `;
 
+/* ── Android: Material 3 navigation bar ──────────────────────────────────
+   Full-bleed opaque bar, icon-over-label, a tonal "pill" indicator behind the
+   active icon (scales in), and a bounded touch ripple — the native Android
+   look/motion. Only rendered on the Android shell; iOS keeps the glass pill. */
+const ANDROID_STYLES = `
+  .tb-android {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    padding-bottom: var(--safe-area-bottom);
+    padding-left: var(--safe-area-left);
+    padding-right: var(--safe-area-right);
+    background: var(--c-card);
+    border-top: 1px solid var(--c-border);
+    box-shadow: 0 -1px 10px rgba(0,0,0,0.10);
+  }
+  .tb-and-item {
+    flex: 1 1 0;
+    min-width: 0;
+    height: var(--toolbar-base-height);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: none;
+    border: 0;
+    margin: 0;
+    padding: 6px 0 0;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    font-family: 'Area','Inter',sans-serif;
+  }
+  .tb-and-item:focus-visible {
+    outline: 2px solid rgba(192,105,255,0.75);
+    outline-offset: -3px;
+    border-radius: 8px;
+  }
+  .tb-and-top {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    width: 100%;
+  }
+  .tb-and-indicator {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56px;
+    max-width: calc(100% - 6px);
+    height: 32px;
+    border-radius: 16px;
+    transform: translate(-50%, -50%);
+    transform-origin: center;
+    animation: tb-and-ind-in 0.25s cubic-bezier(0.2, 0, 0, 1) both;
+    pointer-events: none;
+  }
+  .tb-and-ic { position: relative; z-index: 1; display: flex; }
+  .tb-and-label {
+    max-width: 100%;
+    font-size: 10.5px;
+    line-height: 1;
+    letter-spacing: -0.1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 3px;
+  }
+  @keyframes tb-and-ind-in {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scaleX(0.5); }
+    100% { opacity: 1; transform: translate(-50%, -50%) scaleX(1); }
+  }
+  .tb-and-ripple {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(192,105,255,0.28);
+    transform: scale(0);
+    opacity: 0.55;
+    pointer-events: none;
+    animation: tb-and-ripple 0.5s cubic-bezier(0.2, 0, 0, 1) forwards;
+  }
+  @keyframes tb-and-ripple {
+    to { transform: scale(1); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tb-and-indicator { animation: none !important; }
+    .tb-and-ripple { display: none !important; }
+  }
+`;
+
+/** Spawn a bounded Material ripple at the touch point inside a nav item. */
+function spawnRipple(e: React.PointerEvent<HTMLButtonElement>) {
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const host = e.currentTarget;
+  const rect = host.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height) * 2;
+  const ripple = document.createElement('span');
+  ripple.className = 'tb-and-ripple';
+  ripple.style.width = ripple.style.height = `${size}px`;
+  ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+  ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
+  ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+  host.appendChild(ripple);
+}
+
 type CapsuleState = { left: number; right: number; transition: string } | null;
 
 /* Every route change unmounts and rebuilds TabBar (each page renders its own
@@ -174,6 +285,8 @@ export function TabBar() {
   const { t }    = useTranslation('navigation');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { platform } = useAppRuntime();
+  const isAndroid = platform === 'android';
 
   // The profile tab points at the canonical /user/<username> route
   const myProfileUrl = useMyProfileUrl();
@@ -337,6 +450,47 @@ export function TabBar() {
     // on a real unmount, when the capsule ref is already null.
     return () => clearTimeout(settle);
   }, [activeIndex]);
+
+  /* ── Android: native Material navigation bar ── */
+  if (isAndroid) {
+    // Dark mode: a faint indicator left the white active icon low-contrast, so
+    // the pill is more present here and the active icon is pure white — the
+    // icon reads clearly on it. Light mode keeps the softer tint.
+    const andIndicatorBg = isDark ? 'rgba(192,105,255,0.40)' : 'rgba(192,105,255,0.16)';
+    const andActive   = isDark ? '#FFFFFF' : 'rgba(0,0,0,0.88)';
+    const andInactive = isDark ? 'rgba(255,255,255,0.66)' : 'rgba(0,0,0,0.55)';
+    return (
+      <>
+        <style>{ANDROID_STYLES}</style>
+        <div className="tb-android">
+          {TABS.map((tab) => {
+            const isActive = effectiveActive === tab.id;
+            const color = isActive ? andActive : andInactive;
+            return (
+              <button
+                key={tab.id}
+                className="tb-and-item"
+                onPointerDown={spawnRipple}
+                onClick={() => { lastActiveTab = tab.id; router.push(tab.href); }}
+                aria-label={t(tab.labelKey)}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <span className="tb-and-top">
+                  {isActive && <span className="tb-and-indicator" style={{ background: andIndicatorBg }} />}
+                  <span className="tb-and-ic">
+                    <Icon name={tab.icon} size={23} color={color} />
+                  </span>
+                </span>
+                <span className="tb-and-label" style={{ color, fontWeight: isActive ? 600 : 500 }}>
+                  {t(tab.labelKey)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
