@@ -88,11 +88,11 @@ public class MaratonouBridgeViewController: CAPBridgeViewController, UITabBarDel
         let language = Locale.preferredLanguages.first?.lowercased() ?? "en"
         let labels: [String]
         if language.hasPrefix("pt") {
-            labels = ["Início", "Séries", "Buscar", "Filmes", "Atividade", "Perfil"]
+            labels = ["Início", "Séries", "Buscar", "Filmes", "Feed", "Você"]
         } else if language.hasPrefix("es") {
-            labels = ["Inicio", "Series", "Buscar", "Películas", "Actividad", "Perfil"]
+            labels = ["Inicio", "Series", "Buscar", "Películas", "Feed", "Tú"]
         } else {
-            labels = ["Home", "Series", "Search", "Movies", "Activity", "Profile"]
+            labels = ["Home", "Series", "Search", "Movies", "Feed", "You"]
         }
 
         // Template images generated from the same SVG sprite used by React.
