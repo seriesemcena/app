@@ -66,6 +66,30 @@ export function clearUserScopedCache() {
 }
 
 /**
+ * Nuke this app's own local caches (content, prefs, TMDB cache, migration
+ * markers) so a corrupt or incompatible local state can't keep crashing the UI.
+ * Firebase's own keys (auth/session, `firebase:*`) and a couple of harmless UI
+ * settings (theme, locale) are preserved, so the user stays signed in and their
+ * data re-syncs authoritatively from Firestore on the next load. Safe: the
+ * migration is gated on a Firestore flag and only ever merges, so an empty
+ * local cache never overwrites remote data. Used by the route error boundary
+ * as a one-tap self-heal (no reinstall needed).
+ */
+const PURGE_KEEP = new Set(['sec_theme_v1', 'sec_locale_v1', 'sec_region_selected']);
+export function purgeAppCaches(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const drop: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || PURGE_KEEP.has(key)) continue;
+      if (key.startsWith('sec_') || key.startsWith('maratonou:')) drop.push(key);
+    }
+    drop.forEach((key) => { try { localStorage.removeItem(key); } catch {} });
+  } catch {}
+}
+
+/**
  * Record which account owns the local cache. When the uid changes from a
  * previously recorded one, the cache is wiped first.
  *
