@@ -64,11 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const auth = getFirebaseAuth();
     const current = auth.currentUser;
     if (!current) return false;
-    try { await current.reload(); } catch {}
-    const verified = !!auth.currentUser?.emailVerified;
-    setEmailVerified(verified);
-    setUser(auth.currentUser);
-    return verified;
+    try { await current.reload(); } catch { /* keep the session; retry later */ }
+    // Publish ONLY the verified flag. Never setUser() here: reload() leaves the
+    // user object identity unchanged, and onAuthStateChanged owns the lifecycle.
+    // Setting it to a transiently-null currentUser (an iOS token hiccup) would
+    // log the UI out and empty request.auth-gated reads (ratings, feed).
+    const fresh = auth.currentUser;
+    if (!fresh) return false;
+    setEmailVerified(!!fresh.emailVerified);
+    return !!fresh.emailVerified;
   }, []);
 
   useEffect(() => {
@@ -288,19 +292,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // While the account is unverified, re-check when the user returns to the app
-  // (they likely just clicked the confirmation link in another tab/app). Only
-  // attached in that state, so it detaches the moment the e-mail is confirmed.
-  useEffect(() => {
-    if (!user || emailVerified || !firebaseConfigured) return;
-    const recheck = () => { if (document.visibilityState === 'visible') void refreshUser(); };
-    document.addEventListener('visibilitychange', recheck);
-    window.addEventListener('focus', recheck);
-    return () => {
-      document.removeEventListener('visibilitychange', recheck);
-      window.removeEventListener('focus', recheck);
-    };
-  }, [user, emailVerified, refreshUser]);
+  // NOTE: deliberately NO auto-refresh on foreground. Forcing user.reload() on
+  // every iOS app-foreground can fail/expire the token inside the WKWebView and
+  // drop the session, which then makes request.auth-gated Firestore reads
+  // (ratings, feed) come back empty. The verified flag is refreshed on cold
+  // start (onAuthStateChanged) and on the explicit "Já confirmei" action in the
+  // gate — enough to clear the banner without destabilizing the session.
 
   return (
     <AuthContext.Provider value={{ user, loading, offline: !firebaseConfigured, initializationError, emailVerified, refreshUser }}>
