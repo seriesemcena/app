@@ -20,6 +20,7 @@ import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { AppBannerSlot } from '@/components/AppBannerSlot';
 import { streamingColor } from '@/lib/streamingPlatforms';
 import { formatCurrency } from '@/lib/locale-utils';
+import { readCache, writeCache } from '@/lib/cache';
 import { calculateWatchedDuration, legacyHistoryToSeasonProgress, uniqueEpisodeNumbers } from '@/lib/seasonProgress';
 
 type ListItem = { id: number; title: string; type: string; poster_path?: string | null };
@@ -196,7 +197,10 @@ function UserProfileInner() {
     const localReviewCount = revStore
       .getByAuthor(user.uid, local.username || local.name)
       .filter((review) => review.rating > 0).length;
-    setReviewCount(firebaseConfigured ? 0 : localReviewCount);
+    // Show the locally-cached rating count immediately (was 0 for signed-in
+    // users, which flashed 0 → real once Firestore answered). The authoritative
+    // count below reconciles it — usually identical, so no visible jump.
+    setReviewCount(localReviewCount);
     setProReminders(proSettingsStore.get(user.uid).reminders);
     applyProfile(local);
     try {
@@ -289,6 +293,12 @@ function UserProfileInner() {
   } | null>(null);
 
   useEffect(() => {
+    const statsKey = `profileStats:${isMe ? (user?.uid ?? 'me') : slug}`;
+    // Paint the last-known totals instantly so the "assistidas" card never
+    // flashes 0h while the expensive recompute (per-title TMDB runtimes) runs.
+    const cachedStats = readCache<{ totalHours: number; moviesCount: number; tvCount: number }>(statsKey, true);
+    if (cachedStats) setRealStats(cachedStats);
+
     const watchedMovies = concluidos.filter((item) => item.type === 'movie');
     const completedSeries = concluidos.filter((item) => item.type === 'tv');
     const watchingSeries = assistindo.filter((item) => item.type === 'tv');
@@ -321,7 +331,9 @@ function UserProfileInner() {
     const series = isMe ? Array.from(seriesById.values()) : completedSeries;
     const tracked = [...watchedMovies, ...series];
     if (tracked.length === 0) {
-      setRealStats({ totalHours: 0, moviesCount: 0, tvCount: 0 });
+      const empty = { totalHours: 0, moviesCount: 0, tvCount: 0 };
+      setRealStats(empty);
+      writeCache(statsKey, empty, 7 * 24 * 60 * 60 * 1000);
       return;
     }
     let alive = true;
@@ -356,10 +368,12 @@ function UserProfileInner() {
           }
         }
       });
-      setRealStats({ totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount });
+      const computed = { totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount };
+      setRealStats(computed);
+      writeCache(statsKey, computed, 7 * 24 * 60 * 60 * 1000);
     });
     return () => { alive = false; };
-  }, [assistindo, concluidos, isMe, syncRevision, user?.uid]);
+  }, [assistindo, concluidos, isMe, slug, syncRevision, user?.uid]);
 
   /* ── Activity calendar: last four weeks, Monday → Sunday ── */
   useEffect(() => {

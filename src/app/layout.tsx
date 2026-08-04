@@ -61,6 +61,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+        {/* Preload the app's own fonts and the icon sprite so headings, body
+            text and icons paint with the first frame instead of popping in
+            (fixes the FOUT flash and the late-appearing tab-bar/stat icons). */}
+        <link rel="preload" as="font" type="font/woff" href="/fonts/Greed-SemiBold.woff" crossOrigin="" />
+        <link rel="preload" as="font" type="font/woff" href="/fonts/Area-Bold.woff" crossOrigin="" />
+        <link rel="preload" as="font" type="font/woff" href="/fonts/Area-Black.woff" crossOrigin="" />
+        <link rel="preload" as="image" type="image/svg+xml" href="/icons/streamline-flex-solid.svg" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
