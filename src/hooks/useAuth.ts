@@ -48,6 +48,16 @@ async function getNativeSocialCredential(provider: 'google.com' | 'apple.com'): 
   });
 }
 
+/** After Firebase's hosted action page verifies an e-mail or resets a password,
+    return the user to the app. The host must be an authorized domain — and
+    window.location.origin always is (maratonou.com in browser/PWA/native, which
+    loads the remote site; localhost in dev). Firebase's default handler stays in
+    charge of the code itself (the custom action URL is locked on this project). */
+function appReturnActionSettings(): { url: string; handleCodeInApp: boolean } | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return { url: window.location.origin, handleCodeInApp: false };
+}
+
 export function useAuth() {
   const { user, loading, offline } = useAuthContext();
   const router = useRouter();
@@ -159,7 +169,7 @@ export function useAuth() {
     await updateProfile(newUser, { displayName: name });
     // Fire off the confirmation e-mail. Never block signup on it — a transient
     // send failure shouldn't strand the user; they can resend from the banner.
-    try { await sendEmailVerification(newUser); } catch {}
+    try { await sendEmailVerification(newUser, appReturnActionSettings()); } catch {}
     // Create the Firestore profile immediately so the account is discoverable.
     // The username is the slug of the Name: "João Miguel" → joao-miguel
     try {
@@ -180,13 +190,13 @@ export function useAuth() {
     const current = getFirebaseAuth().currentUser;
     if (!current) throw new Error('auth/no-current-user');
     const { sendEmailVerification } = await import('firebase/auth');
-    await sendEmailVerification(current);
+    await sendEmailVerification(current, appReturnActionSettings());
   };
 
   const resetPassword = async (email: string) => {
     if (!firebaseConfigured) throw new Error('Firebase not configured');
     const { sendPasswordResetEmail } = await import('firebase/auth');
-    await sendPasswordResetEmail(getFirebaseAuth(), email);
+    await sendPasswordResetEmail(getFirebaseAuth(), email, appReturnActionSettings());
   };
 
   const deleteAccount = async (password?: string) => {
