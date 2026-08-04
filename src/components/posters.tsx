@@ -73,7 +73,7 @@ export const ImgWithSkeleton = ({
     <div style={{ width, height, borderRadius: radius, overflow: 'hidden', position: 'relative', flexShrink: 0, ...style }}>
       {!loaded && <div className="img-skeleton" style={{ position: 'absolute', inset: 0 }} />}
       <img
-        src={src} alt={alt}
+        src={src} alt={alt} loading="lazy" decoding="async"
         onLoad={() => setLoaded(true)} onError={() => { setErr(true); }}
         style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition, display: 'block', opacity: loaded ? 1 : 0, transition: 'opacity 0.35s' }}
       />
@@ -89,7 +89,7 @@ export const TMDBPoster = ({ path, width, height, title = '' }: { path?: string 
   return (
     <div style={{ width, height, position: 'relative', overflow: 'hidden', background: T.surface }}>
       {!loaded && <div style={{ position: 'absolute', inset: 0 }}><PosterPlaceholder width={width} height={height} label={title} /></div>}
-      <img src={src} alt={title} onLoad={() => setLoaded(true)} onError={() => setErr(true)}
+      <img src={src} alt={title} loading="lazy" decoding="async" onLoad={() => setLoaded(true)} onError={() => setErr(true)}
         style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: 'opacity 0.4s' }} />
     </div>
   );
@@ -103,7 +103,8 @@ export const TMDBBackdrop = ({ path, width, height, title = '' }: { path?: strin
   return (
     <div style={{ width, height, position: 'relative', overflow: 'hidden', background: T.surface }}>
       {!loaded && <div style={{ position: 'absolute', inset: 0 }}><HeroPoster title={title} width={width} height={height} /></div>}
-      <img src={src} alt={title} onLoad={() => setLoaded(true)} onError={() => setErr(true)}
+      {/* Backdrop is the above-the-fold hero (LCP) — decode async but load eager. */}
+      <img src={src} alt={title} decoding="async" onLoad={() => setLoaded(true)} onError={() => setErr(true)}
         style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: 'opacity 0.4s' }} />
     </div>
   );
@@ -135,7 +136,7 @@ export const TMDBPersonPhoto = ({ path, size = 76, name = '' }: { path?: string 
   return (
     <div style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', flexShrink: 0, border: `2px solid ${T.t4}`, background: T.surface }}>
       {!loaded && <ActorCircle name={name} size={size} />}
-      <img src={src} alt={name} onLoad={() => setLoaded(true)} onError={() => setErr(true)}
+      <img src={src} alt={name} loading="lazy" decoding="async" onLoad={() => setLoaded(true)} onError={() => setErr(true)}
         style={{ width: size, height: size, objectFit: 'cover', display: loaded ? 'block' : 'none' }} />
     </div>
   );
@@ -297,6 +298,8 @@ export const TMDBGridCard = ({
             <img
               key={src}
               src={src}
+              loading="lazy"
+              decoding="async"
               alt={localTitle ?? n.title}
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgErr(true)}
@@ -323,6 +326,8 @@ export const TMDBGridCard = ({
                   src={src}
                   alt=""
                   aria-hidden
+                  loading="lazy"
+                  decoding="async"
                   style={{
                     position: 'absolute', inset: 0,
                     width: '100%', height: '100%',
@@ -409,6 +414,8 @@ export const TMDBGridCard = ({
           <img
             key={src}
             src={src}
+            loading="lazy"
+            decoding="async"
             alt={localTitle ?? n.title}
             onLoad={() => setImgLoaded(true)}
             onError={() => setImgErr(true)}

@@ -294,10 +294,12 @@ function UserProfileInner() {
 
   useEffect(() => {
     const statsKey = `profileStats:${isMe ? (user?.uid ?? 'me') : slug}`;
-    // Paint the last-known totals instantly so the "assistidas" card never
-    // flashes 0h while the expensive recompute (per-title TMDB runtimes) runs.
-    const cachedStats = readCache<{ totalHours: number; moviesCount: number; tvCount: number }>(statsKey, true);
-    if (cachedStats) setRealStats(cachedStats);
+    // Cache totals keyed by the exact watched set. Paint the last-known value
+    // instantly (no 0h flash) and, when the set is unchanged, skip the per-title
+    // TMDB runtime fetches entirely — that was up to 60 requests on every open.
+    type StatsShape = { totalHours: number; moviesCount: number; tvCount: number };
+    const cachedStats = readCache<{ sig: string; stats: StatsShape }>(statsKey, true);
+    if (cachedStats?.stats) setRealStats(cachedStats.stats);
 
     const watchedMovies = concluidos.filter((item) => item.type === 'movie');
     const completedSeries = concluidos.filter((item) => item.type === 'tv');
@@ -333,9 +335,13 @@ function UserProfileInner() {
     if (tracked.length === 0) {
       const empty = { totalHours: 0, moviesCount: 0, tvCount: 0 };
       setRealStats(empty);
-      writeCache(statsKey, empty, 7 * 24 * 60 * 60 * 1000);
+      writeCache(statsKey, { sig: '', stats: empty }, 30 * 24 * 60 * 60 * 1000);
       return;
     }
+    // Same watched set as last time → the runtimes can't have changed. Reuse the
+    // cached totals and make zero network requests.
+    const sig = tracked.map((i) => `${i.type}:${i.id}`).sort().join(',');
+    if (cachedStats?.sig === sig) return;
     let alive = true;
     Promise.all(
       tracked.slice(0, 60).map(async (item) => {
@@ -370,7 +376,7 @@ function UserProfileInner() {
       });
       const computed = { totalHours: Math.round(totalMinutes / 60), moviesCount, tvCount };
       setRealStats(computed);
-      writeCache(statsKey, computed, 7 * 24 * 60 * 60 * 1000);
+      writeCache(statsKey, { sig, stats: computed }, 30 * 24 * 60 * 60 * 1000);
     });
     return () => { alive = false; };
   }, [assistindo, concluidos, isMe, slug, syncRevision, user?.uid]);
