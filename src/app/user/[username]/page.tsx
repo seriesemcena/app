@@ -620,8 +620,10 @@ function UserProfileInner() {
               })}
               <div style={{ position: 'absolute', inset: 0, background: isProProfile ? `radial-gradient(circle at 86% 12%,${proAccent}38,transparent 45%),linear-gradient(to bottom,rgba(0,0,0,0.08) 0%,rgba(0,0,0,0.44) 62%,rgba(13,13,15,1) 100%)` : 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.50) 65%, rgba(13,13,15,1) 100%)', zIndex: 2 }} />
 
-              {/* Ações no topo */}
-              <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 14px)', left: 14, right: 14, display: 'flex', alignItems: 'center', zIndex: 10 }}>
+              {/* Ações no topo — z-index acima da linha do avatar/seguir (z20) para
+                  o menu (Denunciar/Bloquear) não ficar preso atrás do botão de
+                  seguir; o menu é filho deste container e herda seu contexto. */}
+              <div style={{ position: 'absolute', top: 'calc(var(--safe-area-top) + 14px)', left: 14, right: 14, display: 'flex', alignItems: 'center', zIndex: 40 }}>
                 {!isMe && (
                   <button className="ios-top-action" aria-label="Voltar" onClick={() => navigateBack(router)}
                     style={{ width: 36, height: 36, borderRadius: 18, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
