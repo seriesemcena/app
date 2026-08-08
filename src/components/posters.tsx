@@ -136,7 +136,10 @@ export const TMDBPersonPhoto = ({ path, size = 76, name = '' }: { path?: string 
   return (
     <div style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', flexShrink: 0, border: `2px solid ${T.t4}`, background: T.surface }}>
       {!loaded && <ActorCircle name={name} size={size} />}
-      <img src={src} alt={name} loading="lazy" decoding="async" onLoad={() => setLoaded(true)} onError={() => setErr(true)}
+      {/* No loading="lazy" here: this <img> starts display:none, and WebKit
+          (iOS WebView) never loads a display:none lazy image — the photo would
+          deadlock and every cast member would show only initials. */}
+      <img src={src} alt={name} decoding="async" onLoad={() => setLoaded(true)} onError={() => setErr(true)}
         style={{ width: size, height: size, objectFit: 'cover', display: loaded ? 'block' : 'none' }} />
     </div>
   );

@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Frame } from '@/components/Frame';
-import { Screen, ScrollArea, Txt } from '@/components/primitives';
+import { Screen, ScrollArea, Txt, VerifiedBadge } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { T } from '@/lib/tokens';
 import { ImgWithSkeleton } from '@/components/posters';
@@ -694,7 +694,7 @@ function UserProfileInner() {
                   <Txt size={24} weight={900} color={T.t1} style={{ display: 'block', letterSpacing: '-0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {displayName}
                   </Txt>
-                  {isProProfile && <span style={{ flexShrink: 0, padding: '3px 7px', borderRadius: 9, background: `${proAccent}24`, border: `1px solid ${proAccent}55`, color: proAccent, fontSize: 9, fontWeight: 900, letterSpacing: 0.5 }}>PRO</span>}
+                  {isProProfile && <VerifiedBadge size={20} color={proAccent} />}
                 </div>
                 <Txt size={13} color={T.t3} style={{ display: 'block' }}>@{displayUsername}</Txt>
               </div>

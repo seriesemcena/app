@@ -49,3 +49,62 @@ export function useResolvedAvatar(
 
   return avatarUrl;
 }
+
+/**
+ * Like useResolvedAvatar, but resolves the author's current display **name**,
+ * **username** and avatar together (one profile read). Used where we show
+ * "Name @username" — the feed and review cards — so both stay in sync with the
+ * member's live profile instead of the snapshot stored on the post.
+ */
+export function useResolvedAuthor(
+  uid: string | undefined,
+  fallbackName?: string,
+  fallbackUsername?: string,
+  fallbackPhotoUrl?: string,
+): { name: string; username: string; avatarUrl: string; pro: boolean } {
+  const { user } = useAuth();
+  const [author, setAuthor] = useState({
+    name: fallbackName || fallbackUsername || '',
+    username: fallbackUsername || '',
+    avatarUrl: fallbackPhotoUrl || '',
+    pro: false,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const localProfile = profileStore.get(user?.uid);
+    const belongsToCurrentUser = !!user && (
+      uid === user.uid
+      || (!uid && !!localProfile.username && fallbackUsername === localProfile.username)
+    );
+    if (belongsToCurrentUser) {
+      setAuthor({
+        name: localProfile.name || user.displayName || fallbackName || fallbackUsername || '',
+        username: localProfile.username || fallbackUsername || '',
+        avatarUrl: localProfile.avatarThumbImage || localProfile.avatarImage || user.photoURL || fallbackPhotoUrl || '',
+        pro: localProfile.proMember === true,
+      });
+    } else {
+      setAuthor({
+        name: fallbackName || fallbackUsername || '',
+        username: fallbackUsername || '',
+        avatarUrl: fallbackPhotoUrl || '',
+        pro: false,
+      });
+    }
+
+    if (!uid || !firebaseConfigured) return () => { cancelled = true; };
+    void dbProfileStore.getOptional(getDB(), uid).then((profile) => {
+      if (cancelled || !profile) return;
+      setAuthor({
+        name: profile.name || fallbackName || fallbackUsername || '',
+        username: profile.username || fallbackUsername || '',
+        avatarUrl: profile.avatarThumbImage || profile.avatarImage || fallbackPhotoUrl || '',
+        pro: profile.proMember === true,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [uid, fallbackName, fallbackUsername, fallbackPhotoUrl, user]);
+
+  return author;
+}

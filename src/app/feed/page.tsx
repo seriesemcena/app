@@ -11,9 +11,10 @@ import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
 import { profileStore, notifInboxStore, revStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
-import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
+import { useResolvedAuthor } from '@/hooks/useResolvedAvatar';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
 import { dbActivityStore, dbRevStore, type ActivityDoc, type ActivityPageCursor } from '@/lib/db';
+import { readCache, writeCache } from '@/lib/cache';
 import { ReportSheet, type ReportTarget } from '@/components/ReportSheet';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 
@@ -27,7 +28,8 @@ type ActivityItem = {
   reviewTitleKey?: string;   // titleKey para reviews
   titleKey: string;
   displayTitle: string;
-  user: string;
+  user: string;              // @username
+  name: string;              // display name
   avatar: string;
   color: string;
   photoUrl?: string;
@@ -78,6 +80,7 @@ function activityToFeedItem(a: ActivityDoc & { docId: string }): ActivityItem | 
     titleKey:       a.titleKey,
     displayTitle:   a.titleName,
     user:           a.authorUsername || a.username,
+    name:           a.authorName || a.authorUsername || a.username,
     avatar:         a.avatar,
     color:          '#C069FF',
     photoUrl:       a.authorAvatarUrl || a.photoUrl,
@@ -135,14 +138,20 @@ export default function FeedPage() {
 
   /* ── Only reviews/comments from Firestore ── */
   useEffect(() => {
+    const FEED_CACHE_KEY = 'feed:global';
+    // Paint the last feed instantly on revisit (public activity, safe to cache)
+    // so skeletons don't flash before the content each time; refresh below.
+    const cachedFeed = readCache<ActivityItem[]>(FEED_CACHE_KEY, true);
+    if (cachedFeed?.length) { setGlobalFeed(cachedFeed); setLoadingFeed(false); }
     async function loadFeed() {
-      setLoadingFeed(true);
+      if (!cachedFeed?.length) setLoadingFeed(true);
       if (!firebaseConfigured) { setLoadingFeed(false); return; }
       try {
         const db    = getDB();
         const page = await dbActivityStore.getPage(db);
         const items = page.items.map(activityToFeedItem).filter((item): item is ActivityItem => item !== null);
         setGlobalFeed(items);
+        writeCache(FEED_CACHE_KEY, items, 30 * 60 * 1000);
         setFeedCursor(page.cursor);
         setFeedHasMore(page.hasMore);
       } catch { setFeedError('Não foi possível atualizar o feed.'); }
@@ -324,9 +333,7 @@ export default function FeedPage() {
                   >
                     {loadingMore && <Txt size={12} color={T.t3}>Carregando…</Txt>}
                   </div>
-                ) : (
-                  <Txt size={11} color={T.t4} style={{ display: 'block', textAlign: 'center', padding: '6px 0' }}>Não há mais atividades.</Txt>
-                )}
+                ) : null}
               </div>
             )}
           </div>
@@ -358,7 +365,7 @@ function FeedCard({ item, onDelete }: {
   // Use the author's current avatar, not the one snapshotted when the activity
   // was written — otherwise a member who changed their picture shows two
   // different avatars across older and newer posts.
-  const resolvedAvatar = useResolvedAvatar(item.uid, item.photoUrl, item.user);
+  const author = useResolvedAuthor(item.uid, item.name, item.user, item.photoUrl);
 
   const goToProfile = () => router.push(`/user/${encodeURIComponent(item.user)}`);
 
@@ -439,6 +446,11 @@ function FeedCard({ item, onDelete }: {
   /* ── Reply count for this exact root comment/review ── */
   const [replyCount, setReplyCount] = useState(0);
   useEffect(() => {
+    const countsKey = `feedCounts:${item.id}`;
+    // Paint the last-known like/reply counts instantly so they don't flash
+    // 0 → real on every load while the source review is fetched.
+    const cachedCounts = readCache<{ likeCount: number; replyCount: number; liked: boolean }>(countsKey, true);
+    if (cachedCounts) { setLikeCount(cachedCounts.likeCount); setReplyCount(cachedCounts.replyCount); setLiked(cachedCounts.liked); }
     if (!firebaseConfigured || !item.titleKey) return;
     let alive = true;
     const reviewKey = item.reviewTitleKey || item.titleKey;
@@ -449,14 +461,20 @@ function FeedCard({ item, onDelete }: {
       sourceReviewRef.current = exact;
       setResolvedReviewId(exact.id);
       // Hydrate the like from the source review (same like as /comments).
-      setLiked(!!(user && exact.likedBy?.includes(user.uid)));
-      setLikeCount(exact.likes ?? exact.likedBy?.length ?? 0);
+      const isLiked = !!(user && exact.likedBy?.includes(user.uid));
+      const likes = exact.likes ?? exact.likedBy?.length ?? 0;
+      setLiked(isLiked);
+      setLikeCount(likes);
       // Replies now live in a subcollection, so count those, not the legacy array.
       const replies = await dbRevStore.getReplies(getDB(), reviewKey, exact.id);
-      if (alive) setReplyCount(replies.length || (exact.replies?.length ?? 0));
+      const replyN = replies.length || (exact.replies?.length ?? 0);
+      if (alive) {
+        setReplyCount(replyN);
+        writeCache(countsKey, { likeCount: likes, replyCount: replyN, liked: isLiked }, 60 * 60 * 1000);
+      }
     }).catch(() => {});
     return () => { alive = false; };
-  }, [item.rating, item.rawDate, item.reviewId, item.reviewTitleKey, item.text, item.titleKey, item.uid, item.user, user]);
+  }, [item.id, item.rating, item.rawDate, item.reviewId, item.reviewTitleKey, item.text, item.titleKey, item.uid, item.user, user]);
 
   /* ── Three-dot menu ── */
   const [showMenu,   setShowMenu]   = useState(false);
@@ -576,10 +594,12 @@ function FeedCard({ item, onDelete }: {
       {/* ── User row ── */}
       <div style={{ marginBottom: 18 }}>
         <SocialAuthor
-          name={item.user}
+          name={author.name}
+          username={author.username}
+          verified={author.pro}
           time=""
           avatar={item.avatar}
-          photoUrl={resolvedAvatar}
+          photoUrl={author.avatarUrl}
           color={item.color}
           endPadding={72}
           contextOnSecondLine
@@ -587,7 +607,7 @@ function FeedCard({ item, onDelete }: {
           context={(
             <>
               <Txt size={12} weight={700} color={T.t3} style={{ flexShrink: 0, lineHeight: '16px' }}>{actionLabel}</Txt>
-              <Txt size={12} weight={700} color={T.t1} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, lineHeight: '16px' }}>
+              <Txt size={12} weight={700} color={T.t3} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, lineHeight: '16px' }}>
                 {displayLabel}
               </Txt>
             </>

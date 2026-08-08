@@ -22,6 +22,7 @@ import {
 import { profileStore, type Profile } from '@/lib/store';
 import { usernameFromNameOrEmail } from '@/lib/username';
 import { navigateBack } from '@/lib/navigation';
+import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
 
 type SocialTab = 'followers' | 'following';
 type SocialCounts = Record<SocialTab, number>;
@@ -34,6 +35,50 @@ const relationFromName = (name: string): FollowerInfo => ({
   avatarLetter: name[0]?.toUpperCase() || '?',
   avatarGradient: '',
 });
+
+function ConnectionRow({ person, isLast, onOpen }: {
+  person: FollowerInfo;
+  isLast: boolean;
+  onOpen: () => void;
+}) {
+  const label = person.name || person.username || '?';
+  // Follow docs snapshot the avatar at follow-time, so someone who set or
+  // changed their photo afterwards still showed a letter. Resolve the current
+  // avatar by uid (skipping synthetic legacy ids), falling back to the snapshot.
+  const resolvedUid = person.uid.startsWith('legacy:') ? undefined : person.uid;
+  const avatar = useResolvedAvatar(resolvedUid, person.avatarThumbImage || person.avatarImage);
+  return (
+    <button
+      type="button"
+      disabled={!person.username}
+      onClick={onOpen}
+      style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 13,
+        padding: '14px 16px',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: isLast ? 'none' : `1px solid ${T.border}`,
+        cursor: person.username ? 'pointer' : 'default',
+        textAlign: 'left',
+      }}
+    >
+      <div style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', background: person.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {avatar
+          /* eslint-disable-next-line @next/next/no-img-element */
+          ? <img src={avatar} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <Txt size={17} weight={800} color="#fff">{(person.avatarLetter || label[0] || '?').toUpperCase()}</Txt>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Txt>
+        {person.username && <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 2 }}>@{person.username}</Txt>}
+      </div>
+      {person.username && <Icon name="chevronR" size={15} color={T.t4} />}
+    </button>
+  );
+}
 
 function SocialConnectionsPageInner() {
   const router = useRouter();
@@ -286,42 +331,14 @@ function SocialConnectionsPageInner() {
             </div>
           ) : people.length > 0 ? (
             <div>
-              {people.map((person, index) => {
-                const label = person.name || person.username || '?';
-                const avatar = person.avatarThumbImage || person.avatarImage;
-                return (
-                  <button
-                    key={person.uid}
-                    type="button"
-                    disabled={!person.username}
-                    onClick={() => person.username && router.push(`/user/${encodeURIComponent(person.username)}`)}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 13,
-                      padding: '14px 16px',
-                      background: 'transparent',
-                      border: 'none',
-                      borderBottom: index < people.length - 1 ? `1px solid ${T.border}` : 'none',
-                      cursor: person.username ? 'pointer' : 'default',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <div style={{ width: 48, height: 48, borderRadius: 24, overflow: 'hidden', background: person.avatarGradient || `linear-gradient(135deg,${T.pink},#8B2FFF)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {avatar
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        ? <img src={avatar} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                        : <Txt size={17} weight={800} color="#fff">{(person.avatarLetter || label[0] || '?').toUpperCase()}</Txt>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Txt size={15} weight={700} color={T.t1} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</Txt>
-                      {person.username && <Txt size={12} color={T.t3} style={{ display: 'block', marginTop: 2 }}>@{person.username}</Txt>}
-                    </div>
-                    {person.username && <Icon name="chevronR" size={15} color={T.t4} />}
-                  </button>
-                );
-              })}
+              {people.map((person, index) => (
+                <ConnectionRow
+                  key={person.uid}
+                  person={person}
+                  isLast={index === people.length - 1}
+                  onOpen={() => person.username && router.push(`/user/${encodeURIComponent(person.username)}`)}
+                />
+              ))}
               {hasMore && (
                 <button
                   type="button"

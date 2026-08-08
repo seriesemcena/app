@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useResolvedAuthor } from '@/hooks/useResolvedAvatar';
 import { useTheme } from '@/context/ThemeContext';
 import { useAppSettings } from '@/context/AppSettingsContext';
 import { Frame } from '@/components/Frame';
-import { Screen, Txt, Btn, MetaChip, Toast, BottomSheet, Stars } from '@/components/primitives';
+import { Screen, Txt, Btn, MetaChip, Toast, BottomSheet, Stars, VerifiedBadge } from '@/components/primitives';
 import { Icon } from '@/components/Icon';
 import { TMDBBackdrop, TMDBPersonPhoto, TMDBPosterCard, ImgWithSkeleton } from '@/components/posters';
 import { StreamCircle } from '@/components/primitives';
@@ -1044,6 +1045,56 @@ export default function TitleDetailPage() {
 }
 
 /* ── Movie reviews tab ── */
+function AvaliacaoCard({ rev, onLike, timeAgo }: {
+  rev: Review;
+  onLike: (id: string) => void;
+  timeAgo: (dateStr: string) => string;
+}) {
+  const router = useRouter();
+  // Current name / @username / avatar of the reviewer, resolved from their live
+  // profile (falls back to what the review stored) — same as the feed cards.
+  const author = useResolvedAuthor(rev.uid, rev.user, rev.user, rev.photoUrl);
+  const liked = !!(rev as { liked?: boolean }).liked;
+  const goToProfile = () => { const slug = author.username || rev.user; if (slug) router.push(`/user/${encodeURIComponent(slug)}`); };
+  return (
+    <div style={{ padding: '14px 16px', background: T.card, borderRadius: 16, border: `1px solid ${T.border}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <button onClick={goToProfile} aria-label={author.name || rev.user} style={{ width: 38, height: 38, borderRadius: 19, background: T.pink, border: 'none', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', cursor: 'pointer' }}>
+          {author.avatarUrl
+            ? <img src={author.avatarUrl} alt={author.name || rev.user} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <Txt size={13} weight={800} color="#fff">{rev.avatar}</Txt>}
+        </button>
+        <div onClick={goToProfile} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+            <Txt size={13} weight={700} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{author.name || rev.user}</Txt>
+            {author.pro && <span style={{ alignSelf: 'center', display: 'flex' }}><VerifiedBadge size={13} /></span>}
+            {author.username && <Txt size={12} weight={400} color={T.t3} style={{ whiteSpace: 'nowrap' }}>@{author.username}</Txt>}
+          </div>
+          <Txt size={11} color={T.t4} style={{ display: 'block' }}>{timeAgo(rev.date)}</Txt>
+        </div>
+        {rev.rating > 0 && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, background: '#FFEB13' }}>
+            <Icon name="star" size={10} color="#1a1400" />
+            <Txt size={12} weight={700} color="#1a1400">{rev.rating}/10</Txt>
+          </div>
+        )}
+      </div>
+      {rev.gifUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={rev.gifUrl} alt="" style={{ width: '100%', borderRadius: 10, display: 'block', marginBottom: 10, maxHeight: 160, objectFit: 'cover' }} />
+      )}
+      {rev.text ? (
+        <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 10 }}>{rev.text}</Txt>
+      ) : null}
+      <button onClick={() => onLike(rev.id)}
+        style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <Icon name={liked ? 'heart' : 'heartO'} size={15} color={liked ? T.pink : T.t3} />
+        <Txt size={12} color={liked ? T.pink : T.t3}>{(rev.likes || 0) + (liked ? 1 : 0)}</Txt>
+      </button>
+    </div>
+  );
+}
+
 function MovieReviewsTab({ reviews, avgRating, totalRatings, onAddReview, onViewComments, onLike }: {
   reviews: Review[];
   avgRating: string | null;
@@ -1125,39 +1176,9 @@ function MovieReviewsTab({ reviews, avgRating, totalRatings, onAddReview, onView
 
       {/* ── Lista de avaliações ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-        {sorted.map(rev => {
-          const liked = !!(rev as any).liked;
-          return (
-            <div key={rev.id} style={{ padding: '14px 16px', background: T.card, borderRadius: 16, border: `1px solid ${T.border}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 19, background: T.pink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Txt size={13} weight={800} color="#fff">{rev.avatar}</Txt>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Txt size={13} weight={700} style={{ display: 'block' }}>{rev.user}</Txt>
-                  <Txt size={11} color={T.t4} style={{ display: 'block' }}>{timeAgo(rev.date)}</Txt>
-                </div>
-                {rev.rating > 0 && (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, background: '#FFEB13' }}>
-                    <Icon name="star" size={10} color="#1a1400" />
-                    <Txt size={12} weight={700} color="#1a1400">{rev.rating}/10</Txt>
-                  </div>
-                )}
-              </div>
-              {rev.gifUrl && (
-                <img src={rev.gifUrl} alt="" style={{ width: '100%', borderRadius: 10, display: 'block', marginBottom: 10, maxHeight: 160, objectFit: 'cover' }} />
-              )}
-              {rev.text ? (
-                <Txt size={13} color={T.t2} style={{ display: 'block', lineHeight: 1.65, marginBottom: 10 }}>{rev.text}</Txt>
-              ) : null}
-              <button onClick={() => onLike(rev.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                <Icon name={liked ? 'heart' : 'heartO'} size={15} color={liked ? T.pink : T.t3} />
-                <Txt size={12} color={liked ? T.pink : T.t3}>{(rev.likes || 0) + (liked ? 1 : 0)}</Txt>
-              </button>
-            </div>
-          );
-        })}
+        {sorted.map(rev => (
+          <AvaliacaoCard key={rev.id} rev={rev} onLike={onLike} timeAgo={timeAgo} />
+        ))}
       </div>
 
       {/* ── Botões de ação ── */}
@@ -1892,15 +1913,25 @@ function ReviewsTab({ reviews, avgRating, showForm, reviewText, reviewRating, on
 
 function ReviewCard({ review, onLike }: { review: Review; onLike: () => void }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
+  // Resolve the author's *current* name / @username / avatar (not the snapshot
+  // stored on the review), falling back to what the review carries.
+  const author = useResolvedAuthor(review.uid, review.user, review.user, review.photoUrl);
   const liked = (review.likedBy || []).includes('me');
+  const goToProfile = () => { const slug = author.username || review.user; if (slug) router.push(`/user/${encodeURIComponent(slug)}`); };
   return (
     <div style={{ padding: '14px 16px', background: T.card, borderRadius: T.radiusSm, border: `1px solid ${T.border}`, marginBottom: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Txt size={12} weight={800} color={T.t2}>{review.avatar}</Txt>
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Txt size={13} weight={700} style={{ display: 'block' }}>{review.user}</Txt>
+        <button onClick={goToProfile} aria-label={author.name || review.user} style={{ width: 38, height: 38, borderRadius: 19, background: T.surface2, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', padding: 0, cursor: 'pointer' }}>
+          {author.avatarUrl
+            ? <img src={author.avatarUrl} alt={author.name || review.user} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <Txt size={12} weight={800} color={T.t2}>{review.avatar}</Txt>}
+        </button>
+        <div onClick={goToProfile} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
+            <Txt size={13} weight={700} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{author.name || review.user}</Txt>
+            {author.username && <Txt size={12} weight={400} color={T.t3} style={{ whiteSpace: 'nowrap' }}>@{author.username}</Txt>}
+          </div>
           <Txt size={11} color={T.t3}>{review.date}</Txt>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 16, background: T.goldDim, border: `1px solid rgba(245,197,24,0.2)` }}>

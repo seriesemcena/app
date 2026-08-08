@@ -10,7 +10,7 @@ import { T } from '@/lib/tokens';
 import { useTheme } from '@/context/ThemeContext';
 import { revStore, profileStore, blockStore, type Review } from '@/lib/store';
 import { useAuth } from '@/hooks/useAuth';
-import { useResolvedAvatar } from '@/hooks/useResolvedAvatar';
+import { useResolvedAvatar, useResolvedAuthor } from '@/hooks/useResolvedAvatar';
 import { useModerator } from '@/hooks/useModerator';
 import { navigateBack } from '@/lib/navigation';
 import { firebaseConfigured, getDB } from '@/lib/firebase';
@@ -1304,7 +1304,7 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
 }) {
   const { t }         = useTranslation('title');
   const liked         = !!currentUserId && !!rev.likedBy?.includes(currentUserId);
-  const resolvedAvatar = useResolvedAvatar(rev.uid, rev.photoUrl, rev.user);
+  const author = useResolvedAuthor(rev.uid, rev.user, rev.user, rev.photoUrl);
   const [spoilerRevealed, setSpoilerRevealed] = useState(false);
   const [repliesExpanded, setRepliesExpanded] = useState(replyOpen);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1327,12 +1327,14 @@ function CommentCard({ rev, timeAgo, onLike, onProfile, replyOpen, currentUserId
       {/* ── Author row (clickable → profile) ── */}
       <div style={{ marginBottom: 12 }}>
         <SocialAuthor
-          name={rev.user}
+          name={author.name}
+          username={author.username}
+          verified={author.pro}
           time={timeAgo(rev.date)}
           avatar={rev.avatar}
-          photoUrl={resolvedAvatar}
+          photoUrl={author.avatarUrl}
           timeColor={T.t3}
-          onClick={() => onProfile(rev.user)}
+          onClick={() => onProfile(author.username || rev.user)}
         />
       </div>
 

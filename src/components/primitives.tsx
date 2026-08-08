@@ -200,6 +200,21 @@ export const PROBadge = ({ size = 'sm' }: { size?: 'sm' | 'md' }) => (
 /** @deprecated Compatibility alias for older imports; renders the PRO badge. */
 export const VIPBadge = PROBadge;
 
+/**
+ * Twitter-style verified seal shown next to PRO members' names on their profile
+ * and across the feed/comments/reviews. The scalloped seal is two rounded
+ * squares (rotated 0°/45°) unioned, with a white check on top. Defaults to the
+ * PRO gold identity; pass `color` to match a member's profile accent.
+ */
+export const VerifiedBadge = ({ size = 15, color = T.gold, title = 'Membro PRO verificado' }: { size?: number; color?: string; title?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" role="img" aria-label={title} style={{ display: 'block', flexShrink: 0 }}>
+    <title>{title}</title>
+    <rect x="4.5" y="4.5" width="15" height="15" rx="5" fill={color} transform="rotate(45 12 12)" />
+    <rect x="4.5" y="4.5" width="15" height="15" rx="5" fill={color} />
+    <path d="M8.2 12.35l2.7 2.7 5-5.5" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 export const Skeleton = ({ w, h, radius = 8, style = {} }: { w: number | string; h: number | string; radius?: number; style?: CSSProperties }) => {
   return <div className="ui-skeleton" style={{ width: w, height: h, borderRadius: radius, flexShrink: 0, ...style }} />;
 };

@@ -2,7 +2,7 @@
 
 import type { MouseEvent, ReactNode } from 'react';
 import { Icon } from '@/components/Icon';
-import { Txt } from '@/components/primitives';
+import { Txt, VerifiedBadge } from '@/components/primitives';
 import { T, type IconName } from '@/lib/tokens';
 
 export function SocialCard({ children, dimmed = false, edgeToEdge = false, onClick }: {
@@ -39,6 +39,8 @@ export function SocialCard({ children, dimmed = false, edgeToEdge = false, onCli
 
 export function SocialAuthor({
   name,
+  username,
+  verified = false,
   time,
   avatar,
   photoUrl,
@@ -51,6 +53,8 @@ export function SocialAuthor({
   onClick,
 }: {
   name: string;
+  username?: string;
+  verified?: boolean;
   time: string;
   avatar: string;
   photoUrl?: string;
@@ -79,8 +83,10 @@ export function SocialAuthor({
       </button>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          <button type="button" onClick={onClick} style={{ flexShrink: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+          <button type="button" onClick={onClick} style={{ flexShrink: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'baseline', gap: 5, minWidth: 0 }}>
             <Txt size={14} weight={800} color={T.t1}>{name}</Txt>
+            {verified && <span style={{ alignSelf: 'center', display: 'flex' }}><VerifiedBadge size={14} /></span>}
+            {username && <Txt size={13} weight={400} color={T.t3} style={{ whiteSpace: 'nowrap' }}>@{username}</Txt>}
           </button>
           {!contextOnSecondLine && context && <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>{context}</div>}
           {badge && <div style={{ flexShrink: 0 }}>{badge}</div>}
