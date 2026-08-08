@@ -286,7 +286,7 @@ const DEFAULT_TEMPLATES = {
   new_episode: {
     enabled: true,
     title: '📺 Novo episódio de {{title}}',
-    body: '{{season}}X{{episode}} {{episodeName}} estreia {{days}} ({{date}}).',
+    body: 'Episódio {{episode}} estreia {{days}}.',
   },
   streaming_available: {
     enabled: true,
@@ -787,12 +787,16 @@ async function checkEpisode(user, item, templates) {
   const eventKey = `tv-${item.id}-s${episode.season_number}e${episode.episode_number}`;
   const text = render(templates.new_episode, {
     title: item.title,
+    // season / episodeName / date are still passed so a custom template can use
+    // them, but the default body no longer shows the SxxExx code or the date.
     season: episode.season_number,
-    episode: String(episode.episode_number).padStart(2, '0'),
+    episode: episode.episode_number,
     episodeName: episode.name || '',
     date: episode.air_date,
     days: dayLabel(days),
   });
+  // On the episode's own air day, drop the countdown for a warmer, detail-free line.
+  if (days === 0) text.body = 'Hoje tem mais um episódio da sua série.';
   await deliver(user.uid, eventKey, {
     type: 'new_episode',
     ...text,
